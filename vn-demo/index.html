@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Двор под дождём</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Pixelify+Sans:wght@500;700&display=swap">
+<style>
+/* Layout: one full-screen stage — background, rain, sprite — with a dialogue panel pinned to the bottom */
+:root {
+  --night: #15130f;
+  --panel: rgba(20, 17, 13, 0.86);
+  --paper: #efe4cf;
+  --dim: #a99a82;
+  --lamp: #f2b45a;
+  --rust: #c8742f;
+  --line: rgba(242, 180, 90, 0.28);
+  --f-text: "PT Serif", Georgia, "Times New Roman", serif;
+  --f-ui: "Pixelify Sans", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--night); color: var(--paper); overflow: hidden; font-family: var(--f-text); }
+
+.stage { position: fixed; inset: 0; overflow: hidden; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.bg, .cg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; max-width: none; }
+.cg { image-rendering: pixelated; }
+.bg { object-position: 62% 72%; filter: brightness(.82) saturate(.95); transition: filter 1.2s ease, transform 1.2s ease; transform: scale(1.04); }
+.stage.focus .bg { filter: brightness(.6) saturate(.85) blur(2.5px); transform: scale(1.08); }
+.cg { object-position: 40% 40%; opacity: 0; transition: opacity 1.6s ease; }
+.cg.on { opacity: 1; }
+.vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 55% 40%, transparent 45%, rgba(10, 8, 6, .75) 100%); }
+#rain { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+.sprite {
+  position: absolute; bottom: 0; left: 50%;
+  height: min(74%, 100vw); width: auto; max-width: none;
+  image-rendering: pixelated;
+  transform: translate(-50%, 6%); opacity: 0;
+  transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1), filter .4s ease;
+  filter: drop-shadow(0 0 18px rgba(0,0,0,.55));
+}
+.sprite.on { opacity: 1; transform: translate(-50%, 0); }
+.sprite.listen { filter: drop-shadow(0 0 18px rgba(0,0,0,.55)) brightness(.72); }
+.sprite.nod { animation: nod .5s ease; }
+.sprite.shake { animation: shake .45s ease; }
+.sprite.lean { transform: translate(-50%, 0) scale(1.06); transform-origin: 50% 100%; }
+@keyframes nod { 0%,100% { translate: 0 0; } 40% { translate: 0 2.5%; } }
+@keyframes shake { 0%,100% { translate: 0 0; } 25% { translate: -1.2% 0; } 75% { translate: 1.2% 0; } }
+@media (max-aspect-ratio: 4/5) { .sprite { height: 92%; left: 47%; } }
+@media (min-aspect-ratio: 4/3) {
+  .sprite { left: 28%; height: 90%; }
+  .hud { align-items: flex-end; }
+  .choices, .box { max-width: min(640px, 56vw); }
+}
+
+.hud {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.choices { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 8px; }
+.choice {
+  font: 500 17px/1.3 var(--f-ui); color: var(--paper); text-align: left;
+  background: rgba(20, 17, 13, .9); border: 1px solid var(--line); border-left: 4px solid var(--rust);
+  padding: 12px 14px; cursor: pointer; opacity: 0; transform: translateY(6px);
+  animation: rise .35s ease forwards;
+}
+.choice:hover, .choice:focus-visible { border-left-color: var(--lamp); background: rgba(48, 36, 22, .95); outline: none; }
+.choice:focus-visible { box-shadow: 0 0 0 2px var(--lamp); }
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+.box {
+  width: 100%; max-width: 720px; min-height: 132px;
+  background: var(--panel); border-top: 2px solid var(--lamp);
+  padding: 14px 18px 18px; position: relative;
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.name { font: 700 15px/1 var(--f-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--lamp); min-height: 15px; margin-bottom: 9px; }
+.name.narr { color: var(--dim); }
+.text { font-size: 19px; line-height: 1.5; margin: 0; text-wrap: pretty; }
+.text.narr { font-style: italic; color: #e2d6bf; }
+.more { position: absolute; right: 14px; bottom: 10px; font: 700 14px/1 var(--f-ui); color: var(--lamp); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.toast {
+  position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+  font: 500 14px/1.2 var(--f-ui); color: var(--paper); background: rgba(20, 17, 13, .9);
+  border: 1px solid var(--line); padding: 8px 12px; opacity: 0; transform: translateY(-6px);
+  transition: opacity .4s ease, transform .4s ease; pointer-events: none;
+}
+.toast.on { opacity: 1; transform: none; }
+.toast b { color: var(--lamp); font-weight: 700; }
+
+.end { text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.end h2 { font: 700 22px/1.2 var(--f-ui); color: var(--lamp); margin: 0; text-wrap: balance; }
+.end p { margin: 0; color: var(--dim); font-size: 16px; }
+.btn { margin-top: 10px; font: 700 16px/1 var(--f-ui); color: var(--night); background: var(--lamp); border: 0; padding: 12px 18px; cursor: pointer; }
+.btn:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
+
+@media (max-width: 480px) { .text { font-size: 17px; } .box { min-height: 120px; padding: 12px 14px 16px; } }
+@media (prefers-reduced-motion: reduce) {
+  .sprite, .bg, .cg, .choice, .toast { transition: none; animation: none; }
+  .choice { opacity: 1; transform: none; }
+  .more { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage" aria-live="polite">
+  <img class="bg" src="bg.webp" alt="Двор панельной девятиэтажки под дождём, лампа над подъездом">
+  <img class="cg" id="cg" src="cg.webp" alt="Глеб во дворе под осенним дождём">
+  <img class="sprite" id="sprite" src="char.webp" alt="Бородатый мужчина в зелёной парке">
+  <canvas id="rain"></canvas>
+  <div class="vignette"></div>
+  <div class="toast" id="toast"></div>
+  <div class="hud">
+    <div class="choices" id="choices"></div>
+    <div class="box" id="box">
+      <div class="name" id="name"></div>
+      <p class="text" id="text"></p>
+      <span class="more" id="more" hidden>▼</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Сценарий ----------
+// who: null = рассказчик; fx: show | hide | nod | shake | lean | unlean | cg
+const G = "Глеб", Q = "???";
+const SCRIPT = {
+  start: { lines: [
+    [null, "Конец октября. Девятый час, а темно, как в полночь."],
+    [null, "Двор пахнет мокрой листвой. Над подъездом гудит единственная лампа."],
+    [null, "Ты почти у двери, когда замечаешь его.", "show"],
+    [null, "Он стоит под берёзой без зонта, будто дождь его не касается. И смотрит прямо на тебя."],
+    [Q, "…Код от домофона не подскажете? Ключи остались у брата, а брат не берёт трубку."],
+  ], choices: [
+    ["Набрать код и придержать дверь", 2, "help"],
+    ["Спросить, в какую он квартиру", 1, "ask"],
+    ["Молча пройти мимо", -2, "pass"],
+  ]},
+  help: { lines: [
+    [null, "Ты набираешь код. Домофон пищит, дверь щёлкает.", "nod"],
+    [Q, "Спасибо. Тут обычно делают вид, что не слышат."],
+    [G, "Я Глеб. Брат с седьмого. А я так, в гостях у собственной растерянности."],
+  ], next: "canopy" },
+  ask: { lines: [
+    [Q, "Правильно спрашиваешь.", "nod"],
+    [Q, "Сорок вторая, Савельевы. Позвони, проверь."],
+    [null, "Ты звонишь. Из динамика сонный голос: «Глеб? Опять ключи?»"],
+    [G, "Видишь. Не маньяк. Просто растяпа."],
+  ], next: "canopy" },
+  pass: { lines: [
+    [null, "Ты проходишь мимо. Дверь тяжело хлопает за спиной.", "hide"],
+    [null, "Через мутное стекло видно, как он садится на мокрую лавку и поднимает воротник."],
+  ], choices: [
+    ["Вернуться и открыть ему", 1, "back"],
+    ["Подняться домой", 0, "end_closed"],
+  ]},
+  back: { lines: [
+    [null, "Ты толкаешь дверь обратно. Он поднимает голову.", "show"],
+    [G, "Передумали? Я Глеб. Мне в сорок вторую, честное слово."],
+  ], next: "canopy" },
+  canopy: { lines: [
+    [null, "Вы стоите под козырьком. Дождь стучит по жести, лампа мигает."],
+    [G, "Ты всегда так поздно возвращаешься?", "lean"],
+  ], choices: [
+    ["«Работа. А ты всегда так мокнешь?»", 2, "c_joke"],
+    ["«Это допрос?»", 1, "c_sharp"],
+    ["«Не твоё дело»", -2, "c_cold"],
+  ]},
+  c_joke: { lines: [
+    [G, "Только по вторникам. По средам я обычно сухой и скучный.", "unlean"],
+    [null, "Он впервые улыбается. Оказывается, у него очень тёплая улыбка."],
+  ], next: "offer" },
+  c_sharp: { lines: [
+    [G, "Ха. Нет. Допрос был бы с лампой в лицо. Лампа у нас, правда, уже есть.", "unlean"],
+  ], next: "offer" },
+  c_cold: { lines: [
+    [G, "Справедливо.", "shake"],
+    [null, "Он отворачивается и делает вид, что изучает объявления на двери."],
+  ], next: "offer" },
+  offer: { lines: [
+    [G, "Слушай… тут на углу шаверма, которая работает до двух."],
+    [G, "Брат всё равно не скоро проснётся. Составишь компанию?"],
+  ], choices: [
+    ["«Пойдём»", 1, "go"],
+    ["«В другой раз»", 0, "end_later"],
+  ]},
+  go: { branch: s => s >= 4 ? "end_good" : "end_walk" },
+  end_good: { lines: [
+    [null, "Вы идёте через двор, и дождь вдруг кажется не таким уж холодным."],
+    [G, "Только учти: я беру с двойным чесноком. Это проверка на серьёзность намерений."],
+    [null, "Ты смеёшься. Где-то наверху хлопает форточка, а лампа над подъездом, кажется, светит чуть ярче.", "cg"],
+  ], end: ["Концовка: Шаверма до двух", "Открыта сцена «Двор под дождём»"] },
+  end_walk: { lines: [
+    [null, "Вы идёте молча. Он держится на полшага позади, будто боится спугнуть."],
+    [G, "Спасибо, что не прогнали тогда, у двери. Серьёзно."],
+  ], end: ["Концовка: Просто попутчики", "Может быть, в следующий раз будет теплее"] },
+  end_later: { lines: [
+    [G, "Тогда до другого раза. Сорок вторая, если что.", "nod"],
+    [null, "Дверь закрывается. На лестнице ты почему-то оглядываешься."],
+  ], end: ["Концовка: Номер квартиры", "Сорок вторая. Ты это запомнишь"] },
+  end_closed: { lines: [
+    [null, "Лифт опять не работает. Ты поднимаешься пешком и не смотришь в окно."],
+    [null, "Утром на лавке никого нет. Только мокрые листья."],
+  ], end: ["Концовка: Закрытая дверь", "Иногда история не начинается"] },
+};
+
+// ---------- Движок ----------
+const $ = id => document.getElementById(id);
+const stage = $("stage"), sprite = $("sprite"), nameEl = $("name"), textEl = $("text"),
+      more = $("more"), choicesEl = $("choices"), box = $("box"), toast = $("toast"), cg = $("cg");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let node, idx, score, typing = null, waiting = false, finished = false;
+
+function start() {
+  score = 0; finished = false;
+  sprite.className = "sprite"; cg.classList.remove("on"); stage.classList.remove("focus");
+  box.innerHTML = '<div class="name" id="name"></div><p class="text" id="text"></p><span class="more" id="more" hidden>▼</span>';
+  rebind(); go("start");
+}
+function rebind() { window.nameRef = $("name"); window.textRef = $("text"); window.moreRef = $("more"); }
+function go(id) {
+  let n = SCRIPT[id];
+  if (n.branch) n = SCRIPT[n.branch(score)];
+  node = n; idx = 0; show();
+}
+function fx(f) {
+  if (!f) return;
+  if (f === "show") { sprite.classList.add("on"); stage.classList.add("focus"); }
+  if (f === "hide") { sprite.classList.remove("on", "lean"); stage.classList.remove("focus"); }
+  if (f === "nod" || f === "shake") { sprite.classList.remove(f); void sprite.offsetWidth; sprite.classList.add(f); }
+  if (f === "lean") sprite.classList.add("lean");
+  if (f === "unlean") sprite.classList.remove("lean");
+  if (f === "cg") { cg.classList.add("on"); sprite.classList.remove("on"); }
+}
+function show() {
+  const [who, text, f] = node.lines[idx];
+  fx(f);
+  const n = window.nameRef, t = window.textRef;
+  n.textContent = who || ""; n.className = "name" + (who ? "" : " narr");
+  t.className = "text" + (who ? "" : " narr");
+  if (sprite.classList.contains("on")) sprite.classList.toggle("listen", !who);
+  type(t, who ? "— " + text : text);
+}
+function type(el, s) {
+  window.moreRef.hidden = true; waiting = false;
+  if (reduce) { el.textContent = s; return done(); }
+  let i = 0; el.textContent = "";
+  clearInterval(typing);
+  typing = setInterval(() => { el.textContent = s.slice(0, ++i); if (i >= s.length) { clearInterval(typing); typing = null; done(); } }, 24);
+  el.dataset.full = s;
+}
+function done() {
+  waiting = true;
+  const last = idx === node.lines.length - 1;
+  if (last && node.choices) { waiting = false; showChoices(); }
+  else window.moreRef.hidden = false;
+}
+function advance() {
+  if (finished) return;
+  if (typing) { clearInterval(typing); typing = null; window.textRef.textContent = window.textRef.dataset.full; return done(); }
+  if (!waiting) return;
+  if (idx < node.lines.length - 1) { idx++; return show(); }
+  if (node.next) return go(node.next);
+  if (node.end) return ending(node.end);
+}
+function showChoices() {
+  choicesEl.innerHTML = "";
+  node.choices.forEach(([label, add, target], i) => {
+    const b = document.createElement("button");
+    b.className = "choice"; b.id = "choice-" + i; b.type = "button"; b.textContent = label;
+    b.style.animationDelay = (i * 80) + "ms";
+    b.addEventListener("click", e => {
+      e.stopPropagation(); score += add; choicesEl.innerHTML = "";
+      if (add >= 2) note("Глеб <b>это запомнит</b>");
+      else if (add < 0) note("Глеб <b>это запомнит…</b>");
+      go(target);
+    });
+    choicesEl.appendChild(b);
+  });
+  const first = choicesEl.querySelector("button"); if (first) first.focus({ preventScroll: true });
+}
+let toastTimer;
+function note(html) { toast.innerHTML = html; toast.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("on"), 2200); }
+function ending([title, sub]) {
+  finished = true;
+  box.innerHTML = `<div class="end"><h2>${title}</h2><p>${sub}</p><button class="btn" id="restart" type="button">Сыграть ещё раз</button></div>`;
+  $("restart").addEventListener("click", e => { e.stopPropagation(); start(); });
+}
+stage.addEventListener("click", advance);
+document.addEventListener("keydown", e => { if ((e.key === " " || e.key === "Enter") && !e.target.closest("button")) { e.preventDefault(); advance(); } });
+
+// ---------- Дождь ----------
+const cv = $("rain"), ctx = cv.getContext("2d");
+let drops = [];
+function size() {
+  const d = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * d; cv.height = innerHeight * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+  const n = Math.round(innerWidth * innerHeight / 5200);
+  drops = Array.from({ length: n }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, l: 8 + Math.random() * 14, v: 7 + Math.random() * 7, a: .12 + Math.random() * .22 }));
+}
+function rain() {
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  ctx.lineWidth = 1;
+  for (const p of drops) {
+    ctx.strokeStyle = `rgba(214, 205, 190, ${p.a})`;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.l * .22, p.y + p.l); ctx.stroke();
+    p.y += p.v; p.x -= p.v * .22;
+    if (p.y > innerHeight) { p.y = -20; p.x = Math.random() * (innerWidth + 60); }
+  }
+  requestAnimationFrame(rain);
+}
+addEventListener("resize", size); size();
+if (!reduce) rain();
+
+rebind(); start();
+</script>
+</body>
+</html>
