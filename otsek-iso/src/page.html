@@ -1,0 +1,164 @@
+<title>Отсек 7 в изометрии</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&family=PT+Sans:wght@400;700&display=swap">
+<style>
+/* Layout: the room fills the screen; a thin status strip on top, zoom at bottom right, a guard-post terminal slides up for dialogue */
+:root {
+  --void: #000000;
+  --panel: rgba(13, 15, 14, 0.94);
+  --steel: #2b302d;
+  --line: rgba(160, 175, 160, 0.22);
+  --text: #e2e5dc;
+  --dim: #8f988c;
+  --phosphor: #8fe39d;
+  --hazard: #e3b23c;
+  --alarm: #e0533f;
+  --f-label: "Russo One", "Arial Narrow", Impact, sans-serif;
+  --f-term: "IBM Plex Mono", "Courier New", monospace;
+  --f-text: "PT Sans", "Trebuchet MS", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--void); color: var(--text); overflow: hidden; font-family: var(--f-text); -webkit-tap-highlight-color: transparent; }
+#game { position: fixed; inset: 0; touch-action: none; }
+#game canvas { display: block; }
+
+#hud {
+  position: fixed; z-index: 10; left: 0; right: 0; top: 0; pointer-events: none;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; gap: 8px;
+}
+.chip {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; box-sizing: border-box;
+  padding: 7px 11px; background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  font: 400 14px/1 var(--f-label); letter-spacing: 0.05em; text-transform: uppercase;
+}
+#where { gap: 10px; }
+#where .tag { color: var(--hazard); }
+#where .sub { color: var(--dim); font: 400 13px/1 var(--f-term); letter-spacing: 0; text-transform: none; }
+.grow { flex: 1; }
+button.chip { cursor: pointer; }
+button.chip:hover { background: #1b201d; }
+button.chip svg { width: 16px; height: 16px; }
+button.chip.on { border-color: rgba(143, 227, 157, 0.55); }
+button.chip.on svg { color: var(--phosphor); }
+button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
+
+#zoom { position: fixed; z-index: 10; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 6px; }
+.zbtn { width: 42px; height: 42px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font: 400 22px/1 var(--f-label); cursor: pointer; }
+
+#hint {
+  position: fixed; z-index: 9; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-width: min(460px, calc(100% - 100px)); box-sizing: border-box;
+  padding: 10px 14px 10px 18px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--hazard);
+  font: 400 15px/1.4 var(--f-text); color: var(--text); pointer-events: none; transition: opacity .5s ease, transform .5s ease;
+}
+#hint b { color: var(--hazard); font-weight: 700; }
+#hint.gone { opacity: 0; transform: translateY(8px); }
+
+#bubbles { position: fixed; inset: 0; z-index: 8; pointer-events: none; overflow: hidden; }
+.bubble {
+  position: absolute; left: 0; top: 0; width: max-content; max-width: min(250px, 66vw);
+  padding: 7px 10px 8px; font: 400 15px/1.35 var(--f-text); color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 0 rgba(0,0,0,0.4);
+  opacity: 0; margin-top: -10px; transition: opacity .2s ease, margin-top .2s ease;
+}
+.bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 10px; height: 10px; background: #0f1210; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: translateX(-50%) rotate(45deg); }
+.bubble.radio { border-left: 4px solid var(--hazard); }
+.bubble.radio::before { content: "ПОСТ"; display: block; margin-bottom: 2px; font: 400 11px/1 var(--f-label); letter-spacing: 0.12em; color: var(--hazard); }
+.bubble.thought { font-style: italic; color: #cfd3c8; border-style: dashed; }
+.bubble.machine { font: 600 13px/1.35 var(--f-term); color: var(--phosphor); letter-spacing: 0.04em; border-color: rgba(143, 227, 157, 0.4); }
+.bubble.in { opacity: 1; margin-top: -16px; }
+.bubble.out { opacity: 0; margin-top: -22px; }
+
+#dlg {
+  position: fixed; z-index: 12; left: 0; right: 0; bottom: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: flex; justify-content: center; transform: translateY(24px); opacity: 0; transition: transform .25s ease, opacity .25s ease;
+}
+#dlg.in { transform: none; opacity: 1; }
+.term {
+  width: 100%; max-width: 760px; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; gap: 14px;
+  padding: 14px; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--steel);
+  box-shadow: 0 -10px 30px rgba(0,0,0,0.5); position: relative;
+}
+.term::before {
+  content: ""; position: absolute; left: -1px; right: -1px; top: -9px; height: 6px;
+  background: repeating-linear-gradient(-45deg, var(--hazard) 0 10px, #15130c 10px 20px); opacity: 0.85;
+}
+#portrait { width: 104px; height: 101px; display: block; image-rendering: pixelated; border: 1px solid rgba(143, 227, 157, 0.35); image-rendering: auto; }
+.who { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.who b { font: 400 15px/1 var(--f-label); letter-spacing: 0.08em; color: var(--hazard); }
+.who span { font: 400 12px/1 var(--f-term); color: var(--dim); }
+#dlgCheck { font: 600 11px/1 var(--f-term); color: var(--alarm); border: 1px solid rgba(224, 83, 63, 0.6); padding: 3px 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+.body { min-width: 0; }
+#dlgText { margin: 0 0 10px; min-height: 2.8em; font: 400 16px/1.45 var(--f-term); color: var(--phosphor); text-wrap: pretty; }
+#dlgOpts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#dlgOpts button {
+  width: 100%; display: flex; gap: 10px; align-items: baseline; text-align: left; cursor: pointer;
+  padding: 8px 10px; background: transparent; border: 1px solid transparent; color: var(--text);
+  font: 400 15px/1.35 var(--f-text);
+}
+#dlgOpts button:hover, #dlgOpts button:focus-visible { background: #1a1f1b; border-color: var(--line); outline: none; }
+#dlgOpts button:focus-visible { box-shadow: inset 4px 0 0 var(--hazard); }
+#dlgOpts .num { font: 600 13px/1 var(--f-term); color: var(--hazard); min-width: 1.2em; }
+#dlgOpts .tag { display: inline-block; margin-right: 8px; padding: 2px 6px; font: 600 11px/1.2 var(--f-term); color: #10130f; background: var(--phosphor); text-transform: uppercase; letter-spacing: 0.05em; }
+#dlgClose { position: absolute; right: 8px; top: 8px; width: 32px; height: 32px; background: transparent; border: 1px solid var(--line); color: var(--dim); font: 400 16px/1 var(--f-label); cursor: pointer; }
+
+#loader { position: fixed; inset: 0; z-index: 30; background: var(--void); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 0 16px; transition: opacity .6s ease; }
+#loader h1 { margin: 0; font: 400 26px/1.1 var(--f-label); letter-spacing: 0.08em; color: var(--hazard); text-align: center; text-wrap: balance; }
+#loader p { margin: 0; font: 400 14px/1.4 var(--f-term); color: var(--dim); text-align: center; }
+.track { width: min(260px, 70vw); height: 6px; background: #1a1d1b; }
+#loadbar { width: 0; height: 100%; background: repeating-linear-gradient(-45deg, var(--hazard) 0 8px, #6b5418 8px 16px); transition: width .2s ease; }
+#loader.done { opacity: 0; pointer-events: none; }
+body.talking #zoom, body.talking #hint { visibility: hidden; }
+
+@media (max-width: 560px) {
+  .chip { font-size: 13px; padding: 7px 9px; }
+  #where .sub, button.chip b { display: none; }
+  .term { grid-template-columns: 1fr; gap: 8px; padding: 12px; }
+  #portrait { width: 64px; height: 62px; position: absolute; top: 12px; left: 12px; }
+  .who { padding-left: 76px; padding-right: 34px; min-height: 62px; flex-direction: column; justify-content: center; align-items: flex-start; gap: 6px; margin-bottom: 10px; }
+  #dlgText { font-size: 15px; }
+  #dlgOpts button { font-size: 15px; padding: 9px 8px; }
+  #hint { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .bubble, #dlg, #hint, #loader { transition: none; } }
+</style>
+
+<div id="game"></div>
+<div id="bubbles"></div>
+
+<div id="hud">
+  <div class="chip" id="where"><span class="tag">Отсек 7</span><span class="sub">изометрия, 3D → пиксели</span></div>
+  <span class="grow"></span>
+  <button class="chip" id="sound" type="button" aria-pressed="false" aria-label="Звук">
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z"/><path d="M11 5.5c1.2 1.4 1.2 3.6 0 5M12.8 4c2 2.3 2 5.7 0 8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><b>тихо</b>
+  </button>
+</div>
+
+<div id="zoom"><button class="zbtn" id="zin" type="button" aria-label="Приблизить">+</button><button class="zbtn" id="zout" type="button" aria-label="Отдалить">−</button></div>
+<div id="hint">Нажми на пол — герой пойдёт. Нажми на <b>человека</b> или <b>шагоход</b> — подойдёт и заговорит.</div>
+
+<div id="dlg" hidden>
+  <div class="term" role="dialog" aria-label="Разговор с дежурным">
+    <canvas id="portrait" width="208" height="202" aria-hidden="true"></canvas>
+    <div class="body">
+      <div class="who"><b>Дежурный КПП</b><span>окно приёма № 3</span><span id="dlgCheck" hidden></span></div>
+      <p id="dlgText" aria-live="polite"></p>
+      <ol id="dlgOpts"></ol>
+    </div>
+    <button id="dlgClose" type="button" aria-label="Закончить разговор">×</button>
+  </div>
+</div>
+
+<div id="loader"><h1>Отсек 7</h1><p>Проверяем пропуска…</p><div class="track"><div id="loadbar"></div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<script>window.__META__ = /*META*/; window.__ATLAS__ = /*ATLAS*/; window.__PORTRAIT__ = '/*PORTRAIT*/';</script>
+<script>
+/*GAME*/
+</script>

@@ -1,0 +1,458 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>body{margin:0;background:#222}canvas{display:block}</style></head>
+<body>
+<script src="three.min.js"></script>
+<script>
+/* Isometric sprite renderer: builds low-poly characters and the room from primitives,
+   shoots them with an orthographic camera (2:1 dimetric, 30° elevation, 45° azimuth). */
+const SS = 4;                       // supersampling
+const PPM = 60 * SS;                // pixels per metre along the screen's horizontal axis
+const ELEV = 30 * Math.PI / 180, AZ = 45 * Math.PI / 180;
+const TEX = {};
+const texNames = ['door','wall_a','wall_b','cabinet','floor','grate','crate','barrel','bottles','hazard','box_panel','cart',
+  'leather','sweater','pants','blue','blue_pants','armor','armor_cloth','olive','olive_num','console','desk_top','drawers','face'];
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+document.body.appendChild(renderer.domElement);
+
+function loadTextures() {
+  const loader = new THREE.TextureLoader();
+  return Promise.all(texNames.map(n => new Promise(res => loader.load('../tex/' + n + '.png', t => {
+    t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 4;
+    TEX[n] = t; res();
+  }))));
+}
+function tex(n, rx = 1, ry = 1, rot = 0) { const t = TEX[n].clone(); t.repeat.set(rx, ry); t.rotation = rot; t.center.set(0.5, 0.5); t.needsUpdate = true; return t; }
+function mat(o) {
+  const m = new THREE.MeshLambertMaterial(Object.assign({ color: 0xffffff }, o));
+  return m;
+}
+const MAT = {};
+function mats() {
+  MAT.skin = mat({ color: 0xc89b7e });
+  MAT.hair = mat({ color: 0x3a2a1f });
+  MAT.leather = mat({ map: tex('leather', 1.5, 1.5), color: 0xe8c8a8 });
+  MAT.leatherDark = mat({ map: tex('leather', 2, 2), color: 0x9a8878 });
+  MAT.sweater = mat({ map: tex('sweater', 2, 2), color: 0xb0b0b8 });
+  MAT.pants = mat({ map: tex('pants', 2, 2), color: 0xd8d0c0 });
+  MAT.boot = mat({ color: 0x2b2420 });
+  MAT.blue = mat({ map: tex('blue', 2, 2), color: 0xa8b8f0 });
+  MAT.bluePants = mat({ map: tex('blue_pants', 2, 2), color: 0x9aa8dc });
+  MAT.red = mat({ color: 0x9a2a2a });
+  MAT.belt = mat({ color: 0x3a2f24 });
+  MAT.metal = mat({ color: 0x4a4e52 });
+  MAT.metalDark = mat({ color: 0x2e3134 });
+  MAT.armor = mat({ map: tex('armor', 2, 2), color: 0xb8c4dc });
+  MAT.armorCloth = mat({ map: tex('armor_cloth', 2, 2), color: 0xc8ccd8 });
+  MAT.gun = mat({ color: 0x3a3630 });
+  MAT.olive = mat({ map: tex('olive', 2, 2), color: 0xe6e2cc });
+  MAT.oliveNum = mat({ map: tex('olive_num', 1, 1), color: 0xeeeadb });
+  MAT.oliveDark = mat({ map: tex('olive', 2, 2), color: 0x8a8870 });
+  MAT.green = mat({ color: 0x40ff70, emissive: 0x30e060, emissiveIntensity: 1.0 });
+  MAT.redEye = mat({ color: 0xff3020, emissive: 0xff2010, emissiveIntensity: 1.0 });
+  MAT.amber = mat({ color: 0xffb040, emissive: 0xff9a20, emissiveIntensity: 0.9 });
+  MAT.lamp = mat({ color: 0xffffff, emissive: 0xf6f8ee, emissiveIntensity: 1.2 });
+  MAT.floor = mat({ map: tex('floor', 1, 1), color: 0xe8ecea });
+  MAT.grate = mat({ map: tex('grate', 1, 1), color: 0xc0c0c0 });
+  MAT.wallA = mat({ map: tex('wall_a', 1, 1), color: 0xcfd2cf });
+  MAT.wallB = mat({ map: tex('wall_b', 1, 1), color: 0xcfd2cf });
+  MAT.wallPlain = mat({ color: 0x5a5e5c });
+  MAT.door = mat({ map: tex('door', 1, 1), color: 0xe4e6e2 });
+  MAT.crate = mat({ map: tex('crate', 1, 1), color: 0xd8dcc8 });
+  MAT.crateTop = mat({ color: 0x55593f });
+  MAT.barrel = mat({ map: tex('barrel', 1, 1), color: 0xcacaca });
+  MAT.bottles = mat({ map: tex('bottles', 1, 1), color: 0xc8c8c8 });
+  MAT.hazard = mat({ map: tex('hazard', 1, 1), color: 0xffffff });
+  MAT.cabinet = mat({ map: tex('cabinet', 1, 1), color: 0xd4d6d2 });
+  MAT.boxPanel = mat({ map: tex('box_panel', 1, 1), color: 0xd0d0cc });
+  MAT.console = mat({ map: tex('console', 1, 1), color: 0xe0e4e0 });
+  MAT.deskTop = mat({ map: tex('desk_top', 1, 1), color: 0xd8d8d0 });
+  MAT.drawers = mat({ map: tex('drawers', 1, 1), color: 0xd0d0cc });
+  MAT.pipe = mat({ color: 0x5b5450 });
+  MAT.pipeRust = mat({ color: 0x6a4a36 });
+}
+
+/* ------------------------------------------------------------ helpers */
+const G = {};
+function box(w, h, d, m, x = 0, y = 0, z = 0) { const g = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); g.position.set(x, y, z); g.castShadow = g.receiveShadow = true; return g; }
+function cyl(rt, rb, h, m, x = 0, y = 0, z = 0, seg = 14) { const g = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m); g.position.set(x, y, z); g.castShadow = g.receiveShadow = true; return g; }
+function sph(r, m, x = 0, y = 0, z = 0, ws = 16, hs = 12) { const g = new THREE.Mesh(new THREE.SphereGeometry(r, ws, hs), m); g.position.set(x, y, z); g.castShadow = g.receiveShadow = true; return g; }
+function cap(r, len, m) { const g = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 4, 10), m); g.castShadow = g.receiveShadow = true; return g; }
+/* limb hanging down from a joint: capsule of total length `len` whose top is at the joint */
+function limb(r, len, m, taper) {
+  const j = new THREE.Group();
+  const geo = taper ? new THREE.CylinderGeometry(r, r * taper, len, 10) : new THREE.CapsuleGeometry(r, len - 2 * r, 4, 10);
+  const g = new THREE.Mesh(geo, m); g.position.y = -len / 2; g.castShadow = g.receiveShadow = true; j.add(g);
+  if (!taper) {} else { const c = sph(r, m, 0, 0, 0, 10, 8); j.add(c); }
+  j.len = len; return j;
+}
+function grp(x = 0, y = 0, z = 0) { const g = new THREE.Group(); g.position.set(x, y, z); return g; }
+
+/* ------------------------------------------------------------ humans */
+function makeHuman(S) {
+  const H = S.h, u = H / 1.8, w = S.w || 1;
+  const P = {};
+  const root = grp();
+  P.root = root;
+  const hipY = 0.93 * u, torsoLen = 0.52 * u, headR = 0.115 * u;
+  P.pelvis = grp(0, hipY, 0); root.add(P.pelvis);
+  P.pelvisMesh = box(0.34 * u * w, 0.16 * u, 0.22 * u * w, S.pantsM, 0, 0.03 * u, 0); P.pelvis.add(P.pelvisMesh);
+  P.spine = grp(0, 0.08 * u, 0); P.pelvis.add(P.spine);
+  // torso
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.19 * u * w, 0.165 * u * w, torsoLen, 12), S.coatM);
+  torso.scale.z = 0.72; torso.position.y = torsoLen / 2; torso.castShadow = torso.receiveShadow = true; P.spine.add(torso); P.torso = torso;
+  P.chest = grp(0, torsoLen, 0); P.spine.add(P.chest);
+  if (S.coat) { // long coat skirt from the waist down
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.19 * u * w, 0.23 * u * w, S.coatLen * u, 12, 1, true), S.coatM);
+    skirt.scale.z = 0.72; skirt.position.y = -S.coatLen * u / 2 + 0.1 * u; skirt.castShadow = skirt.receiveShadow = true;
+    skirt.material = skirt.material.clone(); skirt.material.side = THREE.DoubleSide; P.spine.add(skirt); P.skirt = skirt;
+    const lapel = box(0.2 * u, 0.12 * u, 0.05 * u, S.collarM, 0, torsoLen - 0.06 * u, 0.14 * u * w); P.spine.add(lapel);
+  }
+  if (S.belt) { const b = cyl(0.2 * u * w, 0.2 * u * w, 0.05 * u, MAT.belt, 0, 0.1 * u, 0, 12); b.scale.z = 0.75; P.spine.add(b); }
+  // head
+  P.neck = grp(0, 0.02 * u, 0); P.chest.add(P.neck);
+  P.head = grp(0, 0.05 * u, 0); P.neck.add(P.head);
+  const head = sph(headR, S.skinM || MAT.skin, 0, headR, 0); head.scale.set(0.9, 1.05, 0.95); P.head.add(head); P.headMesh = head;
+  if (S.hair) { const hair = sph(headR * 1.02, MAT.hair, 0, headR + 0.01 * u, -0.01 * u, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55); hair.scale.set(0.92, 1.0, 0.95); P.head.add(hair); }
+  if (S.helmet) {
+    const hm = sph(headR * 1.25, S.helmetM, 0, headR * 1.05, 0); P.head.add(hm);
+    const visor = box(headR * 1.1, 0.045 * u, 0.04 * u, MAT.amber, 0, headR * 1.15, headR * 1.15); P.head.add(visor);
+    const mask = cyl(0.045 * u, 0.045 * u, 0.09 * u, MAT.metalDark, 0, headR * 0.65, headR * 1.15); mask.rotation.x = Math.PI / 2; P.head.add(mask);
+    const hose = cyl(0.02 * u, 0.02 * u, 0.3 * u, MAT.metalDark, 0.1 * u, -0.05 * u, 0.13 * u); hose.rotation.z = 0.7; hose.rotation.x = 0.3; P.head.add(hose);
+  }
+  if (S.headset) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(headR * 1.02, 0.018 * u, 8, 20, Math.PI), MAT.metalDark); band.position.y = headR; band.rotation.z = Math.PI; band.rotation.y = Math.PI / 2; P.head.add(band);
+    [-1, 1].forEach(s => { const cup = cyl(0.05 * u, 0.05 * u, 0.04 * u, MAT.metalDark, s * headR * 0.98, headR * 0.95, 0); cup.rotation.z = Math.PI / 2; P.head.add(cup); });
+    const lens = cyl(0.032 * u, 0.032 * u, 0.03 * u, S.lensM, -headR * 0.42, headR * 1.08, headR * 0.95); lens.rotation.x = Math.PI / 2; P.head.add(lens);
+    const arm = box(0.02 * u, 0.02 * u, 0.1 * u, MAT.metalDark, -headR * 0.75, headR * 1.08, headR * 0.6); P.head.add(arm);
+  }
+  if (S.eyepiece) {
+    const lens = cyl(0.03 * u, 0.03 * u, 0.04 * u, MAT.redEye, -headR * 0.4, headR * 1.08, headR * 0.92); lens.rotation.x = Math.PI / 2; P.head.add(lens);
+    const ring = cyl(0.038 * u, 0.038 * u, 0.025 * u, MAT.metalDark, -headR * 0.4, headR * 1.08, headR * 0.9); ring.rotation.x = Math.PI / 2; P.head.add(ring);
+    const strap = box(0.02 * u, 0.025 * u, headR * 1.9, MAT.metalDark, -headR * 0.95, headR * 1.08, 0); P.head.add(strap);
+  }
+  // arms
+  const shW = 0.21 * u * w;
+  ['L', 'R'].forEach((side, i) => {
+    const s = i ? 1 : -1;
+    const sh = grp(s * shW, torsoLen - 0.04 * u, 0); P.spine.add(sh); P['shoulder' + side] = sh;
+    if (S.pauldron) sh.add(sph(0.085 * u * w, S.pauldronM, s * 0.02 * u, 0.01 * u, 0, 10, 8));
+    const ua = limb(0.055 * u * w, 0.3 * u, S.sleeveM); sh.add(ua); P['upperArm' + side] = ua;
+    if (S.armband && side === 'L') { const ab = cyl(0.06 * u * w, 0.06 * u * w, 0.07 * u, MAT.red, 0, -0.12 * u, 0, 10); ua.add(ab); }
+    const el = grp(0, -0.3 * u, 0); ua.add(el); P['elbow' + side] = el;
+    const fa = limb(0.048 * u * w, 0.27 * u, S.sleeveM); el.add(fa);
+    const hand = sph(0.045 * u, S.gloveM || MAT.skin, 0, -0.3 * u, 0, 8, 6); el.add(hand); P['hand' + side] = hand;
+  });
+  // legs
+  const hipW = 0.1 * u * w;
+  ['L', 'R'].forEach((side, i) => {
+    const s = i ? 1 : -1;
+    const hip = grp(s * hipW, 0, 0); P.pelvis.add(hip); P['hip' + side] = hip;
+    const th = limb(0.075 * u * w, 0.45 * u, S.pantsM); hip.add(th);
+    const kn = grp(0, -0.45 * u, 0); th.add(kn); P['knee' + side] = kn;
+    if (S.kneepad) kn.add(sph(0.07 * u * w, S.pauldronM, 0, -0.02 * u, 0.03 * u, 8, 6));
+    const sh = limb(0.062 * u * w, 0.42 * u, S.shinM || S.pantsM); kn.add(sh);
+    const foot = box(0.11 * u, 0.08 * u, 0.26 * u, MAT.boot, 0, -0.42 * u + 0.0 * u, 0.06 * u); kn.add(foot);
+    const bootTop = cyl(0.07 * u * w, 0.075 * u * w, 0.14 * u, MAT.boot, 0, -0.33 * u, 0, 10); kn.add(bootTop);
+  });
+  if (S.pack) { const bp = box(0.24 * u, 0.3 * u, 0.12 * u, S.pauldronM, 0, torsoLen * 0.55, -0.19 * u * w); P.spine.add(bp); const tank = cyl(0.045 * u, 0.045 * u, 0.26 * u, MAT.metal, 0.08 * u, torsoLen * 0.5, -0.27 * u * w, 10); P.spine.add(tank); }
+  if (S.chestplate) { const cp = box(0.32 * u * w, 0.28 * u, 0.1 * u, S.pauldronM, 0, torsoLen * 0.62, 0.12 * u * w); P.spine.add(cp); }
+  if (S.rifle) {
+    const r = grp(0.02 * u, 0.33 * u, 0.2 * u * w); P.spine.add(r); P.rifle = r;
+    const body = box(0.5 * u, 0.07 * u, 0.06 * u, MAT.gun); r.add(body);
+    const barrel = cyl(0.015 * u, 0.015 * u, 0.3 * u, MAT.gun, 0.38 * u, 0.01 * u, 0, 8); barrel.rotation.z = Math.PI / 2; r.add(barrel);
+    const magz = box(0.06 * u, 0.14 * u, 0.04 * u, MAT.gun, 0.02 * u, -0.09 * u, 0); r.add(magz);
+    const stock = box(0.16 * u, 0.06 * u, 0.05 * u, MAT.gun, -0.3 * u, -0.01 * u, 0); r.add(stock);
+    r.rotation.y = -0.35; r.rotation.z = 0.12;
+  }
+  if (S.holster) { const h = box(0.05 * u, 0.16 * u, 0.07 * u, MAT.belt, -0.2 * u * w, -0.02 * u, 0.05 * u); P.spine.add(h); }
+  if (S.device) { const d = box(0.07 * u, 0.09 * u, 0.04 * u, MAT.metalDark, 0.13 * u * w, 0.12 * u, 0.13 * u * w); P.spine.add(d); const led = box(0.02 * u, 0.02 * u, 0.01 * u, MAT.green, 0.13 * u * w, 0.13 * u, 0.152 * u * w); P.spine.add(led); }
+  root.P = P; root.u = u;
+  return root;
+}
+
+/* pose a human: anim ∈ walk|idle|sit|sitType|sitLook, t ∈ [0,1) */
+function poseHuman(h, anim, t, extra = {}) {
+  const P = h.P, u = h.u, two = Math.PI * 2;
+  const z = n => { P[n].rotation.set(0, 0, 0); };
+  ['pelvis', 'spine', 'neck', 'head', 'shoulderL', 'shoulderR', 'elbowL', 'elbowR', 'hipL', 'hipR', 'kneeL', 'kneeR'].forEach(z);
+  P.pelvis.position.set(0, 0.93 * u, 0);
+  if (anim === 'walk') {
+    const A = 0.55 * (extra.stride || 1), phL = two * t, phR = phL + Math.PI;
+    const leg = (hip, knee, ph) => { hip.rotation.x = -A * Math.sin(ph); knee.rotation.x = 0.9 * Math.max(0, Math.sin(ph - Math.PI)) * (extra.stride || 1); };
+    leg(P.hipL, P.kneeL, phL); leg(P.hipR, P.kneeR, phR);
+    const arm = (sh, el, ph) => { sh.rotation.x = 0.45 * Math.sin(ph) * (extra.armSwing == null ? 1 : extra.armSwing); el.rotation.x = -0.35 - 0.2 * Math.max(0, Math.sin(ph)); };
+    arm(P.shoulderL, P.elbowL, phR); arm(P.shoulderR, P.elbowR, phL);
+    P.pelvis.position.y += 0.025 * u * (1 - Math.abs(Math.cos(phL)));
+    P.pelvis.rotation.y = 0.08 * Math.sin(phL);
+    P.spine.rotation.y = -0.1 * Math.sin(phL); P.spine.rotation.x = -0.06;
+    P.head.rotation.x = 0.03;
+    if (extra.hold) holdPose(P, extra.hold);
+  } else if (anim === 'idle') {
+    const b = Math.sin(two * t);
+    P.spine.rotation.x = -0.02 + 0.015 * b; P.spine.scale.y = 1 + 0.012 * b;
+    P.shoulderL.rotation.x = 0.05; P.shoulderR.rotation.x = 0.05; P.elbowL.rotation.x = -0.25; P.elbowR.rotation.x = -0.25;
+    P.shoulderL.rotation.z = 0.08; P.shoulderR.rotation.z = -0.08;
+    P.head.rotation.y = extra.headYaw || 0;
+    if (extra.hold) holdPose(P, extra.hold);
+    if (extra.shift) { P.pelvis.position.x = extra.shift * 0.04 * u; P.pelvis.rotation.z = -extra.shift * 0.05; P.spine.rotation.z = extra.shift * 0.06; P.hipL.rotation.z = extra.shift > 0 ? -0.1 : 0; P.hipR.rotation.z = extra.shift < 0 ? 0.1 : 0; }
+  } else if (anim.startsWith('sit')) {
+    P.pelvis.position.y = 0.52 * u;
+    P.hipL.rotation.x = -Math.PI / 2 + 0.1; P.hipR.rotation.x = -Math.PI / 2 + 0.1; P.hipL.rotation.z = -0.08; P.hipR.rotation.z = 0.08;
+    P.kneeL.rotation.x = Math.PI / 2 - 0.05; P.kneeR.rotation.x = Math.PI / 2 - 0.05;
+    const typing = anim === 'sitType', b = Math.sin(two * t);
+    P.spine.rotation.x = typing ? -0.12 : -0.03;
+    P.shoulderL.rotation.x = -1.0 + (typing ? 0.08 * Math.sin(two * t * 2) : 0); P.shoulderR.rotation.x = -1.0 + (typing ? 0.08 * Math.cos(two * t * 2) : 0);
+    P.elbowL.rotation.x = -0.9; P.elbowR.rotation.x = -0.9;
+    P.head.rotation.x = typing ? 0.3 : -0.08 + 0.02 * b;
+    P.head.rotation.y = extra.headYaw || 0;
+    P.spine.scale.y = 1 + 0.01 * b;
+  }
+}
+function holdPose(P, kind) {
+  if (kind === 'rifle') {
+    P.shoulderL.rotation.set(-0.9, 0.5, -0.1); P.elbowL.rotation.set(-1.2, 0, 0);
+    P.shoulderR.rotation.set(-0.55, -0.6, 0.2); P.elbowR.rotation.set(-1.0, 0, 0);
+  }
+}
+
+/* ------------------------------------------------------------ mech */
+function makeMech() {
+  const root = grp(), P = {}; root.P = P;
+  P.body = grp(0, 1.55, 0); root.add(P.body);
+  const b = box(1.0, 0.95, 0.7, MAT.olive); P.body.add(b);
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.85), MAT.oliveNum); front.position.set(0, -0.02, 0.352); P.body.add(front);
+  P.body.add(box(0.5, 0.25, 0.5, MAT.oliveDark, 0, 0.58, -0.05));   // head block
+  const grill = box(0.3, 0.14, 0.02, MAT.metalDark, 0, 0.58, 0.21); P.body.add(grill);
+  [[-0.2, 0.75], [0.25, 0.8]].forEach(([x, y]) => { const a = cyl(0.015, 0.015, 0.4, MAT.metalDark, x, y, -0.1, 6); P.body.add(a); });
+  [[0.41, 0.3], [0.41, 0.16]].forEach(([x, y], i) => { const l = sph(i ? 0.035 : 0.045, MAT.green, x, y, 0.33, 8, 6); P.body.add(l); });
+  [[-0.38, -0.3], [0.38, -0.3]].forEach(([x, y]) => P.body.add(box(0.2, 0.2, 0.02, MAT.redEye, x, y, -0.36)));
+  // arms
+  const mkArm = (s, gat) => {
+    const sh = grp(s * 0.58, 0.3, 0); P.body.add(sh);
+    sh.add(sph(0.17, MAT.oliveDark, 0, 0, 0, 10, 8));
+    const ua = box(0.26, 0.5, 0.28, MAT.olive, 0, -0.32, 0); sh.add(ua);
+    const el = grp(0, -0.62, 0); sh.add(el);
+    el.add(sph(0.13, MAT.metalDark, 0, 0, 0, 8, 6));
+    const fa = box(0.22, 0.5, 0.24, MAT.olive, 0, -0.3, 0); el.add(fa);
+    if (gat) {
+      el.rotation.x = -1.35;
+      const hub = cyl(0.16, 0.16, 0.5, MAT.olive, 0, -0.75, 0, 10); el.add(hub);
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; el.add(cyl(0.03, 0.03, 0.45, MAT.metalDark, Math.cos(a) * 0.09, -1.05, Math.sin(a) * 0.09, 6)); }
+    } else {
+      el.rotation.x = -0.25;
+      const claw = grp(0, -0.6, 0); el.add(claw);
+      [-1, 1].forEach(k => { const f = box(0.06, 0.26, 0.08, MAT.metalDark, k * 0.08, -0.12, 0); f.rotation.z = -k * 0.3; claw.add(f); });
+    }
+    return sh;
+  };
+  P.armL = mkArm(-1, true); P.armR = mkArm(1, false);
+  // digitigrade legs
+  P.legs = {};
+  [-1, 1].forEach((s, i) => {
+    const hip = grp(s * 0.32, -0.42, 0); P.body.add(hip);
+    hip.add(sph(0.15, MAT.metalDark, 0, 0, 0, 10, 8));
+    const th = box(0.24, 0.55, 0.3, MAT.olive, 0, -0.3, 0.02); hip.add(th);
+    const kn = grp(0, -0.56, 0); hip.add(kn);
+    kn.add(sph(0.12, MAT.metalDark, 0, 0, 0, 8, 6));
+    const sh = box(0.2, 0.5, 0.24, MAT.olive, 0, -0.27, 0); kn.add(sh);
+    const an = grp(0, -0.52, 0); kn.add(an);
+    an.add(sph(0.1, MAT.metalDark, 0, 0, 0, 8, 6));
+    const foot = box(0.3, 0.14, 0.5, MAT.oliveDark, 0, -0.07, 0.08); an.add(foot);
+    P.legs[i ? 'R' : 'L'] = { hip, kn, an };
+  });
+  return root;
+}
+function poseMech(m, anim, t) {
+  const P = m.P;
+  P.body.position.set(0, 1.55, 0); P.body.rotation.set(0, 0, 0);
+  const setLeg = (L, lift, a1) => { L.hip.rotation.x = -0.35 + a1; L.kn.rotation.x = 0.75 - a1 * 0.5; L.an.rotation.x = -0.4 - a1 * 0.5; L.hip.position.y = -0.42 + lift; L.kn.rotation.x += lift * 2.2; L.an.rotation.x -= lift * 2.2; };
+  if (anim === 'shift') {   // weight shifts to the right leg and back over 12 frames
+    const k = Math.sin(Math.PI * t), side = t < 0.5 ? -1 : 1;
+    const dx = 0.14 * Math.sin(Math.PI * 2 * t);
+    P.body.position.x = dx; P.body.rotation.z = -dx * 0.25;
+    const lift = Math.max(0, Math.sin(Math.PI * 2 * t)) * 0.08, liftR = Math.max(0, -Math.sin(Math.PI * 2 * t)) * 0.08;
+    setLeg(P.legs.L, liftR, 0); setLeg(P.legs.R, lift, 0);
+  } else if (anim === 'sigh') {
+    const k = t < 0.3 ? Math.sin(Math.PI * t / 0.6) : t < 0.45 ? 1 : 1 - Math.sin(Math.PI * (t - 0.45) / 1.1);
+    P.body.position.y = 1.55 - 0.2 * k; P.body.rotation.x = 0.1 * k;
+    setLeg(P.legs.L, 0, 0.25 * k); setLeg(P.legs.R, 0, 0.25 * k);
+  } else { const b = Math.sin(Math.PI * 2 * t); P.body.position.y = 1.55 + 0.012 * b; setLeg(P.legs.L, 0, 0); setLeg(P.legs.R, 0, 0); }
+}
+
+/* ------------------------------------------------------------ room props */
+function makeDesk() {
+  const g = grp();
+  const top = box(1.7, 0.06, 0.75, MAT.deskTop, 0, 0.74, 0); g.add(top);
+  g.add(box(0.5, 0.7, 0.7, MAT.drawers, -0.58, 0.35, 0)); g.add(box(0.5, 0.7, 0.7, MAT.drawers, 0.58, 0.35, 0));
+  g.add(box(0.6, 0.08, 0.7, MAT.metalDark, 0, 0.67, 0));
+  const con = box(0.7, 0.5, 0.2, MAT.console, -0.4, 1.02, -0.26); g.add(con);
+  g.add(box(0.7, 0.2, 0.22, MAT.metalDark, -0.4, 0.84, -0.26));
+  const radar = cyl(0.11, 0.11, 0.03, MAT.green, -0.6, 1.08, -0.15, 16); radar.rotation.x = Math.PI / 2; g.add(radar);
+  const arm = cyl(0.015, 0.015, 0.7, MAT.metalDark, 0.2, 1.1, -0.3, 6); g.add(arm);
+  const lampArm = cyl(0.015, 0.015, 0.5, MAT.metalDark, 0.0, 1.45, -0.2, 6); lampArm.rotation.z = Math.PI / 2; g.add(lampArm);
+  g.add(box(0.3, 0.05, 0.14, MAT.lamp, -0.2, 1.43, -0.2));
+  [[0.25, 0xa02020], [0.33, 0x2b3a6a], [0.41, 0x7a2424], [0.49, 0x8a7a3a]].forEach(([x, c]) => g.add(box(0.06, 0.3, 0.26, mat({ color: c }), x + 0.1, 0.92, -0.2)));
+  g.add(box(0.25, 0.08, 0.3, mat({ color: 0xd8cfae }), -0.35, 0.81, 0.08));
+  g.add(cyl(0.04, 0.035, 0.1, mat({ color: 0x8a8a8a }), 0.1, 0.82, 0.1, 8));
+  return g;
+}
+function makeStool() { const g = grp(); g.add(cyl(0.2, 0.2, 0.06, MAT.metalDark, 0, 0.48, 0, 14)); g.add(cyl(0.025, 0.025, 0.4, MAT.metal, 0, 0.26, 0, 6)); for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; const leg = cyl(0.015, 0.015, 0.26, MAT.metal, Math.cos(a) * 0.12, 0.05, Math.sin(a) * 0.12, 5); leg.rotation.z = Math.PI / 2; leg.rotation.y = -a; g.add(leg); } return g; }
+function makeCrate(w, h, d) { const g = grp(); const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [MAT.crate, MAT.crate, MAT.crateTop, MAT.crateTop, MAT.crate, MAT.crate]); b.position.y = h / 2; b.castShadow = b.receiveShadow = true; g.add(b); return g; }
+function makeBarrel() { const g = grp(); g.add(cyl(0.3, 0.3, 0.9, MAT.barrel, 0, 0.45, 0, 16)); g.add(cyl(0.31, 0.31, 0.05, MAT.metalDark, 0, 0.88, 0, 16)); return g; }
+function makeBottles() { const g = grp(); [[-0.2, 0.2], [0.2, 0.2], [0, -0.2]].forEach(([x, z]) => { g.add(cyl(0.16, 0.16, 1.5, MAT.bottles, x, 0.75, z, 12)); g.add(cyl(0.05, 0.05, 0.15, MAT.metalDark, x, 1.55, z, 8)); }); return g; }
+function makeCart() { const g = grp(); g.add(box(0.6, 0.05, 0.5, MAT.metalDark, 0, 0.15, 0)); [[-0.25, -0.2], [0.25, -0.2], [-0.25, 0.2], [0.25, 0.2]].forEach(([x, z]) => g.add(cyl(0.06, 0.06, 0.04, MAT.metalDark, x, 0.06, z, 8))); [[-0.15, 0], [0.15, 0]].forEach(([x, z]) => { g.add(cyl(0.12, 0.12, 0.9, MAT.cart, x, 0.6, z, 10)); g.add(cyl(0.04, 0.04, 0.1, MAT.metalDark, x, 1.1, z, 6)); }); g.add(box(0.04, 0.8, 0.04, MAT.metalDark, -0.28, 0.55, -0.23)); g.add(box(0.04, 0.8, 0.04, MAT.metalDark, 0.28, 0.55, -0.23)); g.add(box(0.6, 0.04, 0.04, MAT.metalDark, 0, 0.95, -0.23)); return g; }
+function makeCabinet() { const g = grp(); g.add(box(1.0, 1.9, 0.45, MAT.cabinet, 0, 0.95, 0)); g.add(box(0.06, 0.06, 0.02, MAT.green, -0.3, 1.5, 0.23)); g.add(box(0.06, 0.06, 0.02, MAT.redEye, -0.15, 1.5, 0.23)); g.add(box(0.06, 0.06, 0.02, MAT.amber, 0.0, 1.5, 0.23)); return g; }
+function makeBoxPanel() { const g = grp(); g.add(box(0.5, 0.7, 0.2, MAT.boxPanel, 0, 0.35, 0)); g.add(box(0.05, 0.05, 0.02, MAT.green, -0.1, 0.5, 0.11)); g.add(box(0.05, 0.05, 0.02, MAT.redEye, 0.1, 0.5, 0.11)); return g; }
+
+const ROOM = { W: 9, D: 13, H: 3.2 };
+function makeRoomStatic() {
+  const g = grp();
+  const { W, D, H } = ROOM;
+  // floor tiles 1x1 m
+  const floorGeo = new THREE.PlaneGeometry(W, D, 1, 1); floorGeo.rotateX(-Math.PI / 2);
+  const fm = MAT.floor.clone(); fm.map = tex('floor', W, D); fm.map.needsUpdate = true;
+  const floor = new THREE.Mesh(floorGeo, fm); floor.position.set(W / 2, 0, D / 2); floor.receiveShadow = true; g.add(floor);
+  // two grating strips along the room
+  [2.2, 6.8].forEach(x => { const gg = new THREE.PlaneGeometry(0.8, D - 2, 1, 1); gg.rotateX(-Math.PI / 2); const gm = MAT.grate.clone(); gm.map = tex('grate', 1, (D - 2) / 1.5); const m = new THREE.Mesh(gg, gm); m.position.set(x, 0.005, D / 2 + 0.5); m.receiveShadow = true; g.add(m); });
+  // hazard stripe before the door (on the floor, along the NW wall)
+  const hz = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 2.8), MAT.hazard); hz.rotation.x = -Math.PI / 2; hz.rotation.z = Math.PI / 2; hz.position.set(0.2, 0.006, 6.5); g.add(hz);
+  // NW wall (x = 0), door centred at z = 6.5
+  const wallNW = grp(); g.add(wallNW);
+  const segs = [[0, 4.6, 'wallA'], [4.6, 1.3, 'wallB'], [7.7, 1.3, 'wallB'], [9.0, 4.0, 'wallA']];
+  segs.forEach(([z0, len, m]) => { const mm = MAT[m].clone(); mm.map = tex(m === 'wallA' ? 'wall_a' : 'wall_b', len / 1.2, 1); const w = new THREE.Mesh(new THREE.PlaneGeometry(len, H), mm); w.rotation.y = Math.PI / 2; w.position.set(0, H / 2, z0 + len / 2); w.receiveShadow = true; wallNW.add(w); });
+  const doorWall = new THREE.Mesh(new THREE.PlaneGeometry(1.8, H), MAT.wallPlain); doorWall.rotation.y = Math.PI / 2; doorWall.position.set(0, H / 2, 6.5); wallNW.add(doorWall);
+  const frame = cyl(1.35, 1.35, 0.25, MAT.metalDark, 0.1, 1.3, 6.5, 32); frame.rotation.z = Math.PI / 2; wallNW.add(frame);
+  const door = cyl(1.2, 1.2, 0.12, MAT.door, 0.3, 1.3, 6.5, 32); door.rotation.z = Math.PI / 2; door.rotation.y = 0; wallNW.add(door);
+  // NE wall (z = 0)
+  const wallNE = grp(); g.add(wallNE);
+  [[0, 3.0, 'wall_b'], [3.0, 3.0, 'wall_a'], [6.0, 3.0, 'wall_b']].forEach(([x0, len, t]) => { const mm = MAT.wallA.clone(); mm.map = tex(t, len / 1.2, 1); const w = new THREE.Mesh(new THREE.PlaneGeometry(len, H), mm); w.position.set(x0 + len / 2, H / 2, 0); w.receiveShadow = true; wallNE.add(w); });
+  // pipes along both walls
+  [[0.25, 2.4, 'NW'], [0.25, 2.65, 'NW'], [0.2, 2.5, 'NE']].forEach(([off, y, side], i) => { const m = i === 1 ? MAT.pipeRust : MAT.pipe; if (side === 'NW') { const p = cyl(0.08, 0.08, D, m, off, y, D / 2, 10); p.rotation.x = Math.PI / 2; g.add(p); } else { const p = cyl(0.08, 0.08, W, m, W / 2, y, off, 10); p.rotation.z = Math.PI / 2; g.add(p); } });
+  // wall lamps
+  [[0.08, 2.3, 2.5, 'NW'], [0.08, 2.3, 10.5, 'NW'], [2.5, 2.3, 0.08, 'NE'], [6.5, 2.3, 0.08, 'NE']].forEach(([x, y, z, side]) => { const l = box(side === 'NW' ? 0.08 : 0.7, 0.12, side === 'NW' ? 0.7 : 0.08, MAT.lamp, x, y, z); g.add(l); });
+  // door lamps
+  [5.2, 7.8].forEach(z => g.add(box(0.06, 0.6, 0.1, MAT.lamp, 0.06, 1.9, z)));
+  // small wall boxes
+  g.add(box(0.05, 0.5, 0.4, MAT.boxPanel, 0.05, 1.3, 9.3)); g.add(box(0.4, 0.5, 0.05, MAT.boxPanel, 7.8, 1.3, 0.05));
+  return g;
+}
+const PROPS = {   // id: [x, z, rotY, builder, footprint w×d (m)]
+  crate1: [1.2, 1.6, 0.2, () => makeCrate(1.1, 0.8, 0.8), 1.1, 0.8],
+  crate2: [1.3, 1.6, 0.2, () => { const c = makeCrate(0.8, 0.6, 0.6); c.position.y = 0.8; return c; }, 0, 0],
+  crate3: [7.4, 11.4, -0.2, () => makeCrate(0.9, 0.7, 0.7), 0.9, 0.7],
+  crate4: [3.9, 0.7, 0.1, () => makeCrate(1.0, 0.8, 0.8), 1.0, 0.8],
+  cabinet: [2.3, 0.35, 0, makeCabinet, 1.0, 0.5],
+  barrel: [8.2, 1.3, 0, makeBarrel, 0.7, 0.7],
+  bottles: [8.3, 2.6, 0, makeBottles, 0.8, 0.8],
+  cart: [0.8, 11.2, 0.3, makeCart, 0.7, 0.6],
+  boxpanel: [0.25, 11.9, 0, () => { const b = makeBoxPanel(); b.rotation.y = Math.PI / 2; return b; }, 0.3, 0.5],
+  desk: [2.4, 4.1, Math.PI / 2, makeDesk, 0.9, 1.8],
+  stool: [1.75, 4.1, 0, makeStool, 0.4, 0.4],
+};
+
+/* ------------------------------------------------------------ camera & render */
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -50, 50);
+function placeCamera(cx, cy, cz, wPx, hPx, offY = 0) {
+  camera.position.set(cx + Math.cos(ELEV) * Math.sin(AZ) * 30, cy + Math.sin(ELEV) * 30, cz + Math.cos(ELEV) * Math.cos(AZ) * 30);
+  camera.up.set(0, 1, 0); camera.lookAt(cx, cy, cz);
+  camera.left = -wPx / 2 / PPM; camera.right = wPx / 2 / PPM; camera.top = hPx / 2 / PPM + offY / PPM; camera.bottom = -hPx / 2 / PPM + offY / PPM;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wPx, hPx, false);
+}
+function lights(intensity = 1) {
+  const key = new THREE.DirectionalLight(0xfff4e0, 1.6 * intensity); key.position.set(-4, 12, 5); key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048); const s = 12; key.shadow.camera.left = -s; key.shadow.camera.right = s; key.shadow.camera.top = s; key.shadow.camera.bottom = -s; key.shadow.camera.near = 1; key.shadow.camera.far = 40; key.shadow.bias = -0.0015;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xc8d4e8, 0.5 * intensity); fill.position.set(8, 6, -4); scene.add(fill);
+  scene.add(new THREE.HemisphereLight(0xdde4ee, 0x3a3630, 0.9 * intensity));
+  return key;
+}
+function clearScene() { while (scene.children.length) scene.remove(scene.children[0]); }
+
+/* world → screen (pixels, supersampled), same formula the game uses */
+function toScreen(x, y, z) { return { sx: (x - z) / Math.SQRT2 * PPM, sy: (x + z) / Math.SQRT2 * PPM * Math.sin(ELEV) - y * Math.cos(ELEV) * PPM }; }
+
+const CHARS = {};
+function buildChars() {
+  CHARS.player = makeHuman({ h: 1.82, coat: true, coatLen: 0.72, coatM: MAT.leather, collarM: MAT.sweater, sleeveM: MAT.leather, pantsM: MAT.pants, hair: true, eyepiece: true, belt: true, holster: true });
+  CHARS.clerk = makeHuman({ h: 1.78, coatM: MAT.blue, sleeveM: MAT.blue, pantsM: MAT.bluePants, headset: true, lensM: MAT.green, belt: true, armband: true, device: true });
+  CHARS.guard = makeHuman({ h: 1.92, w: 1.25, coatM: MAT.armorCloth, sleeveM: MAT.armorCloth, pantsM: MAT.armorCloth, helmet: true, helmetM: MAT.armor, pauldron: true, pauldronM: MAT.armor, kneepad: true, chestplate: true, pack: true, rifle: true, gloveM: MAT.boot, skinM: MAT.armor });
+  CHARS.mech = makeMech();
+}
+
+window.ready = (async () => { await loadTextures(); mats(); buildChars(); return true; })();
+
+/* job: {kind:'char', who, dir(0..7), anim, t, extra} → PNG dataURL; frame box fixed per character */
+const FRAME = { player: [2.4, 2.4], clerk: [2.4, 2.4], guard: [2.6, 2.6], mech: [3.6, 3.6] };
+window.renderChar = function (who, dir, anim, t, extra = {}) {
+  clearScene();
+  lights(1);
+  const c = CHARS[who]; scene.add(c);
+  c.rotation.y = (45 - 45 * dir) * Math.PI / 180;
+  if (who === 'mech') poseMech(c, anim, t); else poseHuman(c, anim, t, extra);
+  // shadow catcher: invisible floor receiving shadows
+  const sc = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.ShadowMaterial({ opacity: 0.45 })); sc.rotation.x = -Math.PI / 2; sc.receiveShadow = true; scene.add(sc);
+  const [fw, fh] = FRAME[who];
+  const wPx = Math.round(fw * PPM), hPx = Math.round(fh * PPM);
+  placeCamera(0, 0, 0, wPx, hPx, hPx * 0.40);
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(scene, camera);
+  return { png: renderer.domElement.toDataURL('image/png'), w: wPx, h: hPx, originX: wPx / 2, originY: hPx / 2 + hPx * 0.40 };
+};
+
+/* the room: static background and each prop on its own layer, all from one camera */
+window.roomCamera = function () {
+  const { W, D, H } = ROOM;
+  const corners = [[0, 0, 0], [W, 0, 0], [0, 0, D], [W, 0, D], [0, H, 0], [W, H, 0], [0, H, D]].map(c => toScreen(...c));
+  const minX = Math.min(...corners.map(c => c.sx)) - 0.3 * PPM, maxX = Math.max(...corners.map(c => c.sx)) + 0.3 * PPM;
+  const minY = Math.min(...corners.map(c => c.sy)) - 0.3 * PPM, maxY = Math.max(...corners.map(c => c.sy)) + 0.3 * PPM;
+  return { minX, maxX, minY, maxY, w: Math.round(maxX - minX), h: Math.round(maxY - minY) };
+};
+window.renderRoom = function (what) {
+  clearScene();
+  const key = lights(1);
+  // a few warm point lights by the lamps
+  [[0.4, 2.2, 2.5], [0.4, 2.2, 10.5], [2.5, 2.2, 0.4], [6.5, 2.2, 0.4], [0.5, 1.9, 6.5]].forEach(([x, y, z]) => { const p = new THREE.PointLight(0xffe6c0, 0.9, 6, 1.6); p.position.set(x, y, z); scene.add(p); });
+  const cam = roomCamera();
+  const { W, D } = ROOM;
+  // centre the camera so that world origin maps where we want: we'll place camera at the room centre and shift by offsets
+  const cx = W / 2, cz = D / 2;
+  const centre = toScreen(cx, 0, cz);
+  const wPx = cam.w, hPx = cam.h;
+  const offX = (cam.minX + cam.maxX) / 2 - centre.sx, offY = (cam.minY + cam.maxY) / 2 - centre.sy;
+  camera.position.set(cx + Math.cos(ELEV) * Math.sin(AZ) * 30, Math.sin(ELEV) * 30, cz + Math.cos(ELEV) * Math.cos(AZ) * 30);
+  camera.up.set(0, 1, 0); camera.lookAt(cx, 0, cz);
+  camera.left = -wPx / 2 / PPM + offX / PPM; camera.right = wPx / 2 / PPM + offX / PPM; camera.top = hPx / 2 / PPM - offY / PPM; camera.bottom = -hPx / 2 / PPM - offY / PPM;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wPx, hPx, false);
+  renderer.setClearColor(0x000000, 0);
+  const stat = makeRoomStatic();
+  if (what === 'static') { scene.add(stat); }
+  else {
+    // props: render the prop with the static room present but invisible except shadows? keep it simple: prop alone + shadow catcher
+    const sc = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.ShadowMaterial({ opacity: 0.35 })); sc.rotation.x = -Math.PI / 2; sc.position.set(W / 2, 0.002, D / 2); sc.receiveShadow = true; scene.add(sc);
+    const [x, z, ry, build] = PROPS[what]; const p = build(); p.position.set(x, 0, z); p.rotation.y = ry; scene.add(p);
+  }
+  renderer.render(scene, camera);
+  return { png: renderer.domElement.toDataURL('image/png'), w: wPx, h: hPx, minX: cam.minX, minY: cam.minY };
+};
+window.renderPortrait = function () {
+  clearScene(); lights(1.1);
+  const c = CHARS.clerk; scene.add(c); c.rotation.y = 45 * Math.PI / 180 - 0.35; poseHuman(c, 'sitLook', 0.2, {});
+  const wPx = 208 * 2, hPx = 202 * 2, P = PPM * 3.2;
+  camera.position.set(Math.cos(ELEV) * Math.sin(AZ) * 30, 1.22 + Math.sin(ELEV) * 30, Math.cos(ELEV) * Math.cos(AZ) * 30);
+  camera.up.set(0, 1, 0); camera.lookAt(0, 1.22, 0);
+  camera.left = -wPx / 2 / P; camera.right = wPx / 2 / P; camera.top = hPx / 2 / P; camera.bottom = -hPx / 2 / P;
+  camera.updateProjectionMatrix(); renderer.setSize(wPx, hPx, false); renderer.setClearColor(0x0d100e, 1); renderer.render(scene, camera);
+  return { png: renderer.domElement.toDataURL('image/png') };
+};
+window.propList = function () { return Object.fromEntries(Object.entries(PROPS).map(([k, v]) => [k, { x: v[0], z: v[1], fw: v[4], fd: v[5] }])); };
+window.worldInfo = function () { return { PPM: PPM / SS, SS, ELEV, ROOM }; };
+</script>
+</body></html>
