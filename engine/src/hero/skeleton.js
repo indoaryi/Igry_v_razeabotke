@@ -154,6 +154,27 @@
       drop: 0, lift: 0
     };
   }
+  // getting into a machine: sitting on the hatch sill (legs inside, leaning forward), in the seat with hands on the levers
+  function poseSill(lean, D) {
+    return {
+      hips: [0, 0, 0], spine: [lean, 0, 0], chest: [0.05, 0, 0], neck: [-lean * 0.6, 0, 0], head: [-0.05, 0, 0],
+      lThigh: [-1.35, 0, 0.12], lShin: [1.2, 0, 0], lFoot: [0.15, 0, -0.08], rThigh: [-1.35, 0, -0.12], rShin: [1.2, 0, 0], rFoot: [0.15, 0, 0.08],
+      lHand: handHang(D, 1), lPole: [0.4, -0.1, -1], rHand: handHang(D, -1), rPole: [-0.4, -0.1, -1], drop: 0, lift: 0
+    };
+  }
+  function posePilot(t, D, lean) {
+    const p = poseSit(t, D);
+    p.spine = [lean - 0.06, 0, 0]; p.lHand = [0.19, -0.08, 0.36]; p.rHand = [-0.19, -0.08, 0.36];
+    return p;
+  }
+  // from → to by k: stand (at the hatch), climb, sill, seat; back: a step backwards while lifting the hatch
+  function poseBoard(a, D, t) {
+    const get = (k) => k === 'climb' ? poseClimb(a.ph || 0, D) : k === 'sill' ? poseSill(a.lean || 0, D) : k === 'seat' ? posePilot(t, D, a.lean || 0) : poseIdle(t, D);
+    let p = get(a.from);
+    if (a.to && a.k > 0) p = lerpPose(p, get(a.to), a.k);
+    if (a.back > 0) p = lerpPose(p, poseWalk(a.bph || 0, D), a.back);
+    return p;
+  }
   function lerpPose(a, b, t) {
     const o = {};
     for (const k in a) { const x = a[k], y = b[k]; o[k] = Array.isArray(x) ? x.map((v, i) => v + (y[i] - v) * t) : x + (y - x) * t; }
@@ -274,6 +295,7 @@
       else if (a.kind === 'climb') q = poseClimb(a.ph || 0, D);
       else if (a.kind === 'slide') q = poseSlideSit(tq, D);
       else if (a.kind === 'kneel') q = poseKneel(tq, D);
+      else if (a.kind === 'board') q = poseBoard(a, D, tq);
       if (q) p = lerpPose(p, q, a.w);
     }
     const st = { smoke: null, drink: null, punch: null, shoot: null, thr: null };

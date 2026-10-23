@@ -1,11 +1,13 @@
-  // ================= pigeons: they peck by the first entrance and fly off when the hero comes close =================
-  const PIG_HOME = { x0: 3.5, x1: 5.7, z0: 18.9, z1: 23.6 };
-  const PERCHES = [[3.0, 2.93, 23.3], [3.35, 2.93, 24.7], [6.4, 2.36, 21.6], [7.9, 2.36, 21.6], [5.2, 2.47, 11.3], [6.9, 2.47, 10.6]];
-  const PIGEONS = [];
+  // ================= pigeons: they peck where the location says (MAP.pigeons) and fly off when the hero comes close =================
+  let PIG_HOME = { x0: 0, x1: 0, z0: 0, z1: 0 }, PERCHES = [], PIGEONS = [];
   const pigR = rng(4242);
   function pigTarget() { return [lerp(PIG_HOME.x0, PIG_HOME.x1, pigR()), lerp(PIG_HOME.z0, PIG_HOME.z1, pigR())]; }
   function initPigeons() {
-    for (let i = 0; i < 4; i++) {
+    PIGEONS = [];
+    const cfg = MAP.pigeons;
+    if (!cfg) { PERCHES = []; return; }
+    PIG_HOME = cfg.home; PERCHES = cfg.perches;
+    for (let i = 0; i < (cfg.n || 4); i++) {
       const [x, z] = pigTarget();
       PIGEONS.push({ p: [x, 0, z], yaw: pigR() * 6.28, state: 'walk', t: 0, tgt: pigTarget(), timer: 1 + pigR() * 2, flap: 0, from: null, to: null, dur: 1, col: i % 2, perch: null });
     }
@@ -15,7 +17,8 @@
     for (const b of PIGEONS) {
       b.t += dt;
       const dh = Math.hypot(hero.x - b.p[0], hero.z - b.p[2]);
-      if ((b.state === 'walk' || b.state === 'peck') && (dh < 1.7 || (dh < 3.2 && hero.run) || hero.shoot.on)) {
+      if ((b.state === 'walk' || b.state === 'peck') && (dh < 1.7 || (dh < 3.2 && hero.run) || hero.shoot.on || (hero.vehicle && dh < 6) || b.scare)) {
+        b.scare = false;
         const free = PERCHES.filter((q) => !PIGEONS.some((o) => o !== b && o.perch === q));
         const q = free[(pigR() * free.length) | 0] || PERCHES[0];
         b.perch = q; takeOff(b, [q[0] + (pigR() - 0.5) * 0.3, q[1], q[2] + (pigR() - 0.5) * 0.3], 1.1 + pigR() * 0.6);

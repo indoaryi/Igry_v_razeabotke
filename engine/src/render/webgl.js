@@ -265,6 +265,37 @@ void main(){
     else if (ty < 0.56) { if (abs(vL.x) > 0.6) { useB = true; idx = fract(vL.x * 7.0) < 0.5 ? 2 : 3; } }
     else if (ty < 0.68) { useB = true; idx = fract(vL.y * 12.0) < 0.5 ? 3 : 2; }
     else if (ty < 0.76) { if (vL.y > 0.35 && abs(vL.x + 0.3) < 0.18) { useB = true; idx = 4; } }
+  } else if (uPat == 50) {            // machine armour in part-local space, so it travels with the part: plate seams, rivets along them, chipped paint, rust runs, mud
+    float hs = uP.x > 0.0 ? abs(fract(vL.y * uP.x + 0.5) - 0.5) / uP.x : 9.0;
+    float vs = uP.y > 0.0 ? abs(fract((vL.x + vL.z) * uP.y + 0.5) - 0.5) / uP.y : 9.0;
+    float sd = min(hs, vs);
+    if (sd < 0.01) { idx = max(idx - 2, 0); forced = true; }
+    else if (uP.z > 0.0 && sd < 0.032 && sd > 0.016 && fract((hs < vs ? (vL.x + vL.z) : vL.y) * uP.z) < 0.25) { idx = min(idx + 1, 4); forced = true; }
+    if (!forced) {
+      float ch = h3(floor(vL * 37.0) + vSeed * 7.0);
+      if (ch > 1.0 - uP.w * 0.06) useB = true;
+      else if (ch < uP.w * 0.05) shift = 1;
+      float rs = h3(vec3(floor((vL.x + vL.z) * 32.0), 3.0, floor(vSeed * 50.0)));
+      if (uP.x > 0.0 && rs > 0.86 && fract(vL.y * uP.x + 0.5) > 0.55 && fract(vL.y * uP.x + 0.5) < 0.55 + uP.w * 0.35) useB = true;
+      if (uR.y > 0.0 && h3(floor(vL * 24.0) + 1.7) < uR.y) shift = -1;
+    }
+  } else if (uPat == 51) {            // car greenhouse: roof, pillars and window line in body colour (B), glass with sky streaks elsewhere
+    float sx = abs(n.x), sz = abs(n.z);
+    bool roof = n.y > 0.72;
+    bool pillar = (sx > 0.22 && sz > 0.22 && abs(sx - sz) < 0.45) || (sx > 0.6 && abs(vL.z - uP.x) < uP.y) || (sx > 0.6 && uP.z > -9.0 && abs(vL.z - uP.z) < uP.y * 0.8);
+    if (roof || pillar || vL.y < uP.w + 0.03) useB = true;
+    else {
+      forced = true;
+      float st = fract((vL.z * 0.6 + vL.y * 1.3) * 1.6 + vSeed * 5.0);
+      idx = st < 0.09 ? 4 : (st < 0.15 ? 3 : 1);
+      if (vL.y < uP.w + 0.17 && st >= 0.15) idx = 0;
+    }
+  } else if (uPat == 52) {            // car body: door shut lines at local z = p.x, p.y, p.z above y = r.y; road grime below y = r.x
+    if (abs(n.x) > 0.5 && vL.y > uR.y) {
+      float d1 = min(abs(vL.z - uP.x), min(abs(vL.z - uP.y), abs(vL.z - uP.z)));
+      if (d1 < 0.014) { idx = max(idx - 2, 0); forced = true; }
+    }
+    if (!forced && vL.y < uR.x && h3(floor(vL * 30.0)) < (uR.x - vL.y) * 3.0) shift = -1;
   } else if (uPat == 39) {            // a grass tuft on a card facing the camera: a blade per screen column, dome-shaped, lighter tips, some dry
     float col = floor(dot(uRV, vW) * uSc);
     float hb = h3(vec3(col, floor(vSeed * 97.0), 5.0));
@@ -372,6 +403,7 @@ uniform float uBias;
 uniform vec3 uShadeMul;                // ground colour in the shade
 uniform vec4 uTarget;                  // walk target: x, z, radius, on
 uniform int uGrid;
+uniform vec2 uMapWH;
 out vec4 o;
 const ivec2 OFF[4] = ivec2[4](ivec2(1,0), ivec2(-1,0), ivec2(0,1), ivec2(0,-1));
 int idOf(vec4 t){ return int(t.r * 255.0 + 0.5); }
@@ -402,7 +434,7 @@ vec4 groundHere(){
     c = mix(c * uShadeMul, c, lit);
   }
   float pw = 0.0105 * uView2.z;
-  if (uGrid == 1 && xz.x >= -pw && xz.y >= -pw && xz.x <= 30.0 + pw && xz.y <= 30.0 + pw) {
+  if (uGrid == 1 && xz.x >= -pw && xz.y >= -pw && xz.x <= uMapWH.x + pw && xz.y <= uMapWH.y + pw) {
     vec2 d = abs(xz - floor(xz + 0.5));
     if (min(d.x, d.y) < pw) c = mix(c, vec3(1.0, 1.0, 0.94) * gc.a, 0.28);
   }
@@ -473,10 +505,14 @@ void main(){
     return { p, u };
   }
   const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil', 'uWind', 'uTime', 'uShadowOn', 'uLVP', 'uShadowTex', 'uSun', 'uAmb', 'uPU', 'uPV', 'uLeaf']);
-  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid']);
+  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid', 'uMapWH']);
   const fsVAO = gl.createVertexArray();
-  const LIGHT = nrm(add(add(scl(RV, -0.9), [0, 0.9, 0]), scl(FV, -0.25)));
-  const SUN = nrm([-0.15, 1, 0.72]);           // the sun stands over the front of the yard, shadows fall up and to the right
+  // the light that picks each face's tone: from the upper left of the screen and a little from the viewer;
+  // a location may mirror it to come from the upper right (see setSun) — then leaf highlights move to the right too
+  const LIGHT_LEFT = nrm(add(add(scl(RV, -0.9), [0, 0.9, 0]), scl(FV, -0.25)));
+  const LIGHT_RIGHT = nrm(add(add(scl(RV, 0.9), [0, 0.9, 0]), scl(FV, -0.25)));
+  let LIGHT = LIGHT_LEFT, LEAF_PU = RV;
+  let SUN = nrm([-0.15, 1, 0.72]);             // the sun stands over the front of the yard, shadows fall up and to the right; each location may move it
   const LINE = [22 / 255, 16 / 255, 14 / 255];
   const GROUND_SHADE = [0.6, 0.66, 0.8];        // ground colour multiplier in the shade: darker and cooler
   const SIL = [0.89, 0.6, 0.27];
@@ -574,7 +610,12 @@ void main(){
   const NO_WIND = new Float32Array(4);
 
   // ---- the sun: a depth map seen from the sun, fitted to what the camera sees ----
-  const LZ = scl(SUN, -1), LX = nrm(cross([0, 1, 0], LZ)), LY = cross(LZ, LX);
+  let LZ = scl(SUN, -1), LX = nrm(cross([0, 1, 0], LZ)), LY = cross(LZ, LX);
+  function setSun(dir, light) {
+    SUN = nrm(dir); LZ = scl(SUN, -1); LX = nrm(cross([0, 1, 0], LZ)); LY = cross(LZ, LX);
+    LIGHT = light === 'right' ? LIGHT_RIGHT : Array.isArray(light) ? nrm(light) : LIGHT_LEFT;
+    LEAF_PU = dot(LIGHT, RV) > 0 ? scl(RV, -1) : RV;
+  }
   const SHADOW = { res: Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE)), fbo: null, tex: null, vp: new Float32Array(16), bias: 0.0005, texel: 0.02 };
   {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -661,6 +702,20 @@ void main(){
     gl.activeTexture(gl.TEXTURE0);
   }
 
+  // a few pixels of the ground changed (a footprint): send just them; the overview's mipmaps are redone lazily
+  let groundMipsStale = false;
+  function groundPatch(img, x, y) {
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, groundTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, img.width, img.height, gl.RGBA, gl.UNSIGNED_BYTE, img.data);
+    gl.activeTexture(gl.TEXTURE0);
+    groundMipsStale = true;
+  }
+  function freshGroundMips() {
+    if (!groundMipsStale) return;
+    groundMipsStale = false;
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, groundTex); gl.generateMipmap(gl.TEXTURE_2D); gl.activeTexture(gl.TEXTURE0);
+  }
   // L = { shadow: [...], main: [...], hero: [...] }
   // o = { xray, hover, fade: [x, y, r2, depth], time, sun: { rect, hmax } (real shadows from L.shadow),
   //       ground: { x0, y0, w, h, mode } (draw the ground under the scene), target: [x, z], grid }
@@ -691,7 +746,7 @@ void main(){
     gl.uniformMatrix4fv(u.uLVP, false, SHADOW.vp);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(u.uShadowTex, 4);
     gl.uniform3fv(u.uSun, SUN); gl.uniform3f(u.uAmb, 0.36, 0.14, SHADOW.bias);
-    gl.uniform3fv(u.uPU, RV); gl.uniform3fv(u.uPV, UV);
+    gl.uniform3fv(u.uPU, LEAF_PU); gl.uniform3fv(u.uPV, UV);
     gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex); gl.uniform1i(u.uLeaf, 6);
     if (!sunOn && L.shadow && L.shadow.length) {
       gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
@@ -725,6 +780,7 @@ void main(){
     gl.uniform4f(PP.u.uShadowCol, 0.035, 0.05, 0.11, 0.3);
     gl.uniform4f(PP.u.uFade, fade[0], fade[1], fade[2], fade[3]);
     const gr = o.ground;
+    if (gr && gr.mode === 2) freshGroundMips();
     gl.uniform1i(PP.u.uGroundOn, gr ? gr.mode : 0);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, groundTex); gl.uniform1i(PP.u.uGroundTex, 5);
     if (gr) { gl.uniform4f(PP.u.uGMap, gr.x0, gr.y0, gr.w, gr.h); gl.uniform4f(PP.u.uView2, v.ax, v.ay, S / v.s, v.h); }
@@ -736,6 +792,7 @@ void main(){
     const tg = o.target;
     gl.uniform4f(PP.u.uTarget, tg ? tg[0] : 0, tg ? tg[1] : 0, 0.32, tg ? 1 : 0);
     gl.uniform1i(PP.u.uGrid, o.grid ? 1 : 0);
+    gl.uniform2f(PP.u.uMapWH, GW, GH);
     gl.bindVertexArray(fsVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.SCISSOR_TEST);
     gl.bindVertexArray(null);

@@ -38,6 +38,14 @@ const SCEN = {
   facade: { at: [20.5, 3.4], view: 'near' },
   walk: { at: [12.0, 20.2], view: 'near', run: 'walk', steps: [0.9] },
   raw: { at: [14.2, 20.4], view: 'near', run: 'raw' },
+  y2far: { loc: 'yard2', at: [27.6, 7.2], view: 'far' },
+  y2all: { loc: 'yard2', at: [27.6, 7.2], view: 'all' },
+  y2cars: { loc: 'yard2', at: [10.2, 15.2], view: 'near' },
+  y2carsfar: { loc: 'yard2', at: [11.5, 16.5], view: 'far' },
+  y2garage: { loc: 'yard2', at: [18.6, 15.4], view: 'near' },
+  y2birch: { loc: 'yard2', at: [27.9, 22.5], view: 'near' },
+  y2suit: { loc: 'yard2', at: [25.6, 10.4], view: 'near' },
+  y2house: { loc: 'yard2', at: [9.8, 9.5], view: 'far' },
   grid: { at: [14.2, 20.4], view: 'far', run: 'grid' },
   facade2: { at: [4.6, 12.6], view: 'near' }
 };
@@ -84,15 +92,18 @@ const frames = (n) => page.evaluate((n) => new Promise((res) => { let k = 0; con
 for (const name of names) {
   const s = SCEN[name];
   if (!s) { console.log('unknown scenario', name); continue; }
-  await page.evaluate(({ s }) => {
+  await page.evaluate(({ s, js }) => {
     const Y = window.__yard;
+    const want = s.loc || 'yard1';
+    if (Y.MAP.id !== want) Y.enterLocation(want, 'start');
     Y.standUp && Y.standUp();
     Y.hero.act = null; Y.hero.path.length = 0; Y.hero.queue.length = 0; Y.hero.target = null;
     Y.hero.x = s.at[0]; Y.hero.z = s.at[1]; Y.hero.y = 0;
     for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach']) { Y.hero[k].on = false; Y.hero[k].w = 0; Y.hero[k].t = 0; }
     Y.setView(s.view);
+    if (js) Y.ev(js);
     Y.step(0.2);
-  }, { s });
+  }, { s, js: opt.js || s.js || '' });
   await frames(3);
   const steps = s.steps || [0.6];
   if (s.run === 'smoke') await page.evaluate(() => window.__yard.startSmoke());
@@ -107,6 +118,7 @@ for (const name of names) {
     await frames(3);
     const dbg = await page.evaluate(() => window.__yard.dbg());
     const file = path.join(outDir, `${prefix}${name}${steps.length > 1 ? '-' + (++i) : ''}.png`);
+    await page.evaluate(() => document.getElementById('stageBox').scrollIntoView({ block: 'start' }));
     const box = await page.locator('#stage').boundingBox();
     await page.screenshot({ path: file, clip: box, timeout: 600000 });
     console.log(`${name}: ${path.basename(file)} — ${dbg.VW}×${dbg.VH} art px ×${dbg.kDev}, ${dbg.drawCalls} draw calls, ${Date.now() - t1} ms`);

@@ -8,8 +8,15 @@
   let ground = null;
   let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
   let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
-  const CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
-  const WORLD_B = { x0: -2130, x1: 2130, y0: -1140, y1: HH * (GW + GH) + 20 };
+  // how far the camera may go and what the overview shows; both depend on the location (see fitWorldBounds)
+  let CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
+  let WORLD_B = { x0: -2130, x1: 2130, y0: -1140, y1: HH * (GW + GH) + 20 };
+  function fitWorldBounds() {
+    let x0 = -HW * GH, x1 = HW * GW, y0 = 0, y1 = HH * (GW + GH);
+    for (const i of INST) if (i.chunks.length && i.type !== 'meadow' && i.type !== 'wires') { x0 = Math.min(x0, i.sr[0]); x1 = Math.max(x1, i.sr[2]); y0 = Math.min(y0, i.sr[1]); }
+    CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: Math.max(y0 - 20, -420), y1: HH * (GW + GH) + 30 };
+    WORLD_B = { x0: Math.min(x0 - 30, -HW * GH - 30), x1: Math.max(x1 + 30, HW * GW + 30), y0: y0 - 30, y1: HH * (GW + GH) + 20 };
+  }
   function fitStage() {
     const cssW = stageEl.clientWidth || 600, dpr = window.devicePixelRatio || 1;
     const desk = cssW >= 700;
@@ -43,7 +50,7 @@
       for (const it of itemsFor(inst)) { if (vis) (it.xr ? occ : main).push(it); if (shv && it.shadow) shadow.push(it); }
     }
     for (const it of dynItems()) { main.push(it); if (it.shadow) shadow.push(it); }
-    const hl = heroList(rig.B, rig.pose);
+    const hl = heroHidden() ? [] : heroList(rig.B, rig.pose);
     for (const it of hl) shadow.push(it);
     return { main, shadow, occ, hero: hl };
   }
@@ -53,16 +60,17 @@
     if (tk === tickNow) return false;
     tickNow = tk;
     for (const s of byType('swing')) if (s.def.seat) s.dyn.thetaD = s.dyn.theta;
+    machinesSnap();
     return true;
   }
   function drawStage(dt, clock) {
     snapshotTick(clock);
     const rig = heroRig(true);
-    const hs = heroScreen(rig);
+    const hs = heroHidden() && hero.vehicle ? wpx(machineFocus(hero.vehicle)) : heroScreen(rig);
     // the camera leans towards what the hero is busy with: the hoop while throwing, the cans while shooting
     let fs = hs;
-    const hp = byType('hoop')[0], ball = hp.dyn.ball;
-    if (hero.thr.on || ball.state === 'fly') fs = lerpV([...hs, 0], [...wpx(localPt(hp, hp.built.rim)), 0], 0.5);
+    const hp = byType('hoop')[0], ball = hp && hp.dyn.ball;
+    if (ball && (hero.thr.on || ball.state === 'fly')) fs = lerpV([...hs, 0], [...wpx(localPt(hp, hp.built.rim)), 0], 0.5);
     else if ((hero.shoot.on || hero.shoot.w > 0) && hero.aimAt) fs = lerpV([...hs, 0], [...wpx(hero.aimAt.pos), 0], 0.45);
     const over = viewMode === 'all';
     let v, rect, ox, oy, sc;
@@ -91,7 +99,7 @@
       const chest = xf(rig.B.chest, [0, 0.05, 0]);
       const cs = [hs[0] * v.s / S + v.ax, hs[1] * v.s / S + v.ay];
       const r = 64 * v.s / S;
-      const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
+      const fade = heroHidden() ? [0, 0, 0, 0] : [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
       drawCalls = 0;
       render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
         xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 },
@@ -104,7 +112,11 @@
   }
   function dynKey() {
     const g = byType('garage')[0], h = byType('hoop')[0];
-    return g.dyn.cans.map((c) => c.state[0] + c.pos.map((x) => x.toFixed(2)).join(',') + c.rot.toFixed(1)).join(';') + '|' + h.dyn.ball.state + h.dyn.ball.pos.map((x) => x.toFixed(2)).join(',');
+    let k = '';
+    if (g && g.dyn.cans) k += g.dyn.cans.map((c) => c.state[0] + c.pos.map((x) => x.toFixed(2)).join(',') + c.rot.toFixed(1)).join(';');
+    if (h && h.dyn.ball) k += '|' + h.dyn.ball.state + h.dyn.ball.pos.map((x) => x.toFixed(2)).join(',');
+    for (const c of byType('car')) if (c.dyn.alarm > 0) k += '|a' + c.id + (Math.floor(c.dyn.alarm * 3) & 1);
+    return k + machineKey();
   }
   function rememberPoints(rig) {
     const { B, pose } = rig;
@@ -133,6 +145,10 @@
   }
   function compose(lv) {
     if (!lv) return;
+    composeScene(lv);
+    if (stageFade > 0) { sctx.fillStyle = `rgba(18, 21, 24, ${stageFade.toFixed(3)})`; sctx.fillRect(0, 0, stageEl.width, stageEl.height); }
+  }
+  function composeScene(lv) {
     const { v, ox, oy, sc, over } = lv;
     sctx.imageSmoothingEnabled = false;
     sctx.clearRect(0, 0, stageEl.width, stageEl.height);
@@ -150,7 +166,8 @@
         scx.fillStyle = '#ffcf5a'; for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) scx.fillRect(x + dx, y + dy, 1, 1);
         scx.fillStyle = '#fff6dc'; for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) scx.fillRect(x + dx, y + dy, 1, 1);
       }
-      sctx.drawImage(scene, 0, 0, VW, VH, 0, 0, VW * kDev, VH * kDev);
+      const sx = Math.round(shakeNow()) * kDev, sy = Math.round(shakeNow(1)) * kDev;
+      sctx.drawImage(scene, 0, 0, VW, VH, sx, sy, VW * kDev, VH * kDev);
     } else {
       sctx.drawImage(layer, 0, 0);
       drawFx(sctx, kDev, ox, oy);

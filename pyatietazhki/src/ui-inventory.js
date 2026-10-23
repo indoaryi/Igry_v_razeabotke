@@ -46,6 +46,7 @@
   function onItem(it) {
     if (it.id === 'cigs') { if (hero.smoke.on) hero.smoke.on = false; else startSmoke(); renderItems(); return; }
     if (it.id === 'atom') { if (hero.drink.on) hero.drink.on = false; else startDrink(); renderItems(); return; }
+    if (hero.inside || (hero.act && hero.act.kind === 'board')) { toast('В костюме не переоденешься — места нет.'); return; }
     if (it.id === 'armor' && equip.body !== 'armor' && (busyAct() || onTower())) { toast('Броня сюда не влезет. Сначала слезь.'); return; }
     if (it.slot === 'body') equip.body = equip.body === it.id ? null : it.id;
     else if (it.slot === 'head') equip.head = equip.head === it.id ? null : it.id;

@@ -8,7 +8,8 @@
     x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
     sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
     smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
-    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false }
+    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
+    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
   };
   const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
   const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
@@ -164,7 +165,7 @@
       const c = hero.queue[0];
       if (c.type === 'path') {
         hero.queue.shift();
-        const pts = findPath([hero.x, hero.z], c.to);
+        const pts = findPath([hero.x, hero.z], c.to, hero.vehicle ? NAV.big : NAV.hero);
         if (!pts) { if (c.fail) c.fail(); continue; }
         let L = 0, p = [hero.x, hero.z];
         for (const q of pts) { L += Math.hypot(q[0] - p[0], q[1] - p[1]); p = q; }
@@ -202,8 +203,10 @@
     hero.smoke.on = false; hero.drink.on = false; hero.punch.on = false;
     hero.shoot.on = true; hero.shoot.t = 0;
   }
+  const inMachine = () => { if (!hero.inside && !(hero.act && hero.act.kind === 'board')) return false; toast('Руки на рычагах — сначала выберись из костюма.'); return true; };
   function startSmoke() {
     const it = itemById('cigs');
+    if (inMachine()) return false;
     if (equip.head === 'helmet') { toast('В шлеме не покуришь. Сними шлем в снаряжении.'); return false; }
     if (busyAct()) { toast('Сначала слезь — руки заняты.'); return false; }
     if (it.count <= 0) { toast('Сигареты кончились. Поищи в бурьяне.'); return false; }
@@ -215,6 +218,7 @@
   }
   function startDrink() {
     const it = itemById('atom');
+    if (inMachine()) return false;
     if (equip.head === 'helmet') { toast('Через шлем не попьёшь. Сними шлем в снаряжении.'); return false; }
     if (busyAct()) { toast('Сначала слезь — руки заняты.'); return false; }
     if (it.count <= 0) { toast('Энергетик кончился. Поищи в бурьяне.'); return false; }
@@ -315,7 +319,34 @@
   }
   function goDoor(inst) {
     const sp = spotOf(inst, 'door');
-    plan(...goSpot(sp), { type: 'reach', to: [-0.2, 0.1, 0.46], cb: () => toast('Домофон пищит, но никто не открывает. Это выход в следующую локацию — соберём её потом.') }, { type: 'waitReach' });
+    plan(...goSpot(sp), { type: 'reach', to: [-0.2, 0.1, 0.46], cb: () => toast(MAP.intercom || 'Домофон пищит, но никто не открывает.') }, { type: 'waitReach' });
+  }
+  const POSTERS = [
+    '«Куплю гараж. Дорого. Звоните». Телефон оторвали.',
+    '«Вскрытие замков, круглосуточно». Удобно повесить прямо на гараж.',
+    'Под объявлениями старые, в три слоя. Самое нижнее — про видеокассеты.'
+  ];
+  function goPosters(inst) {
+    const sp = spotOf(inst, 'side');
+    plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.6, cb: () => { inst.dyn.pi = ((inst.dyn.pi ?? -1) + 1) % POSTERS.length; toast(POSTERS[inst.dyn.pi]); } } });
+  }
+  function goLock(inst) {
+    const sp = spotOf(inst, 'door');
+    plan(...goSpot(sp), { type: 'reach', to: [-0.1, -0.05, 0.45], cb: () => toast('Замок висит намертво. Петли рыжие, но держат.') }, { type: 'waitReach' });
+  }
+  function goCarLook(inst) {
+    const sp = spotOf(inst, 'side');
+    plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.4, cb: () => toast(inst.def.look || 'Чья-то машина.') } });
+  }
+  function carAlarm(inst, why) {
+    if (inst.dyn.alarm > 0) return;
+    inst.dyn.alarm = 9;
+    for (const b of PIGEONS) b.scare = true;
+    toast(why || 'Сработала сигнализация. Лучше отойти.');
+  }
+  function goCarKnock(inst) {
+    const sp = spotOf(inst, 'wheel');
+    plan(...goSpot(sp), { type: 'reach', to: [-0.16, -0.62, 0.42], cb: () => carAlarm(inst) }, { type: 'waitReach' });
   }
   function nameOf(inst) {
     const t = inst.type;
@@ -324,7 +355,9 @@
     if (t === 'bench') return 'Лавочка у подъезда';
     if (t === 'garage') return 'Сарай с граффити';
     if (t === 'grass') return 'Бурьян';
-    return CATALOG[t].name;
+    if (t === 'car') return { sedan: 'Седан', hatch: 'Хэтчбек', boxy: 'Внедорожник', suv: 'Кроссовер' }[inst.def.kind] || 'Машина';
+    if (t === 'ibk3') return 'Боевой костюм ИБК-3';
+    return CATALOG[t] ? CATALOG[t].name : t;
   }
   function actionsOf(inst) {
     const t = inst.type;
@@ -338,6 +371,9 @@
     if (t === 'substation') return [{ label: 'Подёргать дверь', run: () => goSubstation(inst) }];
     if (t === 'grass') return [{ label: inst.dyn.searched ? 'Тут уже пусто' : 'Обыскать', run: () => goSearch(inst), off: !!inst.dyn.searched }];
     if (t === 'entrance') return [{ label: 'Позвонить в домофон', run: () => goDoor(inst) }];
+    if (t === 'metalgarage') return [{ label: 'Читать объявления', run: () => goPosters(inst) }, { label: 'Подёргать замок', run: () => goLock(inst) }];
+    if (t === 'car') return [{ label: 'Заглянуть в окно', run: () => goCarLook(inst) }, { label: 'Постучать по колесу', run: () => goCarKnock(inst) }];
+    if (inst.machine) return machineActions(inst);
     return [];
   }
   const NOTES = {
@@ -352,21 +388,29 @@
     garage: 'На крыше стоят банки — по ним можно стрелять.',
     substation: 'Гудит. На двери предупреждение.',
     grass: 'В бурьяне иногда что-то валяется.',
-    entrance: 'Железная дверь с домофоном.'
+    entrance: 'Железная дверь с домофоном.',
+    metalgarage: 'Ржавый, с объявлениями. Двери на навесном замке.',
+    car: 'Стоит носом к дому. От пинка заорёт.'
   };
-  const noteOf = (inst) => inst.type === 'swing' && !inst.def.seat ? NOTES.swing0 : NOTES[inst.type] || '';
-  function doDefault(inst) { const a = actionsOf(inst)[0]; if (a && !a.off) a.run(); else if (a && a.off) toast('Здесь уже всё перерыто.'); }
+  const noteOf = (inst) => inst.machine ? machineNote(inst) : inst.type === 'swing' && !inst.def.seat ? NOTES.swing0 : NOTES[inst.type] || '';
+  function doDefault(inst) {
+    // from inside a machine, tapping a thing walks the machine up to it
+    if (driving()) { if (inst !== hero.vehicle) { const c = inst.center || inst.def.at; walkTo(c[0], c[1]); } return; }
+    const a = actionsOf(inst)[0]; if (a && !a.off) a.run(); else if (a && a.off) toast('Здесь уже всё перерыто.'); }
   function walkTo(x, z) {
     hero.thr.on = false;
     plan({ type: 'path', to: [x, z] });
     hero.target = [x, z];
   }
   function standUp() { plan(); }
-  function doPunch() { plan({ type: 'punch' }); }
+  function doPunch() { if (inMachine()) return; plan({ type: 'punch' }); }
   function doShoot() {
+    if (inMachine()) return;
     if (equip.hands !== 'rifle') { toast('Сначала возьми винтовку в снаряжении.'); return; }
     if (hero.shoot.on) return;
-    const g = byType('garage')[0], up = g.dyn.cans.filter((c) => c.state === 'up');
+    const g = byType('garage')[0];
+    if (!g || !g.dyn.cans) { toast('Стрелять здесь не по чему. Банки остались на сарае в первом дворе.'); return; }
+    const up = g.dyn.cans.filter((c) => c.state === 'up');
     if (!up.length) { toast('Банок не осталось. Подойди к сараю и расставь их.'); hero.focus = g; return; }
     up.sort((a, b) => Math.hypot(a.pos[0] - hero.x, a.pos[2] - hero.z) - Math.hypot(b.pos[0] - hero.x, b.pos[2] - hero.z));
     hero.aimAt = up[0];
@@ -374,6 +418,7 @@
     plan({ type: 'call', fn: () => { hero.tyaw = yawTo(up[0].pos[0], up[0].pos[2]); } }, { type: 'turned' }, { type: 'shoot' });
   }
   function turn(d) {
+    if (driving()) return;
     if (hero.path.length || hero.sit > 0 || hero.sitTarget || hero.shoot.on || busyAct()) return;
     hero.tyaw = wrapA(hero.tyaw + d * Math.PI / 4);
   }

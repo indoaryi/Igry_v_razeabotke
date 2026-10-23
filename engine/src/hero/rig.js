@@ -28,7 +28,14 @@
       const s = wpx([hero.x, 0, hero.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
       root = [g[0], Math.round(hero.y * PXV) / PXV, g[1]];
     }
-    const B = evalBones(pose.p, root, yaw, D, base);
+    let B = evalBones(pose.p, root, yaw, D, base);
+    const hw = hero.act && ACT[hero.act.kind].hands ? ACT[hero.act.kind].hands(hero.act) : null;
+    if (hw && hw.w > 0) {
+      const inv = invRigid(B.chest), p = pose.p;
+      p.lHand = lerpV(p.lHand, xf(inv, hw.l), hw.w); p.rHand = lerpV(p.rHand, xf(inv, hw.r), hw.w);
+      p.lPole = lerpV(p.lPole, [0.8, -0.5, -0.5], hw.w); p.rPole = lerpV(p.rPole, [-0.8, -0.5, -0.5], hw.w);
+      B = evalBones(p, root, yaw, D, base);
+    }
     return { c, pose, B, base, root, yaw };
   }
   function rifleWorld(rifle, B, D) {

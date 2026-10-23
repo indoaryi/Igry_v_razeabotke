@@ -84,6 +84,40 @@
     }
     return { pos: P, nrm: Nn, idx: I };
   }
+  // a faceted solid for armour and hulls: a stack of chamfered rectangles along the axis ('y' or 'z'), flat-shaded.
+  // ring: { a: position along the axis, x0..x1 across, b0..b1 along the other axis (z for 'y', y for 'z'), c: corner chamfer }
+  function facets(rings, o = {}) {
+    const ax = o.axis || 'y';
+    const pt = (r, u, v) => ax === 'y' ? [u, r.a, v] : [u, v, r.a];
+    const P = [], Nn = [], I = [];
+    const ringPts = (r) => {
+      const c = Math.max(0.002, r.c ?? 0.04);
+      return [[r.x1 - c, r.b1], [r.x1, r.b1 - c], [r.x1, r.b0 + c], [r.x1 - c, r.b0], [r.x0 + c, r.b0], [r.x0, r.b0 + c], [r.x0, r.b1 - c], [r.x0 + c, r.b1]].map(([u, v]) => pt(r, u, v));
+    };
+    const R = rings.map(ringPts);
+    const mid = (k) => { const r = rings[k]; return pt(r, (r.x0 + r.x1) / 2, (r.b0 + r.b1) / 2); };
+    const face = (pts, out) => {
+      let n = nrm(cross(sub(pts[2], pts[0]), sub(pts[pts.length - 1], pts[1])));
+      if (pts.length === 3) n = nrm(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
+      if (dot(n, out) < 0) n = scl(n, -1);
+      const b = P.length / 3;
+      for (const p of pts) { P.push(p[0], p[1], p[2]); Nn.push(n[0], n[1], n[2]); }
+      for (let i = 1; i < pts.length - 1; i++) I.push(b, b + i, b + i + 1);
+    };
+    for (let k = 0; k < rings.length - 1; k++) {
+      const c0 = mid(k), c1 = mid(k + 1);
+      for (let i = 0; i < 8; i++) {
+        const j = (i + 1) % 8, q = [R[k][i], R[k][j], R[k + 1][j], R[k + 1][i]];
+        if (len(sub(q[0], q[1])) + len(sub(q[3], q[2])) < 0.003) continue;
+        const cq = scl(add(add(q[0], q[1]), add(q[2], q[3])), 0.25), ca = lerpV(c0, c1, 0.5);
+        face(q, sub(cq, ca));
+      }
+    }
+    const L = rings.length - 1;
+    if (o.capA !== false) face(R[0], sub(mid(0), mid(1)));
+    if (o.capB !== false) face(R[L], sub(mid(L), mid(L - 1)));
+    return { pos: P, nrm: Nn, idx: I };
+  }
   // four-sided roof: base rectangle at y = 0, apex at (0, h, 0)
   function pyramid(hw, hd, h) {
     const A = [0, h, 0], a = [-hw, 0, hd], b = [hw, 0, hd], c = [hw, 0, -hd], d = [-hw, 0, -hd];

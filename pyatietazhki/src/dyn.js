@@ -2,10 +2,10 @@
   function initDyn() {
     for (const s of byType('swing')) if (s.def.seat) Object.assign(s.dyn, { theta: 0, amp: 0.04, ph: 0, occupied: false });
     const g = byType('garage')[0];
-    g.dyn.cans = g.built.canSlots.map((p, i) => ({ slot: p, pos: localPt(g, p), state: 'up', v: [0, 0, 0], rot: 0, spin: 0, axis: [1, 0, 0], col: i }));
+    if (g && g.built.canSlots) g.dyn.cans = g.built.canSlots.map((p, i) => ({ slot: p, pos: localPt(g, p), state: 'up', v: [0, 0, 0], rot: 0, spin: 0, axis: [1, 0, 0], col: i }));
     const h = byType('hoop')[0];
-    const rest = localPt(h, [0.34, 0.12, 0.3]);
-    h.dyn.ball = { state: 'rest', pos: rest, home: rest, v: [0, 0, 0], rot: 0, score: 0, tries: 0 };
+    if (h) { const rest = localPt(h, [0.34, 0.12, 0.3]); h.dyn.ball = { state: 'rest', pos: rest, home: rest, v: [0, 0, 0], rot: 0, score: 0, tries: 0 }; }
+    for (const c of byType('car')) c.dyn.alarm = 0;
   }
   function resetCans(g) { for (const c of g.dyn.cans) { c.state = 'up'; c.pos = localPt(g, c.slot); c.rot = 0; c.v = [0, 0, 0]; } }
   function updateDyn(dt) {
@@ -16,7 +16,7 @@
       d.theta = -d.amp * Math.sin(d.ph);
     }
     const g = byType('garage')[0];
-    for (const c of g.dyn.cans) if (c.state === 'fly') {
+    if (g && g.dyn.cans) for (const c of g.dyn.cans) if (c.state === 'fly') {
       c.v[1] -= 9.8 * dt; c.pos = add(c.pos, scl(c.v, dt)); c.rot += c.spin * dt;
       if (c.pos[1] <= 0.035) {
         c.pos[1] = 0.035;
@@ -24,8 +24,9 @@
         else { c.state = 'down'; c.rot = Math.PI / 2; }
       }
     }
-    const h = byType('hoop')[0], b = h.dyn.ball;
-    if (b.state === 'fly' || b.state === 'roll') {
+    for (const c of byType('car')) if (c.dyn.alarm > 0) c.dyn.alarm = Math.max(0, c.dyn.alarm - dt);
+    const h = byType('hoop')[0], b = h && h.dyn.ball;
+    if (b && (b.state === 'fly' || b.state === 'roll')) {
       if (b.state === 'fly') b.v[1] -= 9.8 * dt;
       b.pos = add(b.pos, scl(b.v, dt)); b.t += dt; b.rot += dt * (b.state === 'fly' ? 9 : len(b.v) / 0.12);
       if (b.state === 'fly' && !b.evt && b.t >= b.T) {

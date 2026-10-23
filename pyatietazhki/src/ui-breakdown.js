@@ -1,29 +1,5 @@
   // ================= the breakdown: photo with numbers, scheme, catalog, data =================
-  const LEGEND = [
-    { n: 1, name: 'Качели', act: 'покачаться', note: 'Сиденье на цепях, герой раскачивается ногами.' },
-    { n: 2, name: 'Каркас качелей без сиденья', act: 'подтянуться', note: 'На фото сидений нет, так что это турник.' },
-    { n: 3, name: 'Баскетбольный щит', act: 'бросить мяч', note: 'Попадает примерно в половине бросков.' },
-    { n: 4, name: 'Горка', act: 'скатиться', note: 'Лестница, площадка, железный желоб.' },
-    { n: 5, name: 'Помост', act: 'сесть', note: 'Сидя можно курить и пить, винтовка ложится рядом.' },
-    { n: 6, name: 'Турник у сарая', act: 'подтянуться', note: 'Жёлтая рама и красный столб, как на снимке.' },
-    { n: 7, name: 'Сарай с граффити', act: 'читать граффити, расставить банки', note: 'Банки на крыше — мишени для винтовки.' },
-    { n: 8, name: 'Подстанция', act: 'подёргать дверь', note: 'Заперто, на двери предупреждение.' },
-    { n: 9, name: 'Игровой комплекс', act: 'залезть на башню', note: 'С башни тоже можно стрелять и курить.' },
-    { n: 10, name: 'Бурьян', act: 'обыскать', note: 'Иногда там сигареты или энергетик.' },
-    { n: 11, name: 'Подъезды', act: 'позвонить в домофон', note: 'Выход в следующую локацию. На фото их скрывают деревья.', added: true },
-    { n: 12, name: 'Лавочка с урной', act: 'сесть', note: 'Из первого двора, поставил к подъезду.', added: true },
-    { n: 13, name: 'Пятиэтажка слева', note: 'Белый силикатный кирпич, застеклённые лоджии.', decor: true },
-    { n: 14, name: 'Пятиэтажка справа', note: 'Тот же предмет, жёлтый кирпич и красные балконы.', decor: true },
-    { n: 15, name: 'Старая рама', note: 'Металлолом, просто стоит.', decor: true },
-    { n: 16, name: 'Столб с фонарём', note: 'Провода идут к подстанции и к домам.', decor: true },
-    { n: 17, name: 'Деревья', note: 'Ясени, клёны, берёзы, тополя и ива; кое-где листья уже желтеют.', decor: true },
-    { n: 18, name: 'Сухое дерево', note: 'Голые ветки перед левым домом.', decor: true },
-    { n: 19, name: 'Кусты', note: 'Сирень, бузина, лещина, шиповник с ягодами и поросль вдоль домов и у подстанции.', decor: true },
-    { n: 20, name: 'Клумбы из шин', note: 'Покрашенные шины с бархатцами у подъезда.', decor: true, added: true }
-  ];
-  const PINS = [[1, 8.4, 53.3], [2, 12.4, 53.0], [3, 20.1, 49.6], [4, 25.2, 52.3], [5, 23.6, 56.4], [6, 30.6, 51.8], [7, 35.6, 51.4], [8, 44.8, 49.0], [9, 62.5, 49.2], [10, 55.6, 53.6],
-    [13, 3.8, 37.3], [14, 71.2, 36.4], [15, 16.4, 56.8], [16, 51.2, 43.2], [17, 89, 42], [18, 9.4, 42.6], [19, 7.4, 73.3]];
-  const infoOf = (n) => LEGEND.find((l) => l.n === n);
+  const infoOf = (n) => MAP.legend.find((l) => l.n === n);
   function goToNumber(n) {
     const list = INST.filter((i) => i.n === n);
     if (!list.length) return;
@@ -38,9 +14,14 @@
     walkTo(p[0], p[1]);
     toast(infoOf(n).name + '. ' + infoOf(n).note);
   }
+  // the breakdown always shows the location the hero is in; these are rebuilt on every arrival
   function buildFound() {
     const fig = $('photo');
-    for (const [n, x, y] of PINS) {
+    fig.querySelectorAll('.pin').forEach((e) => e.remove());
+    const img = $('photoImg'), src = (window.YARD_PHOTOS || {})[MAP.photo];
+    if (src && img.getAttribute('src') !== src) img.src = src;
+    img.alt = MAP.photoAlt || '';
+    for (const [n, x, y] of MAP.pins) {
       const L = infoOf(n);
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'pin' + (L.decor ? ' decor' : ''); b.textContent = n;
@@ -52,7 +33,8 @@
       fig.append(b);
     }
     const ol = $('objlist'), dl = $('decorlist');
-    for (const L of LEGEND) {
+    ol.textContent = ''; dl.textContent = '';
+    for (const L of MAP.legend) {
       if (L.decor) {
         const li = document.createElement('li'), b = document.createElement('button');
         b.type = 'button'; b.title = L.note; b.setAttribute('aria-label', 'Показать во дворе: ' + L.name);
@@ -78,7 +60,7 @@
   const PLAN = { cs: 12.6, m: 26 };
   let planBase = null, planTimer = 0, planKey = '';
   const GCOL = { '.': '#9cc160', ',': '#7c9a44', ':': '#c6a878', '#': '#8f9295', '_': '#c4c1b9' };
-  const TCOL = { garage: '#d9d7cf', substation: '#f0eee8', towers: '#c4463a', swing: '#6f9a63', pullbar: '#d9b23b', slide: '#9a6646', platform: '#8c8982', hoop: '#4b6e8d', bench: '#3f6a58', urn: '#7b776f', pole: '#8d8a83', entrance: '#b9b5ab' };
+  const TCOL = { garage: '#d9d7cf', substation: '#f0eee8', towers: '#c4463a', swing: '#6f9a63', pullbar: '#d9b23b', slide: '#9a6646', platform: '#8c8982', hoop: '#4b6e8d', bench: '#3f6a58', urn: '#7b776f', pole: '#8d8a83', entrance: '#b9b5ab', metalgarage: '#7c3a2c', car: '#5d6670', ibk3: '#5f6b47', tires: '#d9d6cf' };
   function planPt(x, z) { const k = PLAN.cs / SQ2; return [PLAN.w / 2 + (x - z) * k, PLAN.m + (x + z) * k]; }
   function planSize() { PLAN.w = Math.round(GW * PLAN.cs * SQ2 + PLAN.m * 2); PLAN.h = PLAN.w; }
   function drawPlanBase() {
@@ -124,7 +106,7 @@
     }
     // where the photo was taken from: a wedge looking north across the lawn
     {
-      const cam = [26.2, 26.2], look = Math.atan2(-1, -1), half = 0.62, L = 17;
+      const cam = MAP.photoCam.at, look = MAP.photoCam.look, half = MAP.photoCam.half || 0.62, L = MAP.photoCam.len || 17;
       const p0 = planPt(cam[0], cam[1]);
       g.beginPath(); g.moveTo(...p0);
       for (let i = 0; i <= 12; i++) { const a = look - half + (2 * half) * i / 12; g.lineTo(...planPt(cam[0] + Math.cos(a) * L, cam[1] + Math.sin(a) * L)); }
@@ -150,7 +132,8 @@
     };
     for (const i of INST) {
       if (!i.n) continue;
-      if ([17, 19].includes(i.n) && seen.has(i.n)) continue;
+      const Li = infoOf(i.n);
+      if (Li && Li.decor && seen.has(i.n)) continue;
       seen.add(i.n);
       let x = i.center[0], z = i.center[1];
       if (i.type === 'block5') { const f = toWorld2(i.M0, [i.def.len * 0.5, -3]); x = f[0]; z = f[1]; }
@@ -209,25 +192,10 @@
   }
 
   // ---------- catalog cards: each object rendered by the engine on its own ----------
-  const CARDS = [
-    { title: 'Пятиэтажка', multi: () => [[INST.find((i) => i.n === 13)], [INST.find((i) => i.n === 14)]], tag: 'декор', type: 'block5' },
-    { title: 'Подъезд', pick: () => [INST.find((i) => i.n === 13), ...byType('entrance'), ...byType('bench'), ...byType('urn')], focus: () => byType('entrance')[0], pad: 1.25, tag: 'домофон', type: 'entrance', act: true },
-    { title: 'Подстанция', pick: () => byType('substation'), tag: 'дверь', type: 'substation', act: true },
-    { title: 'Сарай с граффити', pick: () => byType('garage'), tag: 'граффити, банки', type: 'garage', act: true },
-    { title: 'Игровой комплекс', pick: () => byType('towers'), tag: 'залезть', type: 'towers', act: true },
-    { title: 'Качели', pick: () => [INST.find((i) => i.n === 1)], tag: 'покачаться', type: 'swing', act: true },
-    { title: 'Турник', pick: () => byType('pullbar'), tag: 'подтянуться', type: 'pullbar', act: true },
-    { title: 'Горка', pick: () => byType('slide'), tag: 'скатиться', type: 'slide', act: true },
-    { title: 'Помост', pick: () => byType('platform'), tag: 'сесть', type: 'platform', act: true },
-    { title: 'Баскетбольный щит', pick: () => byType('hoop'), tag: 'бросить мяч', type: 'hoop', act: true },
-    { title: 'Столб с фонарём', pick: () => byType('pole'), tag: 'декор', type: 'pole' },
-    { title: 'Деревья', multi: () => [[INST.find((i) => i.def.kind === 'ash')], [INST.find((i) => i.def.kind === 'birch')], [INST.find((i) => i.def.kind === 'willow')]], tag: 'декор', type: 'tree' },
-    { title: 'Кусты', multi: () => [[INST.find((i) => i.def.kind === 'lilac')], [INST.find((i) => i.def.kind === 'dogrose')]], tag: 'декор', type: 'bush' },
-    { title: 'Клумба из шин', pick: () => [byType('tires')[0]], tag: 'декор', type: 'tires' },
-    { title: 'Бурьян', pick: () => [byType('grass')[2]], tag: 'обыскать', type: 'grass', act: true },
-    { title: 'Лавочка и урна', pick: () => [...byType('bench'), ...byType('urn')], tag: 'сесть', type: 'bench', act: true }
-  ];
+  let CARDS = [];
   function renderGroups(cv, groups, focus, pad) {
+    groups = groups.map((g) => g.filter(Boolean)).filter((g) => g.length);
+    if (!groups.length) return;
     const ctx = cv.getContext('2d'), W = cv.width, H = cv.height, n = groups.length, cw = W / n;
     let z = 1;
     const rects = groups.map((g) => {
@@ -251,8 +219,10 @@
   }
   function buildCards() {
     const box_ = $('cards');
+    box_.textContent = '';
+    CARDS = MAP.cards;
     for (const c of CARDS) {
-      const T = CATALOG[c.type];
+      const T = CATALOG[c.type] || { size: '', note: '' };
       const art = document.createElement('article'); art.className = 'card';
       const cv = document.createElement('canvas'); cv.width = 220; cv.height = 165; cv.setAttribute('aria-hidden', 'true');
       const body = document.createElement('div'); body.className = 'cb';
@@ -268,6 +238,13 @@
   }
   function renderCards() { for (const c of CARDS) renderGroups(c.cv, c.multi ? c.multi() : [c.pick()], c.focus ? c.focus() : null, c.pad); }
 
+  // everything below the stage follows the hero into each location
+  LOC_HOOKS.enter.push((def) => {
+    for (const id of ['locNow1', 'locNow2', 'locNow3', 'locNow4']) { const el = $(id); if (el) el.textContent = def.name; }
+    buildFound(); drawPlanBase(); planKey = ''; buildCards(); buildData();
+    setTimeout(renderCards, 60);
+  });
+
   // ---------- data excerpt ----------
   function buildData() {
     const fmt = (o) => {
@@ -279,16 +256,16 @@
       return '  { ' + parts.join(', ') + ' },';
     };
     const lines = [];
-    lines.push('// земля: 30 строк по 30 клеток, одна буква — один метр');
+    lines.push(`// земля: ${GH} строк по ${GW} клеток, одна буква — один метр`);
     lines.push('ground: [');
     for (const r of MAP.ground) lines.push("  '" + r + "',");
     lines.push('],');
     lines.push('// предметы: тип из каталога, клетка (x, z), поворот в градусах');
     lines.push('objects: [');
-    const shown = MAP.objects.filter((o) => ['swing', 'hoop', 'slide', 'platform', 'pullbar', 'garage', 'substation', 'towers', 'bench', 'pole'].includes(o.type)).slice(0, 12);
+    const shown = MAP.objects.filter((o) => MAP.dataTypes.includes(o.type)).slice(0, 12);
     for (const o of shown) lines.push(fmt(o));
-    lines.push(`  { n: 13, type: 'block5', at: [2, 29], rot: 90, len: 20, brick: '#d9d6ce', entr: [1, 4], … },`);
-    lines.push(`  // …и ещё ${MAP.objects.length - shown.length - 1}: второй дом, деревья, кусты, бурьян, бордюр`);
+    lines.push(MAP.dataNote);
+    lines.push(`  // …и ещё ${MAP.objects.length - shown.length - 1}: ${MAP.dataRest || 'второй дом, деревья, кусты, бурьян, бордюр'}`);
     lines.push(']');
     $('dataCode').textContent = lines.join('\n');
   }

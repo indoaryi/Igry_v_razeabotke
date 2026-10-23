@@ -4,6 +4,7 @@
   const aSmoke = $('aSmoke'), aDrink = $('aDrink'), aPunch = $('aPunch'), aShoot = $('aShoot');
   function stateText() {
     let s;
+    if (driving() && !hero.act) return dirOf(hero.yaw).arrow + ' ' + machineState(hero.vehicle);
     if (hero.act) s = ACT[hero.act.kind].state(hero.act);
     else if (hero.path.length) s = hero.run ? 'бежит' : 'идёт';
     else if (hero.sitTarget === 1) s = hero.sit < 1 ? 'садится' : 'сидит';
@@ -24,6 +25,7 @@
     return d;
   }
   function contextNow() {
+    if (driving() && !hero.act) return { inst: hero.vehicle, mode: 'pilot' };
     if (hero.act && hero.act.inst && hero.act.kind !== 'kneel' && hero.act.kind !== 'look') return { inst: hero.act.inst, mode: 'busy' };
     if ((hero.sitTarget === 1 || hero.sit > 0) && hero.seat) return { inst: hero.seat.inst, mode: 'seated' };
     let best = null, bd = 2.2;
@@ -46,7 +48,7 @@
     ctxTimer = 0.2;
     const cx = contextNow();
     const acts = cx ? actionsOf(cx.inst) : [];
-    const key = cx ? cx.mode + cx.inst.id + acts.map((a) => a.label).join() + (hero.act ? hero.act.stage : '') : 'none';
+    const key = cx ? cx.mode + cx.inst.id + acts.map((a) => a.label).join() + (hero.act ? hero.act.stage : '') + (cx.inst.machine ? cx.inst.machine.mode : '') : 'none';
     hudNear.hidden = !(cx && (cx.mode === 'near' || cx.mode === 'busy' || cx.mode === 'seated'));
     if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + nameOf(cx.inst).toLowerCase();
     if (key === ctxKey) return;
@@ -57,7 +59,7 @@
       return;
     }
     const inst = cx.inst;
-    ctxK.textContent = cx.mode === 'busy' || cx.mode === 'seated' ? 'Сейчас' : cx.mode === 'near' ? 'Рядом' : 'Выбрано';
+    ctxK.textContent = cx.mode === 'pilot' ? 'Внутри' : cx.mode === 'busy' || cx.mode === 'seated' ? 'Сейчас' : cx.mode === 'near' ? 'Рядом' : 'Выбрано';
     ctxName.textContent = nameOf(inst);
     ctxNote.textContent = noteOf(inst);
     if (cx.mode === 'busy') {
@@ -67,6 +69,7 @@
       return;
     }
     if (cx.mode === 'seated') { ctxActs.append(button('Встать', () => standUp(), 'main')); return; }
+    if (cx.mode === 'pilot') { acts.forEach((a, i) => ctxActs.append(button(a.label, () => { a.run(); ctxKey = ''; }, i === 0 ? 'main' : ''))); return; }
     acts.forEach((a, i) => ctxActs.append(button(a.label, () => { hero.focus = inst; a.run(); ctxKey = ''; }, i === 0 ? 'main' : '', a.off)));
   }
   function updateHud() {
@@ -89,11 +92,25 @@
     camX = null; fitStage(); lastKey = '';
   });
   $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; });
+  // which yard: the current one is pressed, the other walks the hero to the exit that leads there
+  const locSeg = $('locSeg');
+  function buildLocSeg() {
+    locSeg.textContent = '';
+    for (const id of Object.keys(LOCATIONS)) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.id = 'loc-' + id; b.textContent = LOCATIONS[id].short;
+      b.setAttribute('aria-pressed', String(id === MAP.id));
+      b.addEventListener('click', () => goToLocation(id));
+      locSeg.append(b);
+    }
+  }
+  LOC_HOOKS.enter.push(buildLocSeg);
   $('rawChk').addEventListener('change', (e) => { raw = e.target.checked; lastKey = ''; });
 
   // ---------- stage input ----------
   let hoverPt = null, hoverT = 0;
   stageEl.addEventListener('click', (e) => {
+    if (travelState) return;
     const r = stageEl.getBoundingClientRect();
     const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
     const inst = pickFrac(fx, fy);

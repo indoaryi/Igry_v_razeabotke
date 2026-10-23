@@ -12,13 +12,15 @@
       for (const x of [-SW.PIV, SW.PIV]) items.push({ mesh: UNIT_LINE(), model: M(s.M0, tr(x, SW.BAR, 0), rx(th), sc3(1, SW.CH - 0.02, 1)), mat: CHAIN_MAT, id: s.id, flags: 3 });
     }
     const g = byType('garage')[0];
-    for (const c of g.dyn.cans) {
+    if (g && g.dyn.cans) for (const c of g.dyn.cans) {
       const R = c.state === 'up' ? ID4 : M(tr(0, 0, 0), rotAxis(c.axis, c.rot));
       items.push({ mesh: getMesh('beer', () => cyl(0.033, 0.033, 0.12, 10)), model: M(tr(...c.pos), R, tr(0, -0.06, 0)), mat: CAN_MATS[c.col], id: g.id, flags: 2, shadow: true });
     }
-    const h = byType('hoop')[0], b = h.dyn.ball;
-    if (b.state !== 'held') items.push({ mesh: BALL_MESH(), model: M(tr(...b.pos), rx(b.rot)), mat: BALL_MAT, id: h.id, flags: 2, shadow: true });
+    const h = byType('hoop')[0], b = h && h.dyn.ball;
+    if (b && b.state !== 'held') items.push({ mesh: BALL_MESH(), model: M(tr(...b.pos), rx(b.rot)), mat: BALL_MAT, id: h.id, flags: 2, shadow: true });
     for (const it of pigeonItems()) items.push(it);
+    for (const it of carLightItems()) items.push(it);
+    for (const it of machineItemsAll()) items.push(it);
     return items;
   }
   function rotAxis(a, t) {

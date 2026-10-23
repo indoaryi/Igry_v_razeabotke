@@ -45,7 +45,7 @@
     const glazF = mat('#56718c', { pat: 43, b: fr, p: [4, 0.05, 1.27, 0.76], r: [0.012, 0, 0, 0], noise: 0 });
     const glazS = mat('#56718c', { pat: 43, b: fr, p: [2, 0.05, 0.56, 0.76], r: [0.012, 0, 0, 0], noise: 0 });
     const winA = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.055, 0.75, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
-    const panel = mat(o.panel, { pat: 38, b: o.panel2 || '#7c4c33', p: [5, 0.93, 0, 0], noise: 0.05, grain: 50 });
+    const panel = mat(o.panel || (o.panels && o.panels[0]) || '#9b4a3a', { pat: 38, b: o.panel2 || '#7c4c33', p: [5, 0.93, 0, 0], noise: 0.05, grain: 50 });
     const acM = mat('#e4e3de', { pat: 12, p: [0.1, 34, 0, 0], noise: 0.03 });
     const dishM = mat('#d9d9d4', { noise: 0.02, spec: 0.4, gloss: 10 });
     const railM = flat('#3b3d40', 1);
@@ -101,14 +101,16 @@
       else if (r < 0.23) k.mesh('dish', () => ellipsoid(0.3, 0.3, 0.08, { seg: 12, rings: 5, half: true }), dishM, M(tr(xc - hw - 0.35, yc + 0.35, 0.12), rx(-1.1)), 0);
     };
     const CLOTHES = ['#e8e6e0', '#c94f45', '#4f6fa8', '#e2c34a', '#7aa36a', '#d98fb0', '#3d3f45'].map((c) => Object.assign(mat(c, { noise: 0.06, grain: 40, wind: [0.025, 1 / 14, 2.4, 0.6] }), { noShadow: false }));
+    // loggia panels: one colour, or a mix of the colours in o.panels (the far house has yellow and green ones)
+    const panels = o.panels ? o.panels.map((c) => mat(c, { pat: 38, b: o.panel2 || '#7c4c33', p: [5, 0.94, 0, 0], noise: 0.05, grain: 50 })) : null;
     const loggia = (xc, yF, top, f) => {
       const x0 = xc - 1.3, x1 = xc + 1.3, D = 1.15;
       k.boxMM(slabM, x0 - 0.03, yF - 0.12, 0, x1 + 0.03, yF, D + 0.04);
-      const pm = (R() < 0.55) ? panel : brick;
+      const pm = panels ? panels[(R() * panels.length) | 0] : (R() < 0.55) ? panel : brick;
       k.boxMM(pm, x0, yF, D - 0.07, x1, yF + 1.0, D);
       k.boxMM(pm, x0, yF, 0, x0 + 0.07, yF + 1.0, D - 0.07);
       k.boxMM(pm, x1 - 0.07, yF, 0, x1, yF + 1.0, D - 0.07);
-      if (R() < 0.75) {
+      if (R() < (o.glazed ?? 0.75)) {
         k.box(glazF, [xc, yF + 1.76, D - 0.035], [1.27, 0.76, 0.015], null, R());
         k.box(glazS, [x0 + 0.035, yF + 1.76, D / 2], [0.56, 0.76, 0.015], ry(-Math.PI / 2), R());
         k.box(glazS, [x1 - 0.035, yF + 1.76, D / 2], [0.56, 0.76, 0.015], ry(Math.PI / 2), R());
@@ -148,9 +150,27 @@
     }
     k.boxMM(brick, 0, BASE + F * FH, -REC, L, H, 0);
     k.boxMM(brick, 0, 0, -REC, L, BASE, 0);
+    // brick ornament: a tall "house" drawn in raised brick around a window column — two pilasters joined by a gable
+    for (const b of o.ornament || []) {
+      const xc = (b + 0.5) * bw, hw = (b % 2 === 0 ? 1.05 : 0.75) + 0.34, y0 = BASE + FH + 0.2, y1 = BASE + 4 * FH + 2.0, apex = y1 + 0.75;
+      for (const sg of [-1, 1]) {
+        k.boxMM(brick, xc + sg * hw - 0.11, y0, -0.01, xc + sg * hw + 0.11, y1, 0.065);
+        const a = [xc + sg * hw, y1, 0.03], q = [xc, apex, 0.03], mid = lerpV(a, q, 0.5), L2 = len(sub(q, a));
+        k.box(brick, mid, [L2 / 2 + 0.08, 0.11, 0.035], rz(Math.atan2(q[1] - a[1], q[0] - a[0])));
+        k.boxMM(brick, xc + sg * hw - 0.16, y0 - 0.12, -0.01, xc + sg * hw + 0.16, y0, 0.085);
+      }
+    }
+    // brick vent stacks on the roof
+    const capM = mat('#b1ada4', { noise: 0.05, grain: 40 });
+    for (let c = 0; c < (o.chimneys || 0); c++) {
+      const x = L * (c + 1) / ((o.chimneys || 0) + 1) + (R() - 0.5) * 1.5, z = -Dp * (0.35 + R() * 0.3);
+      k.boxMM(brick, x - 0.28, H, z - 0.28, x + 0.28, H + 1.05, z + 0.28);
+      k.boxMM(capM, x - 0.36, H + 1.05, z - 0.36, x + 0.36, H + 1.12, z + 0.36);
+      k.boxMM(mat('#2e2b29', { noise: 0.02 }), x - 0.12, H + 0.7, z + 0.27, x + 0.12, H + 0.95, z + 0.29);
+    }
     for (let i = 0; i < nb; i++) {
       const en = (o.entr || []).indexOf(i);
-      if (en >= 0) children.push({ type: 'entrance', local: [(i + 0.5) * bw, 0], idx: en, n: 11, frame: fr, door: o.door });
+      if (en >= 0) children.push({ type: 'entrance', local: [(i + 0.5) * bw, 0], idx: en, n: o.entrN ?? 11, frame: fr, door: o.door, plates: o.plates });
     }
     return { kit: k, blocks, heights, spots, children, top: H + 1.4 };
   }
@@ -523,7 +543,7 @@
     for (const [p0] of tips) cc = add(cc, fit(p0));
     cc = scl(cc, 1 / Math.max(1, tips.length)); cc[1] -= (H - cb) * 0.12;
     const clump = (c, rc, fy, yaw) => k.put(clumpRaw((R() * 8) | 0, nrm(sub(c, cc)), yaw, 0.55), M(tr(c[0], c[1], c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R());
-    const twigM = Object.assign(flat(P.birch ? '#4a3f37' : '#4f443b', 1), { noShadow: true });
+    const twigM = Object.assign(flat(P.weep ? '#6e5a40' : P.birch ? '#4a3f37' : '#4f443b', 1), { noShadow: true });
     const hang = [];
     for (const [p0, d, ord] of tips) {
       const p = fit(p0), n = ord === 2 ? (R() < P.per - 2 ? 2 : 1) + (R() < 0.35 ? 1 : 0) : 1;
@@ -533,7 +553,16 @@
         const fy = droop > 0.5 ? 1.0 + R() * 0.25 : 0.72 + R() * 0.16;
         clump([c[0], c[1] - (droop > 0.5 ? rc * 0.3 : 0), c[2]], rc, fy, R() * 6.28);
       }
-      if (droop > 0 && ord === 2 && R() < droop) {
+      if (P.weep && ord === 2) {
+        // a weeping birch: long thin twigs hang from every outer twig, leaves strung along them in narrow streaks
+        const out = nrm([p[0] - cc[0] + 1e-3, 0, p[2] - cc[2]]), ns = R() < P.weep ? 2 : 1;
+        for (let j = 0; j < ns; j++) {
+          const a = add(p, [out[0] * 0.12 + (R() - 0.5) * 0.3, -0.04, out[2] * 0.12 + (R() - 0.5) * 0.3]);
+          const L = (0.9 + R() * 1.7) * s, b = add(a, [out[0] * 0.3 + (R() - 0.5) * 0.2, -L, out[2] * 0.3 + (R() - 0.5) * 0.2]);
+          const nk = 2 + Math.round(L / (0.62 * s));
+          for (let q = 0; q < nk; q++) clump(add(lerpV(a, b, (q + 0.6) / (nk + 0.1)), [(R() - 0.5) * 0.08, 0, (R() - 0.5) * 0.08]), (0.11 + R() * 0.05) * s, 2.2 + R() * 0.9, R() * 6.28);
+        }
+      } else if (droop > 0 && ord === 2 && R() < droop) {
         const L = (0.5 + R() * 0.9) * s * droop, q = add(p, [d[0] * 0.15, -L, d[2] * 0.15]);
         hang.push([p, lerpV(p, q, 0.5)], [lerpV(p, q, 0.5), q]);
         if (R() < 0.6) { const rc = P.cl[0] * s * 0.75; clump(lerpV(p, q, 0.7), rc * 0.7, 1.9, R() * 6.28); }
@@ -611,8 +640,10 @@
     lawn: tuftMat('#5a8732', '#a8a45c', 0.04), lush: tuftMat('#4f7c2e', '#a8a45c', 0.07),
     rough: tuftMat('#52752e', '#b4a65c', 0.2), dry: tuftMat('#7c8440', '#c4b168', 0.55)
   };
+  // o.look (per location): mats { lawn, lush, rough, dry }, lawnH / roughH height factors, thin (extra share of lawn tufts left out), leafHide (thick leaves hide grass)
   function buildMeadow(o) {
     const [tx, tz, TL] = o.tile, k = new Kit(9000 + tx * 31 + tz), R = k.R, step = 0.31;
+    const L = o.look || {}, MM = Object.assign({}, MEADOW, L.mats || {});
     for (let z = tz + step / 2; z < tz + TL; z += step) for (let x = tx + step / 2; x < tx + TL; x += step) {
       const px = x + (R() - 0.5) * step * 1.1, pz = z + (R() - 0.5) * step * 1.1;
       const t = groundType(px, pz);
@@ -623,13 +654,15 @@
       // lush and thin zones a few metres across, clumps about a metre across
       const lush = fbm(px * 0.33, pz * 0.33, 21), clumpy = vnoise(px * 1.3, pz * 1.3, 23), shade = o.shadeOf(px, pz);
       const edge = o.edgeDist(px, pz) < 0.55, rough = t === ',' || edge;
-      if (!rough && R() < 0.1 + shade * 0.4 + (0.45 - clumpy) * 0.3) continue;
-      let h = rough ? 0.34 + lush * 0.52 : 0.09 + lush * 0.2 + clumpy * 0.1;
+      if (!rough && R() < 0.1 + shade * 0.4 + (0.45 - clumpy) * 0.3 + (L.thin || 0)) continue;
+      const lf = o.leaves ? o.leaves(px, pz) : 0;
+      if (lf > 0 && R() < lf * (L.leafHide ?? 0.6)) continue;                      // thick fallen leaves hide the grass
+      let h = rough ? (0.34 + lush * 0.52) * (L.roughH || 1) : (0.09 + lush * 0.2 + clumpy * 0.1) * (L.lawnH || 1);
       if (R() < 0.08) h *= 1.7;                                                    // a tussock sticking out
       if (edge) h *= 1.25;                                                        // weeds along walls and kerbs, where nobody mows
       h *= (0.7 + R() * 0.6) * (0.4 + 0.6 * smooth((pd - 0.35) / 0.9)) * (1 - shade * 0.35);
       const w = (rough ? 0.44 : 0.34) + R() * 0.36;
-      const m = rough ? (lush > 0.6 && R() < 0.45 ? MEADOW.dry : MEADOW.rough) : (lush + clumpy * 0.3 > 0.72 ? MEADOW.lush : (R() < 0.04 ? MEADOW.dry : MEADOW.lawn));
+      const m = rough ? (lush > 0.6 && R() < 0.45 ? MM.dry : MM.rough) : (lush + clumpy * 0.3 > 0.72 ? MM.lush : (R() < (L.dryShare ?? 0.04) ? MM.dry : MM.lawn));
       card(k, m, px, pz, w, h);
     }
     return { kit: k, blocks: [] };

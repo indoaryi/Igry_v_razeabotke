@@ -192,15 +192,15 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
 
 <main class="wrap">
   <header class="intro">
-    <p class="eyebrow">Локация · собрана по фотографии</p>
+    <p class="eyebrow">Два двора · собраны по фотографиям</p>
     <h1>Двор у пятиэтажек</h1>
-    <p class="lead">Двор с твоей фотографии: я разобрал его на предметы, разложил по схеме из метровых клеток и собрал заново в изометрии. Герой тот же, 120 пикселей, со всем снаряжением. Нажимай на траву, чтобы идти, и на предметы, чтобы с ними что-то сделать.</p>
+    <p class="lead">Дворы с твоих фотографий: я разобрал их на предметы, разложил по схемам из метровых клеток и собрал заново в изометрии. Герой тот же, 120 пикселей, со всем снаряжением. Асфальт вдоль левого дома ведёт в соседний двор с берёзами, а там у гаража стоит боевой костюм: подойди, и герой залезет внутрь. Нажимай на землю, чтобы идти, и на предметы, чтобы с ними что-то сделать.</p>
   </header>
 
   <section class="play" aria-label="Двор">
     <div class="stage-wrap">
       <div class="stage" id="stageBox">
-        <canvas id="stage" aria-label="Двор у пятиэтажек в изометрии. Нажми на землю, чтобы герой туда пошёл, или на предмет, чтобы он с ним что-то сделал."></canvas>
+        <canvas id="stage" aria-label="Двор в изометрии. Нажми на землю, чтобы герой туда пошёл, или на предмет, чтобы он с ним что-то сделал."></canvas>
         <div class="hud" aria-live="polite">
           <span class="chip" id="hudState">стоит</span>
           <span class="chip near" id="hudNear" hidden></span>
@@ -226,6 +226,7 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
           <button class="btn" id="aPunch" type="button">Удар</button>
         </div>
         <div class="view">
+          <div class="seg" role="group" aria-label="Двор" id="locSeg"></div>
           <div class="seg" role="group" aria-label="Камера">
             <button type="button" id="vNear" aria-pressed="false">Ближе</button>
             <button type="button" id="vFar" aria-pressed="true">Дальше</button>
@@ -255,11 +256,12 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
 
   <section class="sec" aria-labelledby="h-found">
     <div class="sec-head">
+      <p class="eyebrow" id="locNow1">Двор у пятиэтажек</p>
       <h2 id="h-found">Что нашлось на фото</h2>
-      <p class="sec-text">Сначала я отметил на снимке всё, что пойдёт в игру. Оранжевые номера — активные предметы, с ними герой что-то делает. Белые — обстановка: дома, деревья, столб. Нажми на номер, и герой пойдёт к этому предмету.</p>
+      <p class="sec-text">Сначала я отметил на снимке всё, что пойдёт в игру. Оранжевые номера — активные предметы, с ними герой что-то делает. Белые — обстановка: дома, деревья, столбы. Нажми на номер, и герой пойдёт к этому предмету. Здесь всегда тот двор, где сейчас герой.</p>
     </div>
     <div class="found">
-      <figure class="photo" id="photo"><img id="photoImg" alt="Исходная фотография: заросший двор, качели, горка, гараж с граффити, подстанция, игровой комплекс с красными крышами и пятиэтажки за деревьями" width="1000" height="750"></figure>
+      <figure class="photo" id="photo"><img id="photoImg" alt="Исходная фотография двора" width="1000" height="750"></figure>
       <div class="found-side">
         <ol class="objlist" id="objlist"></ol>
         <p class="decor-k">Обстановка</p>
@@ -270,6 +272,7 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
 
   <section class="sec" aria-labelledby="h-plan">
     <div class="sec-head">
+      <p class="eyebrow" id="locNow2">Двор у пятиэтажек</p>
       <h2 id="h-plan">Схема двора</h2>
       <p class="sec-text">Вот такую схему ты обычно будешь присылать сам: вид сверху, одна клетка — метр. Номера те же, что на фото, а повёрнута она так же, как камера в игре. Заодно это мини-карта: оранжевая точка — герой, нажатие на схему отправит его туда.</p>
     </div>
@@ -281,14 +284,16 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
 
   <section class="sec" aria-labelledby="h-cat">
     <div class="sec-head">
+      <p class="eyebrow" id="locNow3">Двор у пятиэтажек</p>
       <h2 id="h-cat">Каталог предметов</h2>
-      <p class="sec-text">Каждый предмет собран кодом один раз, а дальше ставится на карту сколько угодно раз. Оба дома — один и тот же предмет, только кирпич и балконы другого цвета.</p>
+      <p class="sec-text">Каждый предмет собран кодом один раз, а дальше ставится на карту сколько угодно раз. Все дома — один и тот же предмет: меняются кирпич, балконы, украшения и число подъездов.</p>
     </div>
     <div class="cards" id="cards"></div>
   </section>
 
   <section class="sec" aria-labelledby="h-data">
     <div class="sec-head">
+      <p class="eyebrow" id="locNow4">Двор у пятиэтажек</p>
       <h2 id="h-data">Как карта хранится</h2>
       <p class="sec-text">Вся локация — это две вещи: строки земли и список предметов. Ниже начало настоящих данных, из которых собран двор.</p>
     </div>
@@ -299,6 +304,7 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
         <li><b>Предметы — список</b><span>Тип из каталога, клетка и поворот. Дома, деревья и качели ставятся одной строкой.</span></li>
         <li><b>Активный предмет знает, как к нему подойти</b><span>У него есть точка подхода и действия. Нажал на качели — герой сам дойдёт, сядет и раскачается.</span></li>
         <li><b>Правила снаряжения действуют и тут</b><span>В силовой броне на детские качели и горку не полезешь, а в шлеме не покуришь.</span></li>
+        <li><b>Дворы связаны выходами</b><span>У каждой локации есть зоны выхода и точки появления. Дошёл до края по асфальту — экран темнеет, и ты в соседнем дворе.</span></li>
         <li><b>Следующий двор — так же</b><span>Фото или эскиз плюс схема по клеткам. Если предмет уже есть в каталоге, он встаёт сразу.</span></li>
       </ul>
     </div>

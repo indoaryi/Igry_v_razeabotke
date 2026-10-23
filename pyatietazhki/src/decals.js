@@ -121,6 +121,44 @@
       g.fillStyle = '#dcd8cc'; g.fillRect(0, 0, w, h);
       g.fillStyle = '#9a978e'; for (let y = 2; y < h - 2; y += 3) g.fillRect(1, y, w - 3 - ((y * 7) % 4), 1);
     });
+    // ---------- the yard with birches: notices and tags on the metal garage, number plates ----------
+    place('garPoster1', 0.46, 0.58, (g, w, h) => {
+      g.fillStyle = '#f1efe6'; g.fillRect(0, 0, w, h - 3);
+      outlinedText(g, 'КУПЛЮ', 2, 2, 'bold 8px ' + SANS, '#1d1d1f', null, 0);
+      outlinedText(g, 'ГАРАЖ', 2, 11, 'bold 8px ' + SANS, '#c8352c', null, 0);
+      g.fillStyle = '#4b4b48'; for (let y = 22; y < h - 10; y += 3) g.fillRect(2, y, w - 4 - ((y * 7) % 6), 1);
+      g.fillStyle = '#f1efe6'; for (let x = 0; x < w; x += 3) g.fillRect(x, h - 8, 2, 8 - ((x * 5) % 4));
+      g.fillStyle = '#2f2f2c'; for (let x = 1; x < w; x += 3) g.fillRect(x, h - 6, 1, 3);
+    });
+    place('garPoster2', 0.36, 0.44, (g, w, h) => {
+      g.fillStyle = '#e9d873'; g.fillRect(0, 0, w, h);
+      outlinedText(g, 'ВСКРЫТИЕ', 1, 2, 'bold 6px ' + SANS, '#1d1d1f', null, 0);
+      outlinedText(g, 'ЗАМКОВ', 1, 9, 'bold 6px ' + SANS, '#1d1d1f', null, 0);
+      g.fillStyle = '#5a5228'; for (let y = 18; y < h - 3; y += 3) g.fillRect(1, y, w - 3 - ((y * 3) % 5), 1);
+    });
+    place('garTorn', 0.34, 0.24, (g, w, h) => {
+      g.fillStyle = '#ece9df'; const R = rng(77);
+      for (let i = 0; i < 26; i++) { const x = R() * w, y = R() * h, a = 1 + R() * 4, b = 1 + R() * 3; g.fillRect(x, y, a, b); }
+    });
+    place('garTag', 1.6, 0.62, (g, w, h) => { scribble(g, 4, 8, w - 14, h - 22, '#1a1a1c', 61, 2.2); scribble(g, w * 0.25, h * 0.45, w * 0.5, h * 0.3, '#1a1a1c', 63, 1.5); });
+    place('garTag2', 0.9, 0.5, (g, w, h) => { scribble(g, 3, 5, w - 8, h - 14, '#e8e6df', 67, 2); });
+    place('plate', 0.52, 0.12, (g, w, h) => {
+      g.fillStyle = '#1b1b1d'; g.fillRect(0, 0, w, h); g.fillStyle = '#f3f2ee'; g.fillRect(1, 1, w - 2, h - 2);
+      g.fillStyle = '#2a2a2c'; for (const x of [3, 6, 9, 12, 15, 18]) g.fillRect(x, 3, 2, h - 6);
+      g.fillStyle = '#d9d7cf'; g.fillRect(w - 7, 1, 1, h - 2);
+      g.fillStyle = '#2f5d9e'; g.fillRect(w - 5, h - 4, 3, 2); g.fillStyle = '#c8352c'; g.fillRect(w - 5, h - 3, 3, 1);
+    });
+    // ---------- the combat suit: stencils and plates ----------
+    place('sNum', 0.4, 0.32, (g, w, h) => { outlinedText(g, '07', 0, 0, 'bold 21px ' + SANS, '#ebe8de', null, 0); });
+    place('sName', 0.56, 0.12, (g, w, h) => { outlinedText(g, 'ИБК-3', 1, 0, 'bold 8px ' + SANS, '#ebe8de', null, 0); });
+    place('sHatch', 0.5, 0.12, (g, w, h) => { outlinedText(g, 'ЛЮК', 1, 0, 'bold 8px ' + SANS, '#ebe8de', null, 0); g.fillStyle = '#ebe8de'; g.fillRect(18, 3, 6, 2); g.fillRect(22, 2, 1, 4); g.fillRect(23, 3, 1, 2); });
+    place('sWarn', 0.24, 0.16, (g, w, h) => {
+      g.fillStyle = '#d9a62a'; g.fillRect(0, 0, w, h); g.fillStyle = '#1c1c1e'; g.fillRect(1, 1, w - 2, 2);
+      for (let y = 5; y < h - 1; y += 2) g.fillRect(2, y, w - 4 - ((y * 5) % 4), 1);
+    });
+    place('sHazard', 0.8, 0.08, (g, w, h) => {
+      for (let x = -h; x < w + h; x += 6) { g.fillStyle = '#d9a62a'; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 3, 0); g.lineTo(x + 3 - h, h); g.lineTo(x - h, h); g.closePath(); g.fill(); g.fillStyle = '#1c1c1e'; g.beginPath(); g.moveTo(x + 3, 0); g.lineTo(x + 6, 0); g.lineTo(x + 6 - h, h); g.lineTo(x + 3 - h, h); g.closePath(); g.fill(); }
+    });
     binarize(atlas);
     uploadDecals(atlas);
     return atlas;

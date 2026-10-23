@@ -1,12 +1,19 @@
   // ================= 2D effects (in world art pixels) =================
   const smokeP = [], fx = [], hits = [], leavesP = [];
+  // screen shake in art pixels: heavy footfalls, engines starting
+  let shakeT = 0, shakeA = 0;
+  function shake(a, t) { shakeA = Math.max(shakeA, a); shakeT = Math.max(shakeT, t); }
+  function shakeNow(axis = 0) { if (shakeT <= 0 || reduceMotion) return 0; return (hash2(Math.floor(performance.now() / 45), axis, 7) - 0.5) * 2 * shakeA; }
   let wispT = 0, puffT = 0, leafT = 0, stepPh = 0;
   // smoke and dust are pixel puffs that grow, drift with the wind and thin out by dithering
   const PUFF = {
     blue: ['#cdd5de', '#aab5c1', '#8c97a4'],      // from the cigarette tip
     white: ['#f3f1ed', '#d9d7d2', '#b8b6b1'],     // breathed out
     gun: ['#e2dfd8', '#bebbb4', '#98958e'],
-    dust: ['#cdb894', '#ae9873', '#8b7757']
+    dust: ['#cdb894', '#ae9873', '#8b7757'],
+    soot: ['#6a6762', '#4a4844', '#2f2e2c'],     // an engine coughing
+    exhaust: ['#b9b6b0', '#9a9791', '#7e7b76'],
+    steam: ['#ffffff', '#eeece8', '#d6d4cf']      // hydraulics letting off
   };
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
   const puffCache = new Map();
@@ -82,14 +89,15 @@
       stepPh = ph;
     }
     updateButterflies(dt);
+    if (shakeT > 0) { shakeT -= dt; if (shakeT <= 0) shakeA = 0; }
     const dr = hero.drink;
     if (dr.on && dr.t > 0.42 && dr.t - dt <= 0.42 && last.canTop) for (let i = 0; i < 6; i++) fx.push({ k: 'drop', x: last.canTop[0], y: last.canTop[1], vx: (Math.random() - 0.5) * 30, vy: -25 - Math.random() * 20, g: 140, life: 0.35 });
     // a few autumn leaves drifting down from crowns in view
     leafT -= dt;
     if (view && leafT <= 0 && !reduceMotion) {
-      leafT = 0.35 + Math.random() * 0.6;
+      leafT = (0.35 + Math.random() * 0.6) / (MAP.leafRate || 1);
       const trees = INST.filter((i) => i.type === 'tree' && i.def.kind !== 'bare' && rectsHit(i.sr, view));
-      if (trees.length && leavesP.length < 14) {
+      if (trees.length && leavesP.length < 14 * (MAP.leafRate || 1)) {
         const t = trees[(Math.random() * trees.length) | 0], bb = t.bb;
         const P = [lerp(bb[0], bb[3], 0.2 + Math.random() * 0.6), bb[4] * (0.55 + Math.random() * 0.3), lerp(bb[2], bb[5], 0.2 + Math.random() * 0.6)];
         const s = wpx(P), g = wpx([P[0], 0, P[2]]);
@@ -172,10 +180,13 @@
         px(ctx, X(f.x), Y(f.y), k, f.white ? 'rgba(255,250,225,0.95)' : (f.life > 0.15 ? '#fff2b0' : '#ffb347'));
       } else if (f.k === 'drop') {
         px(ctx, X(f.x), Y(f.y), k, 'rgba(235,240,245,0.9)');
+      } else if (f.k === 'bit') {
+        px(ctx, X(f.x), Y(f.y), k, f.col);
       } else if (f.k === 'clank') {
         for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, 1], [1, -1], [-1, 1]]) px(ctx, X(f.x + dx), Y(f.y + dy), k, '#fff6dc');
       }
     }
+    drawMachineFx(ctx, k, X, Y);
     for (const g of last.glows) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) px(ctx, X(g[0] + dx), Y(g[1] + dy), k, 'rgba(110,255,150,0.38)');
     if (last.flame && last.tip) {
       px(ctx, X(last.tip[0]), Y(last.tip[1] - 1), k, '#ffe08a'); px(ctx, X(last.tip[0]), Y(last.tip[1] - 2), k, '#ff9f3a');

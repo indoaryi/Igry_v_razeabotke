@@ -8,7 +8,7 @@
       if (hero.queue.length && hero.queue[0].type === 'leave') hero.act.leave = true;
       ACT[hero.act.kind].update(hero.act, dt);
       if (hero.act.done) { const a = hero.act; hero.act = null; hero.y = groundY(hero.x, hero.z); if (a.after) a.after(); }
-    } else if (hero.path.length) {
+    } else if (hero.path.length && !driving()) {
       let budget = speed() * dt;
       while (budget > 0 && hero.path.length) {
         const wp = hero.path[0], dx = wp.x - hero.x, dz = wp.z - hero.z, d = Math.hypot(dx, dz);
@@ -20,7 +20,7 @@
     hero.yaw = approachAngle(hero.yaw, hero.tyaw, dt * (hero.path.length ? 10 : 7));
     if (!hero.path.length && !hero.act) runQueue();
     if (!hero.path.length && hero.target && Math.hypot(hero.target[0] - hero.x, hero.target[1] - hero.z) < 0.35) hero.target = null;
-    const moving = hero.path.length > 0 && !hero.act;
+    const moving = hero.path.length > 0 && !hero.act && !driving();
     hero.walkW = approach(hero.walkW, moving ? 1 : 0, dt * 7);
     hero.runW = approach(hero.runW, moving && hero.run ? 1 : 0, dt * 4);
     hero.sit = approach(hero.sit, hero.sitTarget, dt / 0.5);
@@ -42,9 +42,11 @@
     const re = hero.reach;
     if (re.on && !re.fired && re.t > 0.7) { re.fired = true; if (re.cb) re.cb(); }
     if (re.on && re.t > 1.7) re.on = false;
+    updateMachines(dt);
     updateDyn(dt);
     updatePigeons(dt);
     updateFx(dt, view);
+    updateTravel(dt);
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.hidden = true; }
   }
 

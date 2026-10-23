@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Сборка игры в одну самодостаточную страницу.
 //   node tools/build.mjs pyatietazhki
-// Читает <игра>/build.json: шаблон страницы, фото, список частей кода (движок + игра) в порядке склейки.
+// Читает <игра>/build.json: шаблон страницы, фото локаций, список частей кода (движок + игра) в порядке склейки.
 // Части склеиваются в один скрипт внутри общей функции, поэтому видят друг друга напрямую.
 // Пишет две версии:
 //   <игра>/index.html          — полная страница для GitHub Pages
@@ -16,9 +16,9 @@ const man = JSON.parse(fs.readFileSync(path.join(root, game, 'build.json'), 'utf
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
 const js = man.parts.map(read).join('');
-const photo = man.photo
-  ? `<script>document.getElementById('photoImg').src = 'data:image/jpeg;base64,${fs.readFileSync(path.join(root, man.photo)).toString('base64')}';</script>`
-  : '';
+// location photos go in as data: URLs; the page picks the one for the location the hero is in
+const photos = Object.entries(man.photos || {}).map(([k, f]) => `${JSON.stringify(k)}: 'data:image/jpeg;base64,${fs.readFileSync(path.join(root, f)).toString('base64')}'`);
+const photo = photos.length ? `<script>window.YARD_PHOTOS = { ${photos.join(', ')} };</script>` : '';
 const script = `<script>\n(() => {\n${js}})();\n</script>\n`;
 
 let page = read(man.page);

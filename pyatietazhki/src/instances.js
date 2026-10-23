@@ -1,8 +1,9 @@
   // ================= instances: each map entry built, baked into world space and given an id =================
-  const INST = [];
-  const HEIGHTS = [];    // walkable raised areas (porches, steps)
-  let nextId = 2;
-  const ACTIVE = new Set(['swing', 'pullbar', 'slide', 'platform', 'hoop', 'towers', 'garage', 'substation', 'grass', 'bench', 'entrance']);
+  // all of these belong to the current location; locations.js swaps them when the hero walks to another one
+  let INST = [];
+  let HEIGHTS = [];      // walkable raised areas (porches, steps)
+  let nextId = 2;        // object ids are written into an 8-bit picking buffer, so each location numbers its own from 2
+  const ACTIVE = new Set(['swing', 'pullbar', 'slide', 'platform', 'hoop', 'towers', 'garage', 'substation', 'grass', 'bench', 'entrance', 'metalgarage', 'car']);
   function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
   function instantiate(def, parentM) {
     const T = CATALOG[def.type];
@@ -33,24 +34,20 @@
     return inst;
   }
   const byType = (t) => INST.filter((i) => i.type === t);
-  const instById = new Map();
+  let instById = new Map();
+  // builds every object of the current location (MAP) from scratch
   function buildWorld() {
+    INST = []; HEIGHTS = []; nextId = 2; instById = new Map();
+    PATH_SEGS = [];
+    for (const pl of MAP.paths) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
     for (const d of MAP.objects) instantiate(d);
-    // power lines: pole → substation, pole → the far block's wall, pole → the near block's corner
-    const pole = byType('pole')[0], sub = byType('substation')[0];
-    const pa = pole.built.attach.map((p) => xf(pole.M0, p)), sa = sub.built.attach.map((p) => xf(sub.M0, p));
-    const runs = [];
-    for (let i = 0; i < 3; i++) runs.push([pa[i], sa[i], 0.35]);
-    runs.push([pa[0], [15.6, 6.4, 1.08], 0.45], [pa[2], [16.2, 6.4, 1.08], 0.45]);
-    runs.push([pa[1], [2.12, 7.4, 9.6], 0.7]);
-    instantiate({ type: 'wires', at: [0, 0], rot: 0, runs });
+    if (MAP.afterBuild) MAP.afterBuild();
+    spawnMachines();
     buildMeadowTiles();
     for (const i of INST) if (i.id) instById.set(i.id, i);
   }
-  // grass everywhere it can grow: off the paths, out of the objects' footprints, thinner under trees
   // distance from a point to the nearest trodden path of the map
-  const PATH_SEGS = [];
-  for (const pl of MAP.paths) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
+  let PATH_SEGS = [];
   function pathDist(x, z) {
     let best = 99;
     for (const [a, b] of PATH_SEGS) {
@@ -80,7 +77,8 @@
     };
     const trees = INST.filter((i) => i.type === 'tree');
     const shadeOf = (x, z) => { let q = 0; for (const t of trees) q = Math.max(q, 1 - ((x - t.def.at[0]) ** 2 + (z - t.def.at[1]) ** 2) / 7.5); return q; };
-    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf, edgeDist });
+    const leaves = (MAP.style && MAP.style.leaves) || (() => 0);
+    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf, edgeDist, leaves, look: MAP.meadow || {} });
   }
   const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
 

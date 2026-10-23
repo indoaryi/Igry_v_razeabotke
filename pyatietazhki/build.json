@@ -1,6 +1,5 @@
 {
   "page": "pyatietazhki/page.html",
-  "photo": "pyatietazhki/assets/photo.jpg",
   "parts": [
     "engine/src/core/prelude.js",
     "engine/src/core/camera.js",
@@ -13,7 +12,9 @@
     "engine/src/hero/skeleton.js",
     "pyatietazhki/src/decals.js",
     "pyatietazhki/src/catalog.js",
+    "pyatietazhki/src/catalog2.js",
     "pyatietazhki/src/map.js",
+    "pyatietazhki/src/yard2.js",
     "pyatietazhki/src/instances.js",
     "engine/src/world/ground.js",
     "engine/src/world/nav.js",
@@ -23,8 +24,11 @@
     "engine/src/fx/fx2d.js",
     "pyatietazhki/src/update.js",
     "pyatietazhki/src/pigeons.js",
+    "engine/src/world/locations.js",
     "engine/src/hero/rig.js",
     "pyatietazhki/src/dyn-items.js",
+    "engine/src/machine/machine.js",
+    "engine/src/machine/ibk3.js",
     "engine/src/render/stage.js",
     "pyatietazhki/src/ui-hud.js",
     "pyatietazhki/src/ui-portrait.js",
@@ -33,5 +37,9 @@
     "pyatietazhki/src/boot.js"
   ],
   "out": "pyatietazhki/index.html",
-  "artifact": "build/pyatietazhki.html"
+  "artifact": "build/pyatietazhki.html",
+  "photos": {
+    "yard1": "pyatietazhki/assets/photo.jpg",
+    "yard2": "pyatietazhki/assets/photo2.jpg"
+  }
 }
