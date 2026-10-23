@@ -31,7 +31,8 @@
       a: makeRamp(hex), b: makeRamp(o.b || hex), pat: o.pat || 0, key: ++matSerial,
       p: Float32Array.from(o.p || [0, 0, 0, 0]), r: Float32Array.from(o.r || [0, 0, 0, 0]),
       q: Float32Array.from([o.noise ?? 0.08, o.grain ?? 50, o.side ?? 1, o.nape ?? -1]),
-      s: Float32Array.from([o.spec ?? 0, o.gloss ?? 16, 0, 0])
+      s: Float32Array.from([o.spec ?? 0, o.gloss ?? 16, o.thin ? 1 : 0, 0]),
+      w: o.wind ? Float32Array.from(o.wind) : null      // [sway m, 1 / height m, speed, flutter share]
     };
   }
   const hexRGB = (h) => hex2rgb(h).map((v) => Math.round(v * 255));

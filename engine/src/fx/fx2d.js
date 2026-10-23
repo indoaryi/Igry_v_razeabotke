@@ -1,6 +1,34 @@
   // ================= 2D effects (in world art pixels) =================
   const smokeP = [], fx = [], hits = [], leavesP = [];
-  let wispT = 0, puffT = 0, leafT = 0;
+  let wispT = 0, puffT = 0, leafT = 0, stepPh = 0;
+  // smoke and dust are pixel puffs that grow, drift with the wind and thin out by dithering
+  const PUFF = {
+    blue: ['#cdd5de', '#aab5c1', '#8c97a4'],      // from the cigarette tip
+    white: ['#f3f1ed', '#d9d7d2', '#b8b6b1'],     // breathed out
+    gun: ['#e2dfd8', '#bebbb4', '#98958e'],
+    dust: ['#cdb894', '#ae9873', '#8b7757']
+  };
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const puffCache = new Map();
+  function puffSprite(tone, r, lv) {
+    const key = tone + r + '|' + lv;
+    let c = puffCache.get(key);
+    if (c) return c;
+    const n = 2 * r + 1, cols = PUFF[tone];
+    c = document.createElement('canvas'); c.width = n; c.height = n;
+    const g = c.getContext('2d');
+    for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+      const d = Math.hypot(i, j) + (hash2(i + 9, j + 9, r) - 0.5) * 0.9;
+      if (d > r + 0.35) continue;
+      if (BAYER[((j + 8) & 3) * 4 + ((i + 8) & 3)] >= lv * 4) continue;
+      const sh = (-i - j) / (r * 1.5 + 0.5);
+      g.fillStyle = cols[sh > 0.3 ? 0 : sh < -0.35 ? 2 : 1];
+      g.fillRect(i + r, j + r, 1, 1);
+    }
+    puffCache.set(key, c);
+    return c;
+  }
+  const puff = (o) => smokeP.push(Object.assign({ age: 0, seed: Math.random() * 6.28, a: 0.9, r0: 0.6, r1: 3, drag: 0.6, rise: 0, tone: 'white' }, o));
   const last = { tip: null, mouth: null, fistL: null, fistR: null, face: [0, 1], muzzle: null, port: null, portDir: [1, 0], canTop: null, glows: [], root: null, chest: null, flame: false, aim2d: [1, 0] };
   function fireShot() {
     if (!last.muzzle) return;
@@ -13,7 +41,8 @@
     fx.push({ k: 'tracer', x: mx, y: my, x1: hx, y1: hy, life: 0.06 });
     if (last.port) fx.push({ k: 'casing', x: last.port[0], y: last.port[1], vx: last.portDir[0] * 40 + (Math.random() - 0.5) * 10, vy: -38 - Math.random() * 12, g: 190, life: 0.55, floor: (last.root ? last.root[1] : my) + 2 });
     for (let i = 0; i < 5; i++) fx.push({ k: 'spark', x: hx, y: hy, vx: (Math.random() - 0.3) * 50, vy: -Math.random() * 45, g: 150, life: 0.25 + Math.random() * 0.1 });
-    for (let i = 0; i < 2; i++) smokeP.push({ x: mx, y: my - 1, vx: (Math.random() - 0.5) * 6, vy: -7 - Math.random() * 4, life: 0.8, max: 0.8, odd: true });
+    const [ax, ay] = last.aim2d || [1, 0];
+    for (let i = 0; i < 6; i++) puff({ x: mx + ax * 2, y: my + ay * 2 - 1, vx: ax * (10 + Math.random() * 14) + (Math.random() - 0.5) * 6, vy: ay * 8 - 4 - Math.random() * 5, life: 0.9 + Math.random() * 0.5, r0: 1, r1: 4 + Math.random() * 2.5, a: 0.8, drag: 0.25, rise: -6, tone: 'gun' });
     if (hit) {
       const away = nrm([c.pos[0] - hero.x, 0, c.pos[2] - hero.z]);
       c.state = 'fly'; c.v = [away[0] * (1.6 + Math.random()) + (Math.random() - 0.5), 2.2 + Math.random() * 1.4, away[2] * (1.6 + Math.random()) + (Math.random() - 0.5)];
@@ -31,17 +60,28 @@
   function updateFx(dt, view) {
     const sm = hero.smoke;
     if (sm.on && sm.w > 0.95 && sm.t > SMOKE_INTRO && last.tip) {
-      const s = smokeLoop(sm.t - SMOKE_INTRO + 0.5);
+      const st = smokeLoop(sm.t - SMOKE_INTRO + 0.5);
       wispT -= dt;
-      if (wispT <= 0 && !s.inhale) { wispT = 0.22; smokeP.push({ x: last.tip[0], y: last.tip[1] - 1, vx: (Math.random() - 0.5) * 3, vy: -10, life: 1.3, max: 1.3, odd: Math.random() < 0.5 }); }
-      if (s.exhale && last.mouth) {
+      if (wispT <= 0 && !st.inhale) { wispT = 0.06; puff({ x: last.tip[0], y: last.tip[1] - 1, vx: (Math.random() - 0.5) * 2, vy: -11 - Math.random() * 4, life: 1.6 + Math.random() * 0.8, r0: 0.5, r1: 2 + Math.random() * 1.4, a: 0.95, drag: 0.9, rise: -2, tone: 'blue' }); }
+      if (st.exhale && last.mouth) {
         puffT -= dt;
         if (puffT <= 0) {
-          puffT = 0.05;
-          for (let i = 0; i < 2; i++) smokeP.push({ x: last.mouth[0] + last.face[0] * 2, y: last.mouth[1], vx: last.face[0] * 14 + (Math.random() - 0.5) * 7, vy: last.face[1] * 7 - 5 - Math.random() * 4, life: 1.6, max: 1.6, big: Math.random() < 0.6 });
+          puffT = 0.04;
+          for (let i = 0; i < 3; i++) puff({ x: last.mouth[0] + last.face[0] * 2, y: last.mouth[1], vx: last.face[0] * (18 + Math.random() * 10) + (Math.random() - 0.5) * 6, vy: last.face[1] * 9 - 6 - Math.random() * 5, life: 2.0 + Math.random() * 0.8, r0: 1, r1: 5 + Math.random() * 3, a: 1, drag: 0.3, rise: -5, tone: 'white' });
         }
       }
+      last.ember = st.inhale ? 2 : 1;
+    } else last.ember = 0;
+    // dust from the feet on bare earth and paths, one puff per step
+    if (hero.walkW > 0.5 && !hero.act && last.root) {
+      const ph = hero.phase * 2;
+      if (Math.floor(ph) !== Math.floor(stepPh)) {
+        const t = groundType(hero.x, hero.z);
+        if (t === ':' || pathDist(hero.x, hero.z) < 0.45) for (let i = 0; i < (hero.run ? 4 : 2); i++) puff({ x: last.root[0] + (Math.random() - 0.5) * 6, y: last.root[1] - 1, vx: (Math.random() - 0.5) * 10, vy: -3 - Math.random() * 4, life: 0.5 + Math.random() * 0.3, r0: 0.8, r1: 2.2 + Math.random(), a: 0.55, drag: 0.2, rise: 2, tone: 'dust' });
+      }
+      stepPh = ph;
     }
+    updateButterflies(dt);
     const dr = hero.drink;
     if (dr.on && dr.t > 0.42 && dr.t - dt <= 0.42 && last.canTop) for (let i = 0; i < 6; i++) fx.push({ k: 'drop', x: last.canTop[0], y: last.canTop[1], vx: (Math.random() - 0.5) * 30, vy: -25 - Math.random() * 20, g: 140, life: 0.35 });
     // a few autumn leaves drifting down from crowns in view
@@ -58,13 +98,46 @@
     }
     for (const l of leavesP) { l.ph += dt * 3; l.y += dt * 16; l.x += Math.sin(l.ph) * dt * 14; l.life -= dt; if (l.y >= l.floor) { l.y = l.floor; l.life = Math.min(l.life, 1.5); } }
     for (let i = leavesP.length - 1; i >= 0; i--) if (leavesP[i].life <= 0) leavesP.splice(i, 1);
-    for (const p of smokeP) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.985; p.life -= dt; }
-    for (let i = smokeP.length - 1; i >= 0; i--) if (smokeP[i].life <= 0) smokeP.splice(i, 1);
+    for (const p of smokeP) {
+      const dg = Math.pow(p.drag, dt);
+      p.vx = p.vx * dg + 4 * dt; p.vy = p.vy * dg + p.rise * dt;          // slows down, drifts with the breeze to the right
+      p.x += p.vx * dt + Math.sin(p.age * 4 + p.seed) * dt * 5; p.y += p.vy * dt;
+      p.age += dt;
+    }
+    for (let i = smokeP.length - 1; i >= 0; i--) if (smokeP[i].age >= smokeP[i].life) smokeP.splice(i, 1);
+    if (smokeP.length > 160) smokeP.splice(0, smokeP.length - 160);
     for (const f of fx) {
       f.life -= dt;
       if (f.vx !== undefined) { f.vy += (f.g || 0) * dt; f.x += f.vx * dt; f.y += f.vy * dt; if (f.floor && f.y > f.floor) { f.y = f.floor; f.vy *= -0.3; f.vx *= 0.5; } }
     }
     for (let i = fx.length - 1; i >= 0; i--) if (fx[i].life <= 0) fx.splice(i, 1);
+  }
+  // a few cabbage whites over the grass: they wander, flap, and keep away from the hero
+  const BUTTERFLIES = [];
+  function updateButterflies(dt) {
+    if (!BUTTERFLIES.length) {
+      const R = rng(808);
+      for (let i = 0; i < 4; i++) BUTTERFLIES.push({ x: 9 + R() * 14, z: 9 + R() * 14, y: 0.6, tx: 0, tz: 0, ph: R() * 6, bob: R() * 6, col: i === 3 ? '#efd95c' : '#f6f4ec', wait: 0 });
+      for (const b of BUTTERFLIES) { b.tx = b.x; b.tz = b.z; }
+    }
+    for (const b of BUTTERFLIES) {
+      const dh = Math.hypot(b.x - hero.x, b.z - hero.z);
+      if (dh < 1.6) { const a = Math.atan2(b.z - hero.z, b.x - hero.x) + (Math.random() - 0.5); b.tx = clamp(b.x + Math.cos(a) * 3, 1, 29); b.tz = clamp(b.z + Math.sin(a) * 3, 1, 29); b.wait = 0; }
+      const dx = b.tx - b.x, dz = b.tz - b.z, d = Math.hypot(dx, dz);
+      if (d < 0.2) { b.wait -= dt; if (b.wait <= 0) { b.tx = clamp(b.x + (Math.random() - 0.5) * 5, 2, 28); b.tz = clamp(b.z + (Math.random() - 0.5) * 5, 2, 28); b.wait = 0.5 + Math.random() * 2; } }
+      else { const v = (dh < 2.5 ? 1.6 : 0.7) * dt; b.x += dx / d * v + Math.sin(b.ph * 0.37) * dt * 0.4; b.z += dz / d * v + Math.cos(b.ph * 0.29) * dt * 0.4; }
+      b.ph += dt * 15; b.bob += dt * 2.3;
+      b.y = 0.45 + Math.sin(b.bob) * 0.22 + (d < 0.2 ? -0.2 : 0.25);
+    }
+  }
+  function drawButterflies(ctx, k, X, Y) {
+    for (const b of BUTTERFLIES) {
+      const [sx, sy] = wpx([b.x, b.y, b.z]), x = X(sx), y = Y(sy);
+      if (Math.sin(b.ph) > 0) { px(ctx, x - 1, y, k, b.col); px(ctx, x + 1, y, k, b.col); px(ctx, x, y, k, '#5b564c'); }
+      else { px(ctx, x, y - 1, k, b.col); px(ctx, x, y, k, '#5b564c'); }
+      const [gx, gy] = wpx([b.x, 0, b.z]);
+      px(ctx, X(gx), Y(gy), k, 'rgba(20,30,10,0.35)');
+    }
   }
   function px(ctx, x, y, k, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k))); }
   // draw effects; X/Y map world art px to the target canvas, k is the size of one art pixel there
@@ -72,11 +145,17 @@
     const X = (x) => x - ox, Y = (y) => y - oy;
     for (const [x, y] of hits) px(ctx, X(x), Y(y), k, 'rgba(40,28,22,0.85)');
     for (const l of leavesP) { px(ctx, X(l.x), Y(l.y), k, l.col); if (Math.sin(l.ph) > 0) px(ctx, X(l.x + 1), Y(l.y), k, l.col); }
+    drawButterflies(ctx, k, X, Y);
     for (const p of smokeP) {
-      const f = p.life / p.max, x = Math.round(X(p.x)), y = Math.round(Y(p.y));
-      const coreA = f > 0.6 ? 0.95 : f > 0.3 ? 0.7 : 0.4, rimA = f > 0.6 ? 0.75 : f > 0.3 ? 0.45 : 0;
-      if (p.big && rimA > 0) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) px(ctx, x + dx, y + dy, k, `rgba(150,147,142,${rimA})`);
-      px(ctx, x, y, k, p.big ? `rgba(240,238,233,${coreA})` : (p.odd ? `rgba(172,169,164,${coreA})` : `rgba(236,234,229,${coreA})`));
+      const t = p.age / p.life, r = Math.round(p.r0 + (p.r1 - p.r0) * (1 - (1 - t) * (1 - t)));
+      const lv = Math.round(p.a * Math.pow(1 - t, 1.2) * 4);
+      if (lv <= 0) continue;
+      const sp = puffSprite(p.tone, r, lv);
+      ctx.drawImage(sp, Math.round((X(p.x) - r) * k), Math.round((Y(p.y) - r) * k), sp.width * Math.max(k, 1e-3), sp.height * Math.max(k, 1e-3));
+    }
+    if (last.ember && last.tip) {
+      px(ctx, X(last.tip[0]), Y(last.tip[1]), k, last.ember > 1 ? '#ffd27a' : '#e2562c');
+      if (last.ember > 1) px(ctx, X(last.tip[0]) + 1, Y(last.tip[1]), k, '#ff8a3a');
     }
     for (const f of fx) {
       if (f.k === 'tracer') {

@@ -2,8 +2,23 @@
   // Local frame: origin on the ground at the object's anchor, +z is the object's front.
   const paint = (hex, o = {}) => mat(hex, { pat: 38, b: o.rustCol || '#7c4c33', p: [o.rf || 6, o.rt ?? 0.9, 0, 0], noise: 0.05, grain: 60, spec: o.spec ?? 0.35, gloss: 14 });
   const flat = (hex, idx) => mat(hex, { pat: 10, p: [idx, 0, 0, 0] });
-  const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.cell || 15, o.cut || 0.3, 0], noise: 0.05, grain: 30 }), { fade: true, fl: 4 });
-  const grassMat = (hex, dryHex, h, dry) => Object.assign(mat(hex, { pat: 36, b: dryHex, p: [h, 1, dry, 0], noise: 0 }), { fl: 1, noShadow: true });
+  // leaf clumps: p = [share of turning leaves, leaves per metre, edge zone where leaves thin out, leaf radius in cells], r.x = how solid the inside is
+  const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.dens || 11, o.cut || 0.42, o.rr || 0.44], r: [o.solid ?? 0.7, 0, 0, 0], noise: 0.04, grain: 30, wind: o.wind || [0.05, 1 / 8, 1.25, 0.35] }), { fade: true, fl: 4 });
+  // a clump whose normals lean towards the outside of the whole crown, so the crown reads as one lit mass rather than a pile of balls
+  function clumpRaw(v, out, yaw, w) {
+    const base = lumpMesh(v), c = Math.cos(yaw), sn = Math.sin(yaw);
+    const d = [c * out[0] - sn * out[2], out[1], sn * out[0] + c * out[2]], N = base.nrm, nn = new Array(N.length);
+    for (let i = 0; i < N.length; i += 3) {
+      const b = nrm([N[i] + (d[0] - N[i]) * w, N[i + 1] + (d[1] - N[i + 1]) * w, N[i + 2] + (d[2] - N[i + 2]) * w]);
+      nn[i] = b[0]; nn[i + 1] = b[1]; nn[i + 2] = b[2];
+    }
+    return { pos: base.pos, nrm: nn, idx: base.idx };
+  }
+  // grass on camera-facing cards: p.z = share of dry blades
+  const grassMat = (hex, dryHex, h, dry) => Object.assign(mat(hex, { pat: 39, b: dryHex, p: [h, 1, dry, 0], noise: 0, thin: true, wind: [0.04, 1 / 0.6, 2.1, 0.45] }), { fl: 1, noShadow: true });
+  const CARD = () => rawMesh('card', () => ({ pos: [-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], nrm: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], idx: [0, 1, 2, 0, 2, 3] }));
+  const CARD_BASIS = basis(RV, [0, 1, 0], [SQ2 / 2, 0, SQ2 / 2]);
+  const card = (k, m, x, z, w, h) => k.put(CARD(), M(tr(x, 0, z), CARD_BASIS, sc3(w, h, 1)), m, k.R());
   const decalCache = new Map();
   const decal = (name) => { let m = decalCache.get(name); if (!m) { m = Object.assign(decalMat(name), { noShadow: true }); decalCache.set(name, m); } return m; };
   // put a decal plate centred at c (local), facing direction f: 'z' (+z), 'x' (+x), '-x'
@@ -16,31 +31,31 @@
   // ---------- five-storey brick block ----------
   function buildBlock5(o) {
     const k = new Kit(o.seed || 7), R = k.R;
-    const L = o.len, Dp = o.depth || 12, F = 5, FH = 2.8, BASE = 0.75, H = BASE + F * FH + 0.2;
+    const L = o.len, Dp = o.depth || 12, F = 5, FH = 2.8, BASE = 0.75, H = BASE + F * FH + 0.2, REC = 0.22;
     const nb = Math.round(L / 3.1), bw = L / nb;
-    const brick = mat(o.brick, { pat: 30, b: o.brick2, p: [0.1512, 0.52, 0.1, 0.86], noise: 0.03, grain: 40 });
+    const brick = mat(o.brick, { pat: 30, b: o.brick2, p: [0.1512, 0.52, 0.1, 0.86], r: [BASE, 0, 0, 0], noise: 0.03, grain: 40 });
     const baseM = mat(o.base || '#9a948a', { pat: 33, b: '#8a847a', p: [BASE, 0.2, 3, 0], noise: 0.08, grain: 45 });
-    const conc = mat('#b7b3a9', { pat: 48, p: [1, 0, 0, 0], noise: 0.07, grain: 40 });
     const slabM = mat('#c4c0b7', { noise: 0.05, grain: 40 });
     const roofM = mat('#5d5a56', { pat: 34, noise: 0.06, grain: 30 });
     const parM = mat('#aca89f', { noise: 0.06, grain: 40 });
     const sill = mat('#a9aeb1', { noise: 0.03, spec: 0.4, gloss: 16 });
     const pipe = mat('#8f9599', { pat: 23, p: [1.2, 0, 0, 0], noise: 0.03, spec: 0.4, gloss: 16 });
+    const lintM = mat(o.lintel || '#bdb8ad', { pat: 48, p: [10, 0, 0, 0], noise: 0.06, grain: 40 });
     const fr = o.frame || '#eceae4';
-    const winA = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.055, 0.75, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
-    const winB = mat('#4b6680', { pat: 43, b: fr, p: [3, 0.055, 1.05, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
-    const winS = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.05, 0.5, 0.6], r: [0.022, 0, 0, 0], noise: 0 });
     const glazF = mat('#56718c', { pat: 43, b: fr, p: [4, 0.05, 1.27, 0.76], r: [0.012, 0, 0, 0], noise: 0 });
     const glazS = mat('#56718c', { pat: 43, b: fr, p: [2, 0.05, 0.56, 0.76], r: [0.012, 0, 0, 0], noise: 0 });
+    const winA = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.055, 0.75, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
     const panel = mat(o.panel, { pat: 38, b: o.panel2 || '#7c4c33', p: [5, 0.93, 0, 0], noise: 0.05, grain: 50 });
-    const doorM = mat(o.door || '#5a4434', { pat: 38, b: '#7b4b32', p: [7, 0.88, 0, 0], noise: 0.05, grain: 60, spec: 0.3, gloss: 12 });
-    const darkM = mat('#3a3633', { noise: 0.04 });
     const acM = mat('#e4e3de', { pat: 12, p: [0.1, 34, 0, 0], noise: 0.03 });
     const dishM = mat('#d9d9d4', { noise: 0.02, spec: 0.4, gloss: 10 });
-    const lampM = mat('#d8d2b8', { noise: 0.02 });
     const railM = flat('#3b3d40', 1);
-    // body, plinth, roof
-    k.boxMM(brick, 0, 0, -Dp, L, H, 0);
+    // window frames: new white plastic or old painted wood; glass with curtains in different colours
+    const frames = [mat(fr, { noise: 0.02, spec: 0.2, gloss: 10 }), mat(o.frame2 || '#86684a', { pat: 38, b: '#5e4532', p: [9, 0.88, 0, 0], noise: 0.05, grain: 50 })];
+    const glassM = ['#ebe6da', '#dccca6', '#b8644f', '#8ea37a', '#d1c18c', '#9fb4c8', '#c9a3a8'].map((c) => mat('#4b6680', { pat: 49, b: c, noise: 0 }));
+    const barM = mat('#2f3134', { noise: 0.03, spec: 0.3, gloss: 12 });
+    const UBOX = () => rawMesh('ubox', () => box(1, 1, 1));
+    // body behind the facade shell, plinth, roof
+    k.boxMM(brick, 0, 0, -Dp, L, H, -REC);
     k.boxMM(baseM, -0.05, 0, -Dp - 0.05, L + 0.05, BASE, 0.06);
     k.boxMM(roofM, 0.2, H, -Dp + 0.2, L - 0.2, H + 0.22, -0.2);
     k.boxMM(parM, -0.04, H, -0.26, L + 0.04, H + 0.6, 0.04);
@@ -55,23 +70,37 @@
     const ant = [];
     for (const x of [bw * 1.5, L - bw * 2]) { ant.push([[x, H + 0.2, -Dp * 0.4], [x, H + 3.0, -Dp * 0.4]], [[x - 0.6, H + 2.6, -Dp * 0.4], [x + 0.6, H + 2.6, -Dp * 0.4]], [[x - 0.4, H + 2.2, -Dp * 0.4], [x + 0.4, H + 2.2, -Dp * 0.4]]); }
     k.lines(railM, ant);
-    // drainpipes
     for (const x of [0.32, L - 0.32]) {
       k.rod(pipe, [x, 0.3, 0.15], [x, H + 0.1, 0.15], 0.065, 8);
       k.boxMM(pipe, x - 0.08, 0.12, 0.08, x + 0.08, 0.3, 0.32);
     }
-    // house number plates on both ends
     decalOn(k, 'houseNo', [-0.006, 3.4, -1.2], '-x');
     decalOn(k, 'houseNo', [L + 0.006, 3.4, -1.2], 'x');
     const spots = [], heights = [], blocks = [{ rect: [0, -Dp, L, 0.05] }];
-    const window_ = (xc, yF, wide) => {
-      const w = wide ? winB : winA, hw = wide ? 1.05 : 0.75, yc = yF + 0.85 + 0.725;
-      k.box(w, [xc, yc, 0.025], [hw, 0.725, 0.025], null, R());
-      k.boxMM(sill, xc - hw - 0.05, yF + 0.8, 0, xc + hw + 0.05, yF + 0.85, 0.13);
+    // a window set REC deep into the wall: glass, frame with leaves and a transom, tin sill, concrete lintel; bars on some ground-floor ones
+    const windowIn = (xc, ys, hw, f) => {
+      const hh = 0.725, yc = ys + hh, zf = -0.11, fw = 0.045;
+      k.put(UBOX(), M(tr(xc, yc, -0.155), sc3(hw, hh, 0.012)), glassM[(R() * glassM.length) | 0], R());
+      const fm = R() < 0.62 ? frames[0] : frames[1];
+      k.boxMM(fm, xc - hw, ys, zf - 0.03, xc + hw, ys + fw, zf + 0.03);
+      k.boxMM(fm, xc - hw, yc + hh - fw, zf - 0.03, xc + hw, yc + hh, zf + 0.03);
+      k.boxMM(fm, xc - hw, ys, zf - 0.03, xc - hw + fw, yc + hh, zf + 0.03);
+      k.boxMM(fm, xc + hw - fw, ys, zf - 0.03, xc + hw, yc + hh, zf + 0.03);
+      const leaves = hw > 1 ? 3 : 2, lw = 2 * hw / leaves;
+      for (let j = 1; j < leaves; j++) { const xm = xc - hw + lw * j; k.boxMM(fm, xm - fw / 2, ys, zf - 0.03, xm + fw / 2, yc + hh, zf + 0.03); }
+      const l0 = xc - hw + lw * ((R() * leaves) | 0);
+      k.boxMM(fm, l0, yc + 0.3, zf - 0.025, l0 + lw, yc + 0.3 + fw, zf + 0.025);
+      k.boxMM(sill, xc - hw - 0.05, ys - 0.05, -0.04, xc + hw + 0.05, ys, 0.12);
+      k.boxMM(lintM, xc - hw - 0.2, yc + hh, -0.012, xc + hw + 0.2, yc + hh + 0.2, 0.012);
+      if (f === 0 && R() < 0.55) {
+        for (let x = xc - hw + 0.08; x < xc + hw - 0.04; x += 0.13) k.boxMM(barM, x - 0.012, ys - 0.02, 0.03, x + 0.012, yc + hh + 0.02, 0.055);
+        for (const y of [ys + 0.3, yc + hh - 0.25]) k.boxMM(barM, xc - hw - 0.04, y - 0.015, 0.025, xc + hw + 0.04, y + 0.015, 0.06);
+      }
       const r = R();
-      if (r < 0.1) k.boxMM(acM, xc + hw + 0.18, yc - 0.05, 0, xc + hw + 0.9, yc + 0.45, 0.3);
-      else if (r < 0.15) k.mesh('dish', () => ellipsoid(0.3, 0.3, 0.08, { seg: 12, rings: 5, half: true }), dishM, M(tr(xc - hw - 0.35, yc + 0.35, 0.12), rx(-1.1)), 0);
+      if (r < 0.15) k.boxMM(acM, xc + hw + 0.18, yc - 0.05, 0, xc + hw + 0.9, yc + 0.45, 0.3);
+      else if (r < 0.23) k.mesh('dish', () => ellipsoid(0.3, 0.3, 0.08, { seg: 12, rings: 5, half: true }), dishM, M(tr(xc - hw - 0.35, yc + 0.35, 0.12), rx(-1.1)), 0);
     };
+    const CLOTHES = ['#e8e6e0', '#c94f45', '#4f6fa8', '#e2c34a', '#7aa36a', '#d98fb0', '#3d3f45'].map((c) => Object.assign(mat(c, { noise: 0.06, grain: 40, wind: [0.025, 1 / 14, 2.4, 0.6] }), { noShadow: false }));
     const loggia = (xc, yF, top, f) => {
       const x0 = xc - 1.3, x1 = xc + 1.3, D = 1.15;
       k.boxMM(slabM, x0 - 0.03, yF - 0.12, 0, x1 + 0.03, yF, D + 0.04);
@@ -79,28 +108,49 @@
       k.boxMM(pm, x0, yF, D - 0.07, x1, yF + 1.0, D);
       k.boxMM(pm, x0, yF, 0, x0 + 0.07, yF + 1.0, D - 0.07);
       k.boxMM(pm, x1 - 0.07, yF, 0, x1, yF + 1.0, D - 0.07);
-      if (R() < 0.8) {
+      if (R() < 0.75) {
         k.box(glazF, [xc, yF + 1.76, D - 0.035], [1.27, 0.76, 0.015], null, R());
         k.box(glazS, [x0 + 0.035, yF + 1.76, D / 2], [0.56, 0.76, 0.015], ry(-Math.PI / 2), R());
         k.box(glazS, [x1 - 0.035, yF + 1.76, D / 2], [0.56, 0.76, 0.015], ry(Math.PI / 2), R());
       } else {
+        // open: a window and a balcony door in the wall, laundry on a line
         k.boxMM(sill, x0, yF + 1.0, D - 0.1, x1, yF + 1.05, D + 0.01);
         k.box(winA, [xc - 0.45, yF + 1.57, 0.025], [0.75, 0.725, 0.025], null, R());
-        k.lines(railM, [[[x0 + 0.1, yF + 2.1, D - 0.4], [x1 - 0.1, yF + 2.1, D - 0.4]]]);
+        const ly = yF + 2.1, lz = D - 0.4;
+        k.lines(railM, [[[x0 + 0.1, ly, lz], [x1 - 0.1, ly, lz]]]);
+        let x = x0 + 0.25 + R() * 0.2;
+        while (x < x1 - 0.5) {
+          const w = 0.22 + R() * 0.35, h = 0.3 + R() * 0.45;
+          k.boxMM(CLOTHES[(R() * CLOTHES.length) | 0], x, ly - h, lz - 0.01, x + w, ly, lz + 0.01);
+          x += w + 0.06 + R() * 0.2;
+        }
       }
       if (top) k.boxMM(slabM, x0 - 0.03, yF + 2.6, 0, x1 + 0.03, yF + 2.72, D + 0.04);
     };
+    // the facade shell: bands under and over the windows, piers between them, solid where there are loggias and entrances
     const children = [];
-    for (let i = 0; i < nb; i++) {
-      const xc = (i + 0.5) * bw;
-      const en = (o.entr || []).indexOf(i);
-      if (en >= 0) { children.push({ type: 'entrance', local: [xc, 0], idx: en, n: 11, frame: fr, door: o.door }); continue; }
-      const balc = (o.balc || []).includes(i);
-      for (let f = 0; f < F; f++) {
-        const yF = BASE + f * FH;
-        if (balc && f >= 1) loggia(xc, yF, f === F - 1, f);
-        else window_(xc, yF, i % 2 === 0);
+    const kindOf = (i, f) => (o.entr || []).includes(i) ? 'entr' : ((o.balc || []).includes(i) && f >= 1 ? 'loggia' : 'win');
+    for (let f = 0; f < F; f++) {
+      const yF = BASE + f * FH, ys = yF + 0.85, yt = ys + 1.45;
+      k.boxMM(brick, 0, yF, -REC, L, ys, 0);
+      k.boxMM(brick, 0, yt, -REC, L, yF + FH, 0);
+      let x = 0;
+      for (let i = 0; i < nb; i++) {
+        const xc = (i + 0.5) * bw, kind = kindOf(i, f);
+        if (kind === 'loggia') loggia(xc, yF, f === F - 1, f);
+        if (kind !== 'win') continue;
+        const hw = i % 2 === 0 ? 1.05 : 0.75;
+        k.boxMM(brick, x, ys, -REC, xc - hw, yt, 0);
+        windowIn(xc, ys, hw, f);
+        x = xc + hw;
       }
+      k.boxMM(brick, x, ys, -REC, L, yt, 0);
+    }
+    k.boxMM(brick, 0, BASE + F * FH, -REC, L, H, 0);
+    k.boxMM(brick, 0, 0, -REC, L, BASE, 0);
+    for (let i = 0; i < nb; i++) {
+      const en = (o.entr || []).indexOf(i);
+      if (en >= 0) children.push({ type: 'entrance', local: [(i + 0.5) * bw, 0], idx: en, n: 11, frame: fr, door: o.door });
     }
     return { kit: k, blocks, heights, spots, children, top: H + 1.4 };
   }
@@ -357,28 +407,42 @@
   }
 
   // ---------- trees, bushes, tall grass ----------
+  // a lumpy clump of leaves: an ellipsoid pushed out by a few bulges, with a flatter underside (8 shapes)
+  function lumpMesh(v) {
+    return rawMesh('lump' + v, () => {
+      const m = ellipsoid(1, 0.8, 1, { seg: 8, rings: 5 });
+      const R = rng(700 + v * 13), P = m.pos, Nn = m.nrm, bumps = [];
+      for (let i = 0; i < 6; i++) bumps.push([nrm([R() * 2 - 1, R() * 1.6 - 0.5, R() * 2 - 1]), 0.16 + R() * 0.22]);
+      for (let i = 0; i < P.length; i += 3) {
+        const d = nrm([P[i], P[i + 1], P[i + 2]]);
+        let f = 0.9;
+        for (const [bv, am] of bumps) f += am * Math.max(0, dot(d, bv) - 0.35) * 1.7;
+        if (d[1] < 0) f *= 1 + d[1] * 0.28;
+        P[i] *= f; P[i + 1] *= f; P[i + 2] *= f;
+      }
+      for (let i = 0; i < P.length; i += 3) { const d = nrm([P[i], P[i + 1] * 1.2, P[i + 2]]); Nn[i] = d[0]; Nn[i + 1] = d[1]; Nn[i + 2] = d[2]; }
+      return m;
+    });
+  }
+  // h height · bole clear trunk · r0 trunk radius · w crown half-width · up how steeply limbs climb (0 flat … 1 upright) · limbs first-order limbs ·
+  // cl clump radius range · per clumps per twig · dens leaves per metre · droop how much twigs hang · stems trunks from one root
   const TREE = {
-    ash: { h: 8.6, trunk: 3.0, r0: 0.21, cr: 3.0, ch: 4.4, blobs: 34, br: 1.0, nb: 5, leaf: '#3f6b2d', aut: '#b9a83b', af: 0.12, bark: '#6c625a' },
-    maple: { h: 6.6, trunk: 2.3, r0: 0.17, cr: 2.4, ch: 3.6, blobs: 26, br: 0.82, nb: 4, leaf: '#4b7f30', aut: '#d38a2c', af: 0.2, bark: '#6a5f55' },
-    birch: { h: 8.2, trunk: 2.8, r0: 0.14, cr: 1.9, ch: 4.6, blobs: 26, br: 0.72, nb: 4, leaf: '#5d8c36', aut: '#d2b443', af: 0.22, bark: '#e3e0d8', birch: true },
-    poplar: { h: 10, trunk: 2.6, r0: 0.23, cr: 2.1, ch: 6.6, blobs: 36, br: 0.85, nb: 5, leaf: '#47722f', aut: '#c8b23e', af: 0.22, bark: '#6f675e' },
-    young: { h: 4.2, trunk: 1.6, r0: 0.08, cr: 1.4, ch: 2.2, blobs: 14, br: 0.58, nb: 3, leaf: '#5a9136', aut: '#cfa23a', af: 0.12, bark: '#6d6259' },
+    ash: { h: 8.6, bole: 2.4, r0: 0.21, w: 3.0, up: 0.55, limbs: 5, cl: [0.38, 0.68], per: 2.6, dens: 11, leaf: '#3f6b2d', aut: '#a9a23f', af: 0.06, bark: '#6c625a', solid: 0.62 },
+    maple: { h: 6.8, bole: 1.5, r0: 0.18, w: 3.1, up: 0.42, limbs: 5, cl: [0.38, 0.66], per: 2.6, dens: 9, leaf: '#4b7f30', aut: '#c99a35', af: 0.08, bark: '#5f564d', stems: 2, solid: 0.66 },
+    birch: { h: 8.4, bole: 2.4, r0: 0.14, w: 2.0, up: 0.74, limbs: 5, cl: [0.28, 0.48], per: 2.6, dens: 15, leaf: '#5d8c36', aut: '#c9b545', af: 0.1, bark: '#e3e0d8', birch: true, droop: 0.55, solid: 0.5 },
+    poplar: { h: 10.5, bole: 2.0, r0: 0.24, w: 2.0, up: 0.9, limbs: 7, cl: [0.38, 0.64], per: 2.6, dens: 12, leaf: '#47722f', aut: '#b8ad42', af: 0.06, bark: '#6f675e', solid: 0.66 },
+    willow: { h: 7.4, bole: 1.6, r0: 0.25, w: 3.3, up: 0.5, limbs: 6, cl: [0.32, 0.56], per: 2.6, dens: 16, leaf: '#6f8a4a', aut: '#a8a050', af: 0.04, bark: '#5c5650', droop: 0.85, solid: 0.56 },
+    young: { h: 4.2, bole: 1.2, r0: 0.08, w: 1.4, up: 0.62, limbs: 3, cl: [0.26, 0.42], per: 2.6, dens: 13, leaf: '#5a9136', aut: '#bfa23e', af: 0.06, bark: '#6d6259', solid: 0.6 },
     bare: { h: 6.4, trunk: 2.1, r0: 0.15, bark: '#7a6e64' }
   };
   function buildTree(o) {
     const P = TREE[o.kind || 'ash'], k = new Kit(o.seed || 53), R = k.R;
     const s = (o.h || P.h) / P.h;
     const barkM = P.birch ? mat(P.bark, { pat: 42, b: '#3b3836', noise: 0.05, grain: 40 }) : mat(P.bark, { noise: 0.14, grain: 30 });
-    const trunkH = P.trunk * s, r0 = P.r0 * s, r1 = r0 * 0.6;
-    const lean = [(R() - 0.5) * 0.5, (R() - 0.5) * 0.5];
-    const rings = [];
-    for (let i = 0; i <= 5; i++) {
-      const t = i / 5, r = lerp(r0 * (i === 0 ? 1.45 : 1.1), r1, Math.pow(t, 0.7));
-      rings.push({ a: t * trunkH, hu: r, hv: r, cu: lean[0] * t * t * 0.4, cv: lean[1] * t * t * 0.4 });
-    }
-    k.mesh('trunk' + (o.seed || 53) + ',' + s.toFixed(2) + (o.kind || 'ash'), () => loft(rings, { seg: 8, capAAt: 0, capBAt: trunkH }), barkM);
-    const top = [lean[0] * 0.4, trunkH, lean[1] * 0.4];
+    const r1 = P.r0 * s * 0.6, trunkH = (P.trunk || 2) * s, top = [0, trunkH, 0];
     if (o.kind === 'bare') {
+      const r0 = P.r0 * s;
+      k.mesh('trunkbare' + (o.seed || 53), () => loft([0, 1, 2, 3, 4, 5].map((i) => { const t = i / 5, r = lerp(r0 * (i === 0 ? 1.45 : 1.1), r1, Math.pow(t, 0.7)); return { a: t * trunkH, hu: r, hv: r }; }), { seg: 8, capAAt: 0, capBAt: trunkH }), barkM);
       const branch = (p, dir, L, r, depth) => {
         const q = add(p, scl(dir, L));
         k.rod(barkM, p, q, Math.max(r, 0.024), 5);
@@ -395,52 +459,169 @@
       }
       return { kit: k, blocks: [{ c: [0, 0], r: r0 + 0.08 }], top: P.h * s };
     }
-    const CR = P.cr * s, CH = P.ch * s, cc = [top[0], trunkH + CH * 0.42, top[2]];
-    for (let i = 0; i < P.nb; i++) {
-      const a = (i / P.nb) * Math.PI * 2 + R() * 0.8;
-      const from = [top[0] * 0.8, trunkH * (0.72 + R() * 0.25), top[2] * 0.8];
-      const to = add(cc, [Math.cos(a) * CR * 0.62, (R() - 0.35) * CH * 0.45, Math.sin(a) * CR * 0.62]);
-      k.rod(barkM, from, to, r1 * 0.55, 6);
+    const H = P.h * s, bole = P.bole * s, W = P.w * s, r0 = P.r0 * s, stems = P.stems || 1, droop = P.droop || 0;
+    // 1. grow a branching skeleton in rough units; 2. stretch the crown to its size; 3. build limbs, twigs and clumps
+    const segs = [], tips = [], tops = [];
+    const grow = (a, d, L, r, order) => {
+      let p = a;
+      const n = order === 0 ? 4 : 3;
+      for (let i = 0; i < n; i++) {
+        const sag = droop * (order >= 2 ? 0.4 : 0.1) * (i + 1) / n;
+        d = nrm(add(d, [(R() - 0.5) * 0.34, (P.up - d[1]) * 0.22 - sag, (R() - 0.5) * 0.34]));
+        const q = add(p, scl(d, L / n));
+        const ra = r * (1 - 0.3 * i / n), rb = r * (1 - 0.3 * (i + 1) / n);
+        segs.push([p, q, ra, rb, order]);
+        if (order < 2 && i >= 1 && R() < 0.45) grow(q, nrm(add(d, [(R() - 0.5) * 1.5, 0.1 + R() * 0.45, (R() - 0.5) * 1.5])), L * (0.42 + R() * 0.18), rb * 0.55, order + 1);
+        if (order === 1 && R() < 0.2) tips.push([lerpV(p, q, 0.5), d, 1]);
+        p = q;
+      }
+      if (order >= 2) tips.push([p, d, 2]);
+      else for (let j = 0; j < 2; j++) grow(p, nrm(add(d, [(R() - 0.5) * 1.1, 0.25 + R() * 0.35, (R() - 0.5) * 1.1])), L * (0.5 + R() * 0.15), r * 0.55, order + 1);
+    };
+    const lean = [(R() - 0.5) * 0.5, (R() - 0.5) * 0.5];
+    for (let st = 0; st < stems; st++) {
+      const off = stems > 1 ? [Math.cos(st * 2.4 + R()) * 0.13, Math.sin(st * 2.4 + R()) * 0.13] : [0, 0];
+      const sl = [lean[0] + off[0] * 3, lean[1] + off[1] * 3];
+      const tH = bole + (H - bole) * 0.3, rt = r0 / Math.sqrt(stems);
+      const rings = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6, rr = lerp(rt * (i === 0 ? 1.5 : 1.08), rt * 0.62, Math.pow(t, 0.8));
+        rings.push({ a: t * tH, hu: rr, hv: rr, cu: off[0] + sl[0] * t * t * 0.35, cv: off[1] + sl[1] * t * t * 0.35 });
+      }
+      k.mesh('trunk' + (o.seed || 53) + ',' + st + ',' + s.toFixed(2) + (o.kind || 'ash'), () => loft(rings, { seg: 8, capAAt: 0, capBAt: tH }), barkM);
+      tops.push(tH);
+      const axis = (y) => [off[0] + sl[0] * 0.35 * (y / tH) ** 2, y, off[1] + sl[1] * 0.35 * (y / tH) ** 2];
+      const nl = Math.max(2, Math.round(P.limbs / stems));
+      for (let i = 0; i < nl; i++) {
+        const t = (i + R() * 0.5) / nl, a = i * 2.39996 + st * 1.3 + R() * 0.5;
+        grow(axis(lerp(bole, tH, t)), nrm([Math.cos(a) * (1.05 - P.up), P.up + 0.1, Math.sin(a) * (1.05 - P.up)]), 1.0, rt * 0.5 * (1 - t * 0.25), 0);
+      }
+      grow(axis(tH), nrm([sl[0] * 0.3, 1, sl[1] * 0.3]), 1.0, rt * 0.55, 0);
     }
-    const leaf = leafMat(P.leaf, P.af, P.aut);
-    for (let i = 0; i < P.blobs; i++) {
-      let d; do { d = [R() * 2 - 1, R() * 2 - 1, R() * 2 - 1]; } while (dot(d, d) > 1);
-      const pos = add(cc, [d[0] * CR * 0.6, d[1] * CH * 0.36, d[2] * CR * 0.6]);
-      const br = Math.round(P.br * s * (0.65 + R() * 0.7) * 20) / 20;
-      k.mesh('blob' + br, () => ellipsoid(br, br * 0.8, br, { seg: 11, rings: 7 }), leaf, M(tr(pos[0], pos[1], pos[2]), ry(R() * 3)), R());
+    // stretch the crown: up from the trunk tops to the full height, out to the crown's half-width
+    const cb = Math.min(...tops);
+    let maxR = 0.1, maxY = cb + 0.1;
+    for (const sg of segs) for (const q of [sg[0], sg[1]]) { maxR = Math.max(maxR, Math.hypot(q[0], q[2])); maxY = Math.max(maxY, q[1]); }
+    const sx = W * 0.82 / maxR, sy = (H - P.cl[1] * s - cb) / (maxY - cb);
+    const fit = (q) => [q[0] * sx, q[1] <= cb ? q[1] : cb + (q[1] - cb) * sy, q[2] * sx];
+    for (const sg of segs) {
+      const a = fit(sg[0]), b = fit(sg[1]), ra = Math.max(sg[2] * s, 0.012), rb = Math.max(sg[3] * s, 0.01);
+      k.taper(barkM, a, b, ra, rb, sg[4] === 0 ? 6 : sg[4] === 1 ? 4 : 3);
     }
-    return { kit: k, blocks: [{ c: [0, 0], r: r0 + 0.08 }], top: cc[1] + CH * 0.6 };
+    // leaf clumps on the twigs; weeping kinds also hang curtains of twigs with small clumps
+    const leaf = leafMat(P.leaf, P.af, P.aut, { dens: P.dens, solid: P.solid });
+    let cc = [0, 0, 0];
+    for (const [p0] of tips) cc = add(cc, fit(p0));
+    cc = scl(cc, 1 / Math.max(1, tips.length)); cc[1] -= (H - cb) * 0.12;
+    const clump = (c, rc, fy, yaw) => k.put(clumpRaw((R() * 8) | 0, nrm(sub(c, cc)), yaw, 0.55), M(tr(c[0], c[1], c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R());
+    const twigM = Object.assign(flat(P.birch ? '#4a3f37' : '#4f443b', 1), { noShadow: true });
+    const hang = [];
+    for (const [p0, d, ord] of tips) {
+      const p = fit(p0), n = ord === 2 ? (R() < P.per - 2 ? 2 : 1) + (R() < 0.35 ? 1 : 0) : 1;
+      for (let j = 0; j < n; j++) {
+        const rc = lerp(P.cl[0], P.cl[1], R()) * s * (ord === 1 ? 0.8 : 1);
+        const c = add(p, [(R() - 0.5) * rc * 1.1 + d[0] * rc * 0.3, (R() - 0.35) * rc * 0.7, (R() - 0.5) * rc * 1.1 + d[2] * rc * 0.3]);
+        const fy = droop > 0.5 ? 1.0 + R() * 0.25 : 0.72 + R() * 0.16;
+        clump([c[0], c[1] - (droop > 0.5 ? rc * 0.3 : 0), c[2]], rc, fy, R() * 6.28);
+      }
+      if (droop > 0 && ord === 2 && R() < droop) {
+        const L = (0.5 + R() * 0.9) * s * droop, q = add(p, [d[0] * 0.15, -L, d[2] * 0.15]);
+        hang.push([p, lerpV(p, q, 0.5)], [lerpV(p, q, 0.5), q]);
+        if (R() < 0.6) { const rc = P.cl[0] * s * 0.75; clump(lerpV(p, q, 0.7), rc * 0.7, 1.9, R() * 6.28); }
+      }
+    }
+    if (hang.length) k.lines(twigM, hang);
+    return { kit: k, blocks: [{ c: [0, 0], r: r0 + 0.08 }], top: H };
   }
+  // stems fanning out of one root, clumps along their upper parts
+  const BUSH = {
+    lilac: { leaf: '#3f6b2e', aut: '#8f8a3a', af: 0.03, dens: 10, stems: 7, h: 1.9, w: 1.1, cl: [0.34, 0.58] },
+    elder: { leaf: '#4a7a30', aut: '#b9a83b', af: 0.05, dens: 11, stems: 6, h: 1.7, w: 1.0, cl: [0.3, 0.52] },
+    hazel: { leaf: '#507e2f', aut: '#c2a23c', af: 0.06, dens: 9, stems: 8, h: 2.3, w: 1.3, cl: [0.34, 0.58] },
+    dogrose: { leaf: '#47702c', aut: '#8d7a3a', af: 0.06, dens: 15, stems: 9, h: 1.3, w: 0.9, cl: [0.22, 0.4], berries: '#c2342a' },
+    shoots: { leaf: '#5a8e35', aut: '#cfa23a', af: 0.05, dens: 13, stems: 5, h: 1.3, w: 0.7, cl: [0.2, 0.38] }
+  };
   function buildBush(o) {
-    const k = new Kit(o.seed || 59), R = k.R, sz = o.size || 1;
-    const leaf = leafMat(o.leaf || '#44732f', o.af ?? 0, o.aut || '#b9a83b', { cell: 16 });
-    const n = Math.round(4 + sz * 3);
-    for (let i = 0; i < n; i++) {
-      const a = R() * Math.PI * 2, r = R() * 0.55 * sz;
-      const br = Math.round((0.42 + R() * 0.3) * sz * 20) / 20;
-      k.mesh('blob' + br, () => ellipsoid(br, br * 0.84, br, { seg: 11, rings: 7 }), leaf, tr(Math.cos(a) * r, br * 0.8 + R() * 0.2 * sz, Math.sin(a) * r), R());
+    const B = BUSH[o.kind || 'lilac'], k = new Kit(o.seed || 59), R = k.R, sz = o.size || 1;
+    const stemM = mat('#5a4a3c', { noise: 0.12, grain: 40 });
+    const leaf = leafMat(o.leaf || B.leaf, o.af ?? B.af, o.aut || B.aut, { dens: B.dens, cut: 0.45, rr: 0.46, solid: 0.8, wind: [0.025, 1 / 1.6, 1.7, 0.45] });
+    const H = B.h * sz, up = [];
+    for (let i = 0; i < B.stems; i++) {
+      const a = (i / B.stems) * Math.PI * 2 + R() * 0.7, rad = R() * 0.22 * sz, sp = 0.3 + R() * 0.35;
+      let p = [Math.cos(a) * rad, 0, Math.sin(a) * rad], d = nrm([Math.cos(a) * sp, 1, Math.sin(a) * sp]);
+      const L = H * (0.7 + R() * 0.35);
+      for (let j = 0; j < 3; j++) {
+        d = nrm(add(d, [(R() - 0.5) * 0.3, -0.1, (R() - 0.5) * 0.3]));
+        const q = add(p, scl(d, L / 3));
+        k.taper(stemM, p, q, 0.022 * sz * (1 - j * 0.25), 0.022 * sz * (1 - (j + 1) * 0.25), 4);
+        if (j >= 1) up.push([q, d]);
+        p = q;
+      }
     }
-    return { kit: k, blocks: [{ c: [0, 0], r: 0.7 * sz }] };
+    const leafAt = (c, rc, fy) => { const y = Math.max(c[1], rc * 0.55), yaw = R() * 6.28; k.put(clumpRaw((R() * 8) | 0, nrm([c[0], y - H * 0.35, c[2]]), yaw, 0.5), M(tr(c[0], y, c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R()); };
+    const n = Math.round(up.length * 1.4);
+    for (let i = 0; i < n; i++) {
+      const [q, d] = up[i % up.length], rc = lerp(B.cl[0], B.cl[1], R()) * sz;
+      leafAt(add(q, [(R() - 0.5) * rc + d[0] * rc * 0.3, (R() - 0.4) * rc * 0.6, (R() - 0.5) * rc + d[2] * rc * 0.3]), rc, 0.8 + R() * 0.15);
+    }
+    for (let i = 0; i < 4; i++) { const a = i * 1.57 + R(), rc = B.cl[1] * sz * 0.8; leafAt([Math.cos(a) * rc * 0.8, H * 0.32, Math.sin(a) * rc * 0.8], rc, 0.75); }
+    if (B.berries) {
+      const bm = Object.assign(mat(B.berries, { noise: 0.05, spec: 0.5, gloss: 10 }), { noShadow: true, fl: 1 });
+      for (let i = 0; i < 12; i++) { const [q] = up[(R() * up.length) | 0]; k.mesh('berry', () => ellipsoid(0.028, 0.028, 0.028, { seg: 6, rings: 4 }), bm, tr(q[0] + (R() - 0.5) * 0.5 * sz, q[1] + (R() - 0.2) * 0.3 * sz, q[2] + (R() - 0.5) * 0.5 * sz)); }
+    }
+    return { kit: k, blocks: [{ c: [0, 0], r: 0.6 * sz }] };
   }
+  // a patch of tall weeds: grass cards, dry stalks with umbels, a few big burdock leaves near the ground
   function buildGrass(o) {
     const k = new Kit(o.seed || 61), R = k.R;
     const H = o.h || 1.0;
-    const gm = grassMat(o.col || '#6a9532', o.dryCol || '#c3aa5b', H, o.dry ?? 0.35);
-    const n = Math.round(Math.PI * o.rx * o.rz * 8);
+    const gm = grassMat(o.col || '#5b7d31', o.dryCol || '#c3aa5b', H, o.dry ?? 0.35);
+    const n = Math.round(Math.PI * o.rx * o.rz * 9);
     for (let i = 0; i < n; i++) {
       let x, z; do { x = R() * 2 - 1; z = R() * 2 - 1; } while (x * x + z * z > 1);
       const e = Math.sqrt(x * x + z * z);
-      const h = Math.round(H * (0.5 + 0.5 * R()) * (1 - 0.4 * e) * 20) / 20, rb = Math.round((0.16 + R() * 0.14) * 50) / 50;
-      k.mesh('tuft' + h + ',' + rb, () => loft([{ a: 0, hu: rb, hv: rb }, { a: h * 0.5, hu: rb * 0.8, hv: rb * 0.8 }, { a: h, hu: 0.03, hv: 0.03 }], { seg: 7, capAAt: 0, capBAt: h }), gm, M(tr(x * o.rx, 0, z * o.rz), rz((R() - 0.5) * 0.25)), R());
+      card(k, gm, x * o.rx, z * o.rz, 0.45 + R() * 0.4, H * (0.55 + 0.5 * R()) * (1 - 0.45 * e));
     }
-    const stalk = Object.assign(mat('#6f7a3c', { noise: 0.04 }), { noShadow: true, fl: 1 }), head = Object.assign(mat(o.headCol || '#a8996c', { noise: 0.12, grain: 60 }), { noShadow: true, fl: 1 });
-    for (let i = 0; i < Math.round(n / 16); i++) {
+    const stalk = Object.assign(mat('#6f7a3c', { noise: 0.04 }), { noShadow: true, fl: 1, wind: [0.06, 1, 1.9, 0.4] }), head = Object.assign(mat(o.headCol || '#a8996c', { noise: 0.12, grain: 60, wind: [0.06, 1, 1.9, 0.4] }), { noShadow: true, fl: 1 });
+    for (let i = 0; i < Math.round(n / 10); i++) {
       let x, z; do { x = R() * 2 - 1; z = R() * 2 - 1; } while (x * x + z * z > 0.7);
       const hh = H * (1.15 + R() * 0.45), lx = (R() - 0.5) * 0.15, lz = (R() - 0.5) * 0.15;
       k.rod(stalk, [x * o.rx, 0, z * o.rz], [x * o.rx + lx, hh, z * o.rz + lz], 0.013, 4);
       k.mesh('umbel', () => ellipsoid(0.05, 0.022, 0.05, { seg: 8, rings: 4 }), head, tr(x * o.rx + lx, hh + 0.02, z * o.rz + lz), R());
     }
+    const burdock = leafMat('#3f6a2b', 0.05, '#8a8a3a', { dens: 4.5, rr: 0.5, cut: 0.5, solid: 0.9, wind: [0.02, 1 / 0.6, 1.6, 0.4] });
+    for (let i = 0; i < Math.round(o.rx * o.rz * 1.2); i++) {
+      const a = R() * 6.28, r = R() * 0.8, rc = 0.22 + R() * 0.12;
+      k.put(lumpMesh((R() * 8) | 0), M(tr(Math.cos(a) * r * o.rx, rc * 0.45, Math.sin(a) * r * o.rz), ry(R() * 6.28), sc3(rc, rc * 0.55, rc)), burdock, R());
+    }
     return { kit: k, blocks: [], spots: [{ kind: 'grass', at: [0, 0], yaw: 0 }] };
+  }
+  // ---------- the meadow: grass tufts over every lawn and rough cell, a 6 × 6 m tile per instance ----------
+  const tuftMat = (hex, dryHex, dry) => Object.assign(mat(hex, { pat: 39, b: dryHex, p: [0, 0, dry, 0], noise: 0, thin: true, wind: [0.04, 1 / 0.6, 2.1, 0.45] }), { fl: 1, noShadow: true });
+  const MEADOW = {
+    lawn: tuftMat('#5a8732', '#a8a45c', 0.04), lush: tuftMat('#4f7c2e', '#a8a45c', 0.07),
+    rough: tuftMat('#52752e', '#b4a65c', 0.2), dry: tuftMat('#7c8440', '#c4b168', 0.55)
+  };
+  function buildMeadow(o) {
+    const [tx, tz, TL] = o.tile, k = new Kit(9000 + tx * 31 + tz), R = k.R, step = 0.31;
+    for (let z = tz + step / 2; z < tz + TL; z += step) for (let x = tx + step / 2; x < tx + TL; x += step) {
+      const px = x + (R() - 0.5) * step * 1.1, pz = z + (R() - 0.5) * step * 1.1;
+      const t = groundType(px, pz);
+      if (t !== '.' && t !== ',') continue;
+      const pd = o.pathD(px, pz);
+      if (pd < 0.42 + (vnoise(px * 2.8, pz * 2.8, 7) - 0.5) * 0.3) continue;
+      if (o.blocked(px, pz)) continue;
+      // lush and thin zones a few metres across, clumps about a metre across
+      const lush = fbm(px * 0.33, pz * 0.33, 21), clumpy = vnoise(px * 1.3, pz * 1.3, 23), shade = o.shadeOf(px, pz), rough = t === ',';
+      if (!rough && R() < 0.1 + shade * 0.4 + (0.45 - clumpy) * 0.3) continue;
+      let h = rough ? 0.34 + lush * 0.52 : 0.09 + lush * 0.2 + clumpy * 0.1;
+      if (R() < 0.08) h *= 1.7;                                                    // a tussock sticking out
+      h *= (0.7 + R() * 0.6) * (0.4 + 0.6 * smooth((pd - 0.35) / 0.9)) * (1 - shade * 0.35);
+      const w = (rough ? 0.44 : 0.34) + R() * 0.36;
+      const m = rough ? (lush > 0.6 && R() < 0.45 ? MEADOW.dry : MEADOW.rough) : (lush + clumpy * 0.3 > 0.72 ? MEADOW.lush : (R() < 0.04 ? MEADOW.dry : MEADOW.lawn));
+      card(k, m, px, pz, w, h);
+    }
+    return { kit: k, blocks: [] };
   }
   // ---------- bench and litter bin (the same ones as in the first yard) ----------
   function buildBench(o) {
@@ -494,6 +675,7 @@
     pole: { build: buildPole, name: 'Столб с фонарём', size: '8,6 м', note: 'Траверса с изоляторами, провода считаются по провису.' },
     tree: { build: buildTree, name: 'Деревья', size: '4–10 м', note: 'Ствол, ветки и крона из комков листвы. Ясень, клён, берёза, тополь, сухое.' },
     bush: { build: buildBush, name: 'Куст', size: '1–2 м', note: 'Несколько комков листвы.' },
+    meadow: { build: buildMeadow, name: 'Трава', size: '', note: '' },
     grass: { build: buildGrass, name: 'Бурьян', size: 'пятно 2–5 м', note: 'Пучки травы со своими травинками и зонтики сорняков.' },
     bench: { build: buildBench, name: 'Лавочка', size: '1,5 м', note: 'Та самая лавочка из первого двора.' },
     urn: { build: buildUrn, name: 'Урна', size: '0,4 м', note: 'Тоже из первого двора.' },

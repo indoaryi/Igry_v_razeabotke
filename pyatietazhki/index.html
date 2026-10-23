@@ -441,7 +441,8 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
       a: makeRamp(hex), b: makeRamp(o.b || hex), pat: o.pat || 0, key: ++matSerial,
       p: Float32Array.from(o.p || [0, 0, 0, 0]), r: Float32Array.from(o.r || [0, 0, 0, 0]),
       q: Float32Array.from([o.noise ?? 0.08, o.grain ?? 50, o.side ?? 1, o.nape ?? -1]),
-      s: Float32Array.from([o.spec ?? 0, o.gloss ?? 16, 0, 0])
+      s: Float32Array.from([o.spec ?? 0, o.gloss ?? 16, o.thin ? 1 : 0, 0]),
+      w: o.wind ? Float32Array.from(o.wind) : null      // [sway m, 1 / height m, speed, flutter share]
     };
   }
   const hexRGB = (h) => hex2rgb(h).map((v) => Math.round(v * 255));
@@ -587,11 +588,22 @@ layout(location=2) in vec3 aLoc;
 layout(location=3) in float aSeed;
 uniform mat4 uVP; uniform mat4 uModel;
 uniform vec4 uShadow;
-out vec3 vN; out vec3 vL; out vec3 vW; out float vSeed; out vec2 vG;
+uniform vec4 uWind;     // x: sway in metres at the reference height, y: 1 / reference height, z: speed, w: share of the fast flutter
+uniform float uTime;
+out vec3 vN; out vec3 vL; out vec3 vW; out float vSeed; out vec2 vG; out vec3 vS;
 void main(){
   vec4 w = uModel * vec4(aPos, 1.0);
   vW = w.xyz; vL = aLoc; vSeed = aSeed; vN = mat3(uModel) * aNrm;
   vec3 p = w.xyz;
+  if (uWind.x > 0.0) {
+    // plants lean along the screen's horizontal: slow sway plus a gusty flutter that rolls across the yard
+    float k = clamp(p.y * uWind.y, 0.0, 1.6); k *= k;
+    float ph = dot(p.xz, vec2(0.37, 0.23)) + aSeed * 6.2831;
+    float gust = 0.55 + 0.45 * sin(uTime * 0.55 + p.x * 0.13 - p.z * 0.09);
+    float s = sin(uTime * uWind.z + ph) * (1.0 - uWind.w) * gust + sin(uTime * uWind.z * 2.7 + ph * 1.9) * uWind.w * gust;
+    p += vec3(0.7071, 0.0, -0.7071) * (uWind.x * k * s);
+  }
+  vS = p;
   if (uShadow.w > 0.5) p -= uShadow.xyz * (p.y / uShadow.y);
   vG = p.xz;
   gl_Position = uVP * vec4(p, 1.0);
@@ -618,9 +630,29 @@ uniform vec4 uGround;
 uniform vec4 uFade;
 uniform int uFadeOn;
 uniform vec3 uSil;
+uniform vec3 uPU;
+uniform vec3 uPV;
+uniform sampler2D uLeaf;
+uniform int uShadowOn;
+uniform mat4 uLVP;
+uniform highp sampler2DShadow uShadowTex;
+uniform vec3 uSun;
+uniform vec3 uAmb;      // shade level: base, extra for faces looking at the sky, depth bias of the sun lookup
+in vec3 vS;
 layout(location=0) out vec4 o;
 layout(location=1) out vec4 oId;
 float h3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+// 1 where the sun reaches this point, 0 in shade. uS.z = 1: thin stuff (grass) that is lit from both sides
+float sunVis(vec3 n){
+  float ndl = dot(n, uSun);
+  bool thin = uS.z > 0.5;
+  if (ndl <= 0.0 && !thin) return 0.0;
+  vec3 wp = vS + (thin ? uSun * 0.05 : n * 0.045 + uSun * 0.012);
+  vec4 lp = uLVP * vec4(wp, 1.0);
+  vec3 sc = lp.xyz * 0.5 + 0.5;
+  if (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
+  return texture(uShadowTex, vec3(sc.xy, sc.z - uAmb.z));
+}
 void main(){
   if (uMode == 2 && (vG.x < uGround.x || vG.y < uGround.y || vG.x > uGround.z || vG.y > uGround.w)) discard;
   if (uMode == 1) {
@@ -632,8 +664,13 @@ void main(){
     if (dot(dp, dp) < uFade.z && gl_FragCoord.z < uFade.w && ((int(gl_FragCoord.x) + int(gl_FragCoord.y)) & 1) == 0) discard;
   }
   vec3 n = normalize(vN);
-  float v = dot(n, uLight) * 0.5 + 0.5;
-  v += (h3(floor(vL * uQ.y + 0.5)) - 0.5) * uQ.x;
+  float nz = (h3(floor(vL * uQ.y + 0.5)) - 0.5) * uQ.x;
+  float v = dot(n, uLight) * 0.5 + 0.5 + nz;
+  float sv = 1.0;
+  if (uShadowOn == 1 && uMode == 0) {
+    sv = sunVis(n);
+    v = min(v, mix(uAmb.x + uAmb.y * n.y + nz, v, sv));
+  }
   int idx = v < 0.30 ? 0 : (v < 0.46 ? 1 : (v < 0.64 ? 2 : (v < 0.82 ? 3 : 4)));
   int li = idx;
   bool useB = false, forced = false, isDecal = false; int shift = 0;
@@ -746,6 +783,8 @@ void main(){
       if (fract(vW.y / uP.x) < uP.z) shift = -1;
       else if (fract(bx) < uP.z * uP.x / uP.y) shift = -1;
       else if (h3(vec3(floor(bx), row, 3.0)) > uP.w) useB = true;
+      float dirt = uR.x + 0.9 - vW.y;                              // damp and dirt over the plinth
+      if (dirt > 0.0 && h3(floor(vW * 26.0)) < dirt * 0.55) shift = -1;
     }
   } else if (uPat == 32) {            // louvre: frame in ramp B, slats along local y
     float fr = min(uP.z - ax, uP.w - abs(vL.y));
@@ -768,16 +807,21 @@ void main(){
       if (sp > 0.94) shift = 1; else if (sp < 0.07) shift = -1;
       if (h3(floor(vW * vec3(0.9, 1.0, 1.7)) + 2.0) > 0.86 && sp > 0.3) shift = -1;
     }
-  } else if (uPat == 35) {            // foliage: leaf marks, clumps, ragged silhouette, yellowing branches
-    vec3 pf = vL * uP.y + vSeed * 13.7;
-    float hc = h3(floor(pf)), hm = h3(floor(pf * 0.42) + 5.3);
-    float facing = dot(n, uView);
-    if (facing < uP.z * 1.35 && hm > 0.62) discard;
-    if (facing < uP.z && hc > 0.38) discard;
-    if (facing < uP.z * 0.45 && hc > 0.1) discard;
-    if (hm > 0.95 && hc > 0.45 && facing > 0.5) discard;
-    if (hc > 0.84) shift = 1; else if (hc < 0.16 || (hm < 0.2 && hc < 0.45)) shift = -1;
-    if (vSeed < uP.x && n.y + (hc - 0.5) * 0.7 > 0.12) useB = true;
+  } else if (uPat == 35) {            // foliage: separate leaves as seen from the eye (or the sun), lit on their upper-left side, dark gaps, ragged edge
+    vec2 q = vec2(dot(uPU, vW), dot(uPV, vW)) * uP.y + vSeed * 31.7;
+    vec4 lt = texelFetch(uLeaf, ivec2(fract(q / 16.0) * 256.0), 0);  // r: cell hash, g: how much the pixel faces the light, b: distance to the leaf centre, a: leaf hash
+    float best = lt.b, lit = lt.g * 2.0 - 1.0, bh = lt.a;
+    float edge = clamp(dot(n, uView) / max(uP.z, 0.01), 0.0, 1.0);   // 0 at the silhouette of the clump
+    float rr = uP.w;
+    if (best > rr) {                                                    // between leaves: a hole near the edge or now and then, a dark gap inside
+      if (edge < 0.9 || lt.r > uR.x) discard;
+      idx = max(idx - 2, 0); forced = true;
+    } else {
+      if (edge < 0.55 && best > rr * (0.35 + edge)) discard;              // leaves thin out towards the edge
+      if (best > rr * 0.42 && lit > 0.3) shift = 1; else if (best > rr * 0.55 && lit < -0.5) shift = -1;
+      if (bh < 0.12) shift -= 1; else if (bh > 0.92) shift += 1;
+    }
+    if (bh < uP.x * (vSeed < uP.x ? 2.6 : 0.6)) useB = true;           // turning leaves, more of them on some clumps
   } else if (uPat == 36) {            // tall grass: one blade per screen column, each with its own height
     float col = floor(dot(uRV, vW) * uSc * uP.y);
     float hb = h3(vec3(col, floor(vSeed * 97.0), 5.0));
@@ -788,6 +832,28 @@ void main(){
     if (h3(vec3(col, 9.0, floor(vSeed * 31.0))) > 0.8 && idx > 1) idx -= 1;
     forced = true;
     if (f > 0.62 && h3(vec3(col, 2.0, floor(vSeed * 50.0))) < uP.z) useB = true;
+  } else if (uPat == 49) {            // window glass, vL in −1…1: sky streaks over a dark room; tulle, drapes or blinds in the curtain colour (ramp B)
+    float ty = fract(vSeed * 13.7);
+    float st = fract((vL.x * 0.55 + vL.y) * 1.15 + vSeed * 7.0);
+    idx = st < 0.07 ? 4 : (st < 0.12 ? 3 : 1);
+    if (vL.y < -0.5 && st >= 0.12) idx = 0;
+    forced = true;
+    if (ty < 0.3) { if (vL.y < 0.9) { useB = true; idx = fract(vL.x * 9.0) < 0.5 ? 3 : 2; if (vL.y < -0.85) idx = 1; } }
+    else if (ty < 0.56) { if (abs(vL.x) > 0.6) { useB = true; idx = fract(vL.x * 7.0) < 0.5 ? 2 : 3; } }
+    else if (ty < 0.68) { useB = true; idx = fract(vL.y * 12.0) < 0.5 ? 3 : 2; }
+    else if (ty < 0.76) { if (vL.y > 0.35 && abs(vL.x + 0.3) < 0.18) { useB = true; idx = 4; } }
+  } else if (uPat == 39) {            // a grass tuft on a card facing the camera: a blade per screen column, dome-shaped, lighter tips, some dry
+    float col = floor(dot(uRV, vW) * uSc);
+    float hb = h3(vec3(col, floor(vSeed * 97.0), 5.0));
+    float u = vL.x * 2.0;
+    if (abs(u) > 0.55 && h3(vec3(col, 4.0, floor(vSeed * 71.0))) > 0.5) discard;
+    float top = (0.3 + 0.7 * hb) * (1.0 - u * u * 0.7);
+    if (vL.y > top) discard;
+    float f = vL.y / max(top, 0.01);
+    idx = f > 0.86 ? 4 : (f > 0.62 ? 3 : (f > 0.3 ? 2 : (f > 0.12 ? 1 : 0)));
+    if (h3(vec3(col, 9.0, floor(vSeed * 31.0))) > 0.74 && idx > 1) idx -= 1;
+    forced = true;
+    if (f > 0.5 && h3(vec3(col, 2.0, floor(vSeed * 50.0))) < uP.z) useB = true;
   } else if (uPat == 37) {            // planks: boards along local x (p.y = 0) or local y (p.y = 1)
     float pc = uP.y > 0.5 ? vL.x : vL.z, pa = uP.y > 0.5 ? vL.y : vL.x;
     float pl = pc / uP.x;
@@ -835,9 +901,11 @@ void main(){
     float sp = h3(floor(vW * 14.0));
     if (sp > 0.96) shift = -1; else if (sp < 0.03) shift = 1;
   }
+  if (uMode == 3) { o = vec4(0.0); oId = vec4(0.0); return; }
   if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, 0.32); oId = vec4(0.0); return; }
+  if (forced && !isDecal && uPat != 10 && sv < 0.5) idx = max(idx - 2, 0);
   vec3 hv = normalize(uLight + uView);
-  float sp = uS.x > 0.0 ? pow(max(dot(n, hv), 0.0), uS.y) * uS.x : 0.0;
+  float sp = uS.x > 0.0 ? pow(max(dot(n, hv), 0.0), uS.y) * uS.x * sv : 0.0;
   vec3 c;
   if (isDecal) {
     float k = li == 0 ? 0.56 : (li == 1 ? 0.7 : (li == 2 ? 0.86 : (li == 3 ? 1.0 : 1.06)));
@@ -870,15 +938,59 @@ uniform int uHover;
 uniform vec3 uAccent;
 uniform vec4 uShadowCol;
 uniform vec4 uFade;
+uniform int uGroundOn;                 // 0: no ground here, 1: texel-exact, 2: filtered (overview)
+uniform sampler2D uGroundTex;
+uniform vec4 uGMap;                    // ground canvas origin and size, world art px
+uniform vec4 uView2;                   // view offset (ax, ay), world art px per target px, view height
+uniform int uSunOn;
+uniform mat4 uLVP;
+uniform highp sampler2DShadow uShadowTex;
+uniform float uBias;
+uniform vec3 uShadeMul;                // ground colour in the shade
+uniform vec4 uTarget;                  // walk target: x, z, radius, on
+uniform int uGrid;
 out vec4 o;
 const ivec2 OFF[4] = ivec2[4](ivec2(1,0), ivec2(-1,0), ivec2(0,1), ivec2(0,-1));
 int idOf(vec4 t){ return int(t.r * 255.0 + 0.5); }
 int flOf(vec4 t){ return int(t.g * 255.0 + 0.5); }
+// the painted ground under a pixel no object covers, in the shade where the sun is blocked
+vec4 groundHere(){
+  vec2 fp = vec2(gl_FragCoord.x, uView2.w - gl_FragCoord.y);
+  vec2 wp = (fp - uView2.xy) * uView2.z;
+  vec2 g = wp - uGMap.xy;
+  vec4 gc;
+  if (uGroundOn == 1) {
+    ivec2 gi = ivec2(floor(g));
+    if (gi.x < 0 || gi.y < 0 || gi.x >= int(uGMap.z) || gi.y >= int(uGMap.w)) return vec4(0.0);
+    gc = texelFetch(uGroundTex, gi, 0);
+    if (gc.a < 0.5) return vec4(0.0);
+  } else {
+    if (g.x < 0.0 || g.y < 0.0 || g.x > uGMap.z || g.y > uGMap.w) return vec4(0.0);
+    gc = texture(uGroundTex, g / uGMap.zw);
+    if (gc.a < 0.02) return vec4(0.0);
+  }
+  float a = wp.x / 54.0, b = wp.y / 27.0;
+  vec2 xz = vec2(a + b, b - a) * 0.5;
+  vec3 c = gc.rgb;
+  if (uSunOn == 1) {
+    vec4 lp = uLVP * vec4(xz.x, 0.0, xz.y, 1.0);
+    vec3 sc = lp.xyz * 0.5 + 0.5;
+    float lit = (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0) ? 1.0 : texture(uShadowTex, vec3(sc.xy, sc.z - uBias));
+    c = mix(c * uShadeMul, c, lit);
+  }
+  float pw = 0.0105 * uView2.z;
+  if (uGrid == 1 && xz.x >= -pw && xz.y >= -pw && xz.x <= 30.0 + pw && xz.y <= 30.0 + pw) {
+    vec2 d = abs(xz - floor(xz + 0.5));
+    if (min(d.x, d.y) < pw) c = mix(c, vec3(1.0, 1.0, 0.94) * gc.a, 0.28);
+  }
+  if (uTarget.w > 0.5 && abs(length(xz - uTarget.xy) - uTarget.z) < pw * 1.6) c = vec3(0.886, 0.627, 0.282) * gc.a;
+  return vec4(c, gc.a);
+}
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 c = texelFetch(uCol, p, 0);
   bool obj = c.a > 0.5, sh = !obj && c.a > 0.1;
-  if (uRaw == 1) { o = obj ? vec4(c.rgb, 1.0) : (sh ? uShadowCol : vec4(0.0)); return; }
+  if (uRaw == 1) { o = obj ? vec4(c.rgb, 1.0) : (uGroundOn > 0 ? groundHere() : (sh ? uShadowCol : vec4(0.0))); return; }
   vec4 it = texelFetch(uIdT, p, 0);
   int myId = idOf(it), myFl = flOf(it);
   float d = texelFetch(uDep, p, 0).r;
@@ -906,8 +1018,9 @@ void main(){
   }
   if (acc) { o = vec4(uAccent, 1.0); return; }
   if (!obj) {
-    vec3 lc = nsoft > 0 ? mix(uLine, soft / float(nsoft) * 0.32, 0.55) : uLine;
-    o = line ? vec4(lc, 1.0) : (sh ? uShadowCol : vec4(0.0)); return;
+    if (line) { o = vec4(nsoft > 0 ? mix(uLine, soft / float(nsoft) * 0.32, 0.55) : uLine, 1.0); return; }
+    if (uGroundOn > 0) { o = groundHere(); return; }
+    o = sh ? uShadowCol : vec4(0.0); return;
   }
   int occ = 0;
   for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++) {
@@ -936,12 +1049,13 @@ void main(){
     const u = {}; for (const n of names) u[n] = gl.getUniformLocation(p, n);
     return { p, u };
   }
-  const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil']);
-  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade']);
+  const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil', 'uWind', 'uTime', 'uShadowOn', 'uLVP', 'uShadowTex', 'uSun', 'uAmb', 'uPU', 'uPV', 'uLeaf']);
+  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid']);
   const fsVAO = gl.createVertexArray();
   const LIGHT = nrm(add(add(scl(RV, -0.9), [0, 0.9, 0]), scl(FV, -0.25)));
-  const SUN = nrm([-0.15, 1, 0.72]);           // shadows fall up and to the right on screen
+  const SUN = nrm([-0.15, 1, 0.72]);           // the sun stands over the front of the yard, shadows fall up and to the right
   const LINE = [22 / 255, 16 / 255, 14 / 255];
+  const GROUND_SHADE = [0.6, 0.66, 0.8];        // ground colour multiplier in the shade: darker and cooler
   const SIL = [0.89, 0.6, 0.27];
   gl.vertexAttrib1f(3, 0.0);
 
@@ -1022,6 +1136,7 @@ void main(){
       if (m !== lastMat) {
         gl.uniform3fv(u.uRampA, m.a); gl.uniform3fv(u.uRampB, m.b);
         gl.uniform1i(u.uPat, m.pat); gl.uniform4fv(u.uP, m.p); gl.uniform4fv(u.uQ, m.q); gl.uniform4fv(u.uR, m.r); gl.uniform4fv(u.uS, m.s);
+        gl.uniform4fv(u.uWind, m.w || NO_WIND);
         lastMat = m;
       }
       const idv = (it.id || 0) * 256 + (it.flags || 0);
@@ -1033,8 +1148,102 @@ void main(){
       drawCalls++;
     }
   }
-  // L = { shadow: [...], main: [...], hero: [...] }; o = { xray, hover, fade: [x, y, r2, depth] }
+  const NO_WIND = new Float32Array(4);
+
+  // ---- the sun: a depth map seen from the sun, fitted to what the camera sees ----
+  const LZ = scl(SUN, -1), LX = nrm(cross([0, 1, 0], LZ)), LY = cross(LZ, LX);
+  const SHADOW = { res: Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE)), fbo: null, tex: null, vp: new Float32Array(16), bias: 0.0005, texel: 0.02 };
+  {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, SHADOW.res, SHADOW.res);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, t, 0);
+    gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    SHADOW.tex = t; SHADOW.fbo = f;
+  }
+  // world point at height y under a point of the screen (world art px)
+  function screenToWorld(sx, sy, y) { const d = SQ2 * sx / S, s2 = 2 * SQ2 * (sy / S + (SQ3 / 2) * y); return [(s2 + d) / 2, y, (s2 - d) / 2]; }
+  // everything the camera can see — the ground and anything up to hmax metres tall — must land on the map;
+  // the map keeps one size per view size and moves in whole texels, so shadows don't shimmer while the camera pans
+  function fitShadow(rect, hmax) {
+    let u0 = Infinity, u1 = -Infinity, w0 = Infinity, w1 = -Infinity, e0 = Infinity, e1 = -Infinity;
+    for (const sx of [rect[0], rect[2]]) for (const sy of [rect[1], rect[3]]) for (const y of [0, hmax]) {
+      const P = screenToWorld(sx, sy, y), q0 = dot(LX, P), q1 = dot(LY, P), q2 = dot(LZ, P);
+      u0 = Math.min(u0, q0); u1 = Math.max(u1, q0); w0 = Math.min(w0, q1); w1 = Math.max(w1, q1); e0 = Math.min(e0, q2); e1 = Math.max(e1, q2);
+    }
+    const size = Math.ceil(Math.max(u1 - u0, w1 - w0) + 2), tx = size / SHADOW.res;
+    const U0 = Math.floor(((u0 + u1) / 2 - size / 2) / tx) * tx, W0 = Math.floor(((w0 + w1) / 2 - size / 2) / tx) * tx;
+    const D0 = e0 - 40, D1 = e1 + 2, kx = 2 / size, kz = 2 / (D1 - D0), m = SHADOW.vp;
+    m[0] = LX[0] * kx; m[4] = LX[1] * kx; m[8] = LX[2] * kx; m[12] = -U0 * kx - 1;
+    m[1] = LY[0] * kx; m[5] = LY[1] * kx; m[9] = LY[2] * kx; m[13] = -W0 * kx - 1;
+    m[2] = LZ[0] * kz; m[6] = LZ[1] * kz; m[10] = LZ[2] * kz; m[14] = -D0 * kz - 1;
+    m[3] = m[7] = m[11] = 0; m[15] = 1;
+    SHADOW.bias = 0.018 / (D1 - D0); SHADOW.texel = tx;
+  }
+  function renderShadowMap(list, time) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+    gl.viewport(0, 0, SHADOW.res, SHADOW.res);
+    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+    gl.clearBufferfv(gl.DEPTH, 0, [1]);
+    gl.useProgram(P3.p);
+    const u = P3.u;
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.uniformMatrix4fv(u.uVP, false, SHADOW.vp);
+    gl.uniform1i(u.uMode, 3); gl.uniform1i(u.uShadowOn, 0); gl.uniform1i(u.uRaw, 0);
+    gl.uniform4f(u.uShadow, 0, 1, 0, 0); gl.uniform3fv(u.uView, SUN); gl.uniform3fv(u.uLight, LIGHT);
+    gl.uniform1f(u.uTime, time); gl.uniform4f(u.uFade, 0, 0, 0, 0);
+    gl.uniform3fv(u.uPU, LX); gl.uniform3fv(u.uPV, LY);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex); gl.uniform1i(u.uLeaf, 6);
+    drawList(list);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  // ---- leaf atlas: a seamless tile of 16 × 16 leaves, 16 texels per leaf cell (worked out once instead of per pixel) ----
+  const leafTex = gl.createTexture();
+  {
+    const T = 16, PX = 16, N = T * PX, data = new Uint8Array(N * N * 4);
+    const hw = (x, y, sd) => hash2(((x % T) + T) % T, ((y % T) + T) % T, sd);
+    for (let py = 0; py < N; py++) for (let px_ = 0; px_ < N; px_++) {
+      const qx = (px_ + 0.5) / PX, qy = (py + 0.5) / PX, cx = Math.floor(qx), cy = Math.floor(qy), fx = qx - cx, fy = qy - cy;
+      let best = 9, bx = 0, by = 0, bh = 0;
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+        const ha = hw(cx + i, cy + j, 7), hb = hw(cx + i, cy + j, 13);
+        const dx = fx - (i + 0.15 + ha * 0.7), dy = fy - (j + 0.15 + hb * 0.7);
+        const an = ha * 6.2831, ca = Math.cos(an), sa = Math.sin(an);
+        const dd = Math.hypot(ca * dx + sa * dy, (ca * dy - sa * dx) * 1.75);
+        if (dd < best) { best = dd; bx = dx; by = dy; bh = hb; }
+      }
+      const l = Math.hypot(bx, by) || 1, lit = (-0.6 * bx + 0.8 * by) / l, k = (py * N + px_) * 4;
+      data[k] = Math.round(hw(cx, cy, 3) * 255); data[k + 1] = Math.round((lit * 0.5 + 0.5) * 255);
+      data[k + 2] = Math.min(255, Math.round(best * 255)); data[k + 3] = Math.round(bh * 255);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, leafTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  }
+  // ---- the painted ground as a texture, so the scene can shade it ----
+  const groundTex = gl.createTexture();
+  function uploadGround(cv) {
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, groundTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  // L = { shadow: [...], main: [...], hero: [...] }
+  // o = { xray, hover, fade: [x, y, r2, depth], time, sun: { rect, hmax } (real shadows from L.shadow),
+  //       ground: { x0, y0, w, h, mode } (draw the ground under the scene), target: [x, z], grid }
   function render3D(T, v, L, raw, ctx, dx, dy, o = {}) {
+    const sunOn = !!o.sun;
+    if (sunOn) { fitShadow(o.sun.rect, o.sun.hmax || 18); renderShadowMap(L.shadow || [], o.time || 0); }
     ensureTarget(T, v.w, v.h);
     if (glc.width < v.w || glc.height < v.h) { glc.width = Math.max(glc.width, v.w); glc.height = Math.max(glc.height, v.h); }
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
@@ -1054,7 +1263,14 @@ void main(){
     const fade = o.fade || [0, 0, 0, 0];
     gl.uniform4f(u.uFade, fade[0], fade[1], fade[2], fade[3]);
     gl.uniform3fv(u.uSil, SIL);
-    if (L.shadow && L.shadow.length) {
+    gl.uniform1f(u.uTime, o.time || 0);
+    gl.uniform1i(u.uShadowOn, sunOn ? 1 : 0);
+    gl.uniformMatrix4fv(u.uLVP, false, SHADOW.vp);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(u.uShadowTex, 4);
+    gl.uniform3fv(u.uSun, SUN); gl.uniform3f(u.uAmb, 0.36, 0.14, SHADOW.bias);
+    gl.uniform3fv(u.uPU, RV); gl.uniform3fv(u.uPV, UV);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex); gl.uniform1i(u.uLeaf, 6);
+    if (!sunOn && L.shadow && L.shadow.length) {
       gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
       gl.uniform1i(u.uMode, 2); gl.uniform4f(u.uShadow, SUN[0], SUN[1], SUN[2], 1); gl.uniform3fv(u.uView, SUN);
       drawList(L.shadow);
@@ -1085,6 +1301,18 @@ void main(){
     gl.uniform1i(PP.u.uHover, o.hover || 0); gl.uniform3fv(PP.u.uAccent, o.accent || [0.89, 0.6, 0.27]);
     gl.uniform4f(PP.u.uShadowCol, 0.035, 0.05, 0.11, 0.3);
     gl.uniform4f(PP.u.uFade, fade[0], fade[1], fade[2], fade[3]);
+    const gr = o.ground;
+    gl.uniform1i(PP.u.uGroundOn, gr ? gr.mode : 0);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, groundTex); gl.uniform1i(PP.u.uGroundTex, 5);
+    if (gr) { gl.uniform4f(PP.u.uGMap, gr.x0, gr.y0, gr.w, gr.h); gl.uniform4f(PP.u.uView2, v.ax, v.ay, S / v.s, v.h); }
+    gl.uniform1i(PP.u.uSunOn, sunOn ? 1 : 0);
+    gl.uniformMatrix4fv(PP.u.uLVP, false, SHADOW.vp);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(PP.u.uShadowTex, 4);
+    gl.uniform1f(PP.u.uBias, SHADOW.bias * 0.5);
+    gl.uniform3fv(PP.u.uShadeMul, GROUND_SHADE);
+    const tg = o.target;
+    gl.uniform4f(PP.u.uTarget, tg ? tg[0] : 0, tg ? tg[1] : 0, 0.32, tg ? 1 : 0);
+    gl.uniform1i(PP.u.uGrid, o.grid ? 1 : 0);
     gl.bindVertexArray(fsVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.SCISSOR_TEST);
     gl.bindVertexArray(null);
@@ -1118,6 +1346,12 @@ void main(){
     rod(m, a, b, r, seg = 8, seed) {
       const L = len(sub(b, a));
       const raw = rawMesh('c' + r.toFixed(3) + ',' + L.toFixed(3) + ',' + seg, () => cyl(r, r, L, seg));
+      return this.put(raw, M(tr(a[0], a[1], a[2]), alongPlusY(sub(b, a))), m, seed);
+    }
+    // a tapering rod from a to b (limbs, stems)
+    taper(m, a, b, r0, r1, seg = 6, seed) {
+      const L = len(sub(b, a));
+      const raw = rawMesh('t' + r0.toFixed(3) + ',' + r1.toFixed(3) + ',' + L.toFixed(3) + ',' + seg, () => r0 < 0.04 ? loft([{ a: 0, hu: r0, hv: r0 }, { a: L, hu: r1, hv: r1 }], { seg, capA: false, capB: false }) : cyl(r0, r1, L, seg));
       return this.put(raw, M(tr(a[0], a[1], a[2]), alongPlusY(sub(b, a))), m, seed);
     }
     mesh(key, fn, m, model, seed) { return this.put(rawMesh(key, fn), model, m, seed); }
@@ -1827,8 +2061,23 @@ void main(){
   // Local frame: origin on the ground at the object's anchor, +z is the object's front.
   const paint = (hex, o = {}) => mat(hex, { pat: 38, b: o.rustCol || '#7c4c33', p: [o.rf || 6, o.rt ?? 0.9, 0, 0], noise: 0.05, grain: 60, spec: o.spec ?? 0.35, gloss: 14 });
   const flat = (hex, idx) => mat(hex, { pat: 10, p: [idx, 0, 0, 0] });
-  const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.cell || 15, o.cut || 0.3, 0], noise: 0.05, grain: 30 }), { fade: true, fl: 4 });
-  const grassMat = (hex, dryHex, h, dry) => Object.assign(mat(hex, { pat: 36, b: dryHex, p: [h, 1, dry, 0], noise: 0 }), { fl: 1, noShadow: true });
+  // leaf clumps: p = [share of turning leaves, leaves per metre, edge zone where leaves thin out, leaf radius in cells], r.x = how solid the inside is
+  const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.dens || 11, o.cut || 0.42, o.rr || 0.44], r: [o.solid ?? 0.7, 0, 0, 0], noise: 0.04, grain: 30, wind: o.wind || [0.05, 1 / 8, 1.25, 0.35] }), { fade: true, fl: 4 });
+  // a clump whose normals lean towards the outside of the whole crown, so the crown reads as one lit mass rather than a pile of balls
+  function clumpRaw(v, out, yaw, w) {
+    const base = lumpMesh(v), c = Math.cos(yaw), sn = Math.sin(yaw);
+    const d = [c * out[0] - sn * out[2], out[1], sn * out[0] + c * out[2]], N = base.nrm, nn = new Array(N.length);
+    for (let i = 0; i < N.length; i += 3) {
+      const b = nrm([N[i] + (d[0] - N[i]) * w, N[i + 1] + (d[1] - N[i + 1]) * w, N[i + 2] + (d[2] - N[i + 2]) * w]);
+      nn[i] = b[0]; nn[i + 1] = b[1]; nn[i + 2] = b[2];
+    }
+    return { pos: base.pos, nrm: nn, idx: base.idx };
+  }
+  // grass on camera-facing cards: p.z = share of dry blades
+  const grassMat = (hex, dryHex, h, dry) => Object.assign(mat(hex, { pat: 39, b: dryHex, p: [h, 1, dry, 0], noise: 0, thin: true, wind: [0.04, 1 / 0.6, 2.1, 0.45] }), { fl: 1, noShadow: true });
+  const CARD = () => rawMesh('card', () => ({ pos: [-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], nrm: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], idx: [0, 1, 2, 0, 2, 3] }));
+  const CARD_BASIS = basis(RV, [0, 1, 0], [SQ2 / 2, 0, SQ2 / 2]);
+  const card = (k, m, x, z, w, h) => k.put(CARD(), M(tr(x, 0, z), CARD_BASIS, sc3(w, h, 1)), m, k.R());
   const decalCache = new Map();
   const decal = (name) => { let m = decalCache.get(name); if (!m) { m = Object.assign(decalMat(name), { noShadow: true }); decalCache.set(name, m); } return m; };
   // put a decal plate centred at c (local), facing direction f: 'z' (+z), 'x' (+x), '-x'
@@ -1841,31 +2090,31 @@ void main(){
   // ---------- five-storey brick block ----------
   function buildBlock5(o) {
     const k = new Kit(o.seed || 7), R = k.R;
-    const L = o.len, Dp = o.depth || 12, F = 5, FH = 2.8, BASE = 0.75, H = BASE + F * FH + 0.2;
+    const L = o.len, Dp = o.depth || 12, F = 5, FH = 2.8, BASE = 0.75, H = BASE + F * FH + 0.2, REC = 0.22;
     const nb = Math.round(L / 3.1), bw = L / nb;
-    const brick = mat(o.brick, { pat: 30, b: o.brick2, p: [0.1512, 0.52, 0.1, 0.86], noise: 0.03, grain: 40 });
+    const brick = mat(o.brick, { pat: 30, b: o.brick2, p: [0.1512, 0.52, 0.1, 0.86], r: [BASE, 0, 0, 0], noise: 0.03, grain: 40 });
     const baseM = mat(o.base || '#9a948a', { pat: 33, b: '#8a847a', p: [BASE, 0.2, 3, 0], noise: 0.08, grain: 45 });
-    const conc = mat('#b7b3a9', { pat: 48, p: [1, 0, 0, 0], noise: 0.07, grain: 40 });
     const slabM = mat('#c4c0b7', { noise: 0.05, grain: 40 });
     const roofM = mat('#5d5a56', { pat: 34, noise: 0.06, grain: 30 });
     const parM = mat('#aca89f', { noise: 0.06, grain: 40 });
     const sill = mat('#a9aeb1', { noise: 0.03, spec: 0.4, gloss: 16 });
     const pipe = mat('#8f9599', { pat: 23, p: [1.2, 0, 0, 0], noise: 0.03, spec: 0.4, gloss: 16 });
+    const lintM = mat(o.lintel || '#bdb8ad', { pat: 48, p: [10, 0, 0, 0], noise: 0.06, grain: 40 });
     const fr = o.frame || '#eceae4';
-    const winA = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.055, 0.75, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
-    const winB = mat('#4b6680', { pat: 43, b: fr, p: [3, 0.055, 1.05, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
-    const winS = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.05, 0.5, 0.6], r: [0.022, 0, 0, 0], noise: 0 });
     const glazF = mat('#56718c', { pat: 43, b: fr, p: [4, 0.05, 1.27, 0.76], r: [0.012, 0, 0, 0], noise: 0 });
     const glazS = mat('#56718c', { pat: 43, b: fr, p: [2, 0.05, 0.56, 0.76], r: [0.012, 0, 0, 0], noise: 0 });
+    const winA = mat('#4b6680', { pat: 43, b: fr, p: [2, 0.055, 0.75, 0.725], r: [0.022, 0, 0, 0], noise: 0 });
     const panel = mat(o.panel, { pat: 38, b: o.panel2 || '#7c4c33', p: [5, 0.93, 0, 0], noise: 0.05, grain: 50 });
-    const doorM = mat(o.door || '#5a4434', { pat: 38, b: '#7b4b32', p: [7, 0.88, 0, 0], noise: 0.05, grain: 60, spec: 0.3, gloss: 12 });
-    const darkM = mat('#3a3633', { noise: 0.04 });
     const acM = mat('#e4e3de', { pat: 12, p: [0.1, 34, 0, 0], noise: 0.03 });
     const dishM = mat('#d9d9d4', { noise: 0.02, spec: 0.4, gloss: 10 });
-    const lampM = mat('#d8d2b8', { noise: 0.02 });
     const railM = flat('#3b3d40', 1);
-    // body, plinth, roof
-    k.boxMM(brick, 0, 0, -Dp, L, H, 0);
+    // window frames: new white plastic or old painted wood; glass with curtains in different colours
+    const frames = [mat(fr, { noise: 0.02, spec: 0.2, gloss: 10 }), mat(o.frame2 || '#86684a', { pat: 38, b: '#5e4532', p: [9, 0.88, 0, 0], noise: 0.05, grain: 50 })];
+    const glassM = ['#ebe6da', '#dccca6', '#b8644f', '#8ea37a', '#d1c18c', '#9fb4c8', '#c9a3a8'].map((c) => mat('#4b6680', { pat: 49, b: c, noise: 0 }));
+    const barM = mat('#2f3134', { noise: 0.03, spec: 0.3, gloss: 12 });
+    const UBOX = () => rawMesh('ubox', () => box(1, 1, 1));
+    // body behind the facade shell, plinth, roof
+    k.boxMM(brick, 0, 0, -Dp, L, H, -REC);
     k.boxMM(baseM, -0.05, 0, -Dp - 0.05, L + 0.05, BASE, 0.06);
     k.boxMM(roofM, 0.2, H, -Dp + 0.2, L - 0.2, H + 0.22, -0.2);
     k.boxMM(parM, -0.04, H, -0.26, L + 0.04, H + 0.6, 0.04);
@@ -1880,23 +2129,37 @@ void main(){
     const ant = [];
     for (const x of [bw * 1.5, L - bw * 2]) { ant.push([[x, H + 0.2, -Dp * 0.4], [x, H + 3.0, -Dp * 0.4]], [[x - 0.6, H + 2.6, -Dp * 0.4], [x + 0.6, H + 2.6, -Dp * 0.4]], [[x - 0.4, H + 2.2, -Dp * 0.4], [x + 0.4, H + 2.2, -Dp * 0.4]]); }
     k.lines(railM, ant);
-    // drainpipes
     for (const x of [0.32, L - 0.32]) {
       k.rod(pipe, [x, 0.3, 0.15], [x, H + 0.1, 0.15], 0.065, 8);
       k.boxMM(pipe, x - 0.08, 0.12, 0.08, x + 0.08, 0.3, 0.32);
     }
-    // house number plates on both ends
     decalOn(k, 'houseNo', [-0.006, 3.4, -1.2], '-x');
     decalOn(k, 'houseNo', [L + 0.006, 3.4, -1.2], 'x');
     const spots = [], heights = [], blocks = [{ rect: [0, -Dp, L, 0.05] }];
-    const window_ = (xc, yF, wide) => {
-      const w = wide ? winB : winA, hw = wide ? 1.05 : 0.75, yc = yF + 0.85 + 0.725;
-      k.box(w, [xc, yc, 0.025], [hw, 0.725, 0.025], null, R());
-      k.boxMM(sill, xc - hw - 0.05, yF + 0.8, 0, xc + hw + 0.05, yF + 0.85, 0.13);
+    // a window set REC deep into the wall: glass, frame with leaves and a transom, tin sill, concrete lintel; bars on some ground-floor ones
+    const windowIn = (xc, ys, hw, f) => {
+      const hh = 0.725, yc = ys + hh, zf = -0.11, fw = 0.045;
+      k.put(UBOX(), M(tr(xc, yc, -0.155), sc3(hw, hh, 0.012)), glassM[(R() * glassM.length) | 0], R());
+      const fm = R() < 0.62 ? frames[0] : frames[1];
+      k.boxMM(fm, xc - hw, ys, zf - 0.03, xc + hw, ys + fw, zf + 0.03);
+      k.boxMM(fm, xc - hw, yc + hh - fw, zf - 0.03, xc + hw, yc + hh, zf + 0.03);
+      k.boxMM(fm, xc - hw, ys, zf - 0.03, xc - hw + fw, yc + hh, zf + 0.03);
+      k.boxMM(fm, xc + hw - fw, ys, zf - 0.03, xc + hw, yc + hh, zf + 0.03);
+      const leaves = hw > 1 ? 3 : 2, lw = 2 * hw / leaves;
+      for (let j = 1; j < leaves; j++) { const xm = xc - hw + lw * j; k.boxMM(fm, xm - fw / 2, ys, zf - 0.03, xm + fw / 2, yc + hh, zf + 0.03); }
+      const l0 = xc - hw + lw * ((R() * leaves) | 0);
+      k.boxMM(fm, l0, yc + 0.3, zf - 0.025, l0 + lw, yc + 0.3 + fw, zf + 0.025);
+      k.boxMM(sill, xc - hw - 0.05, ys - 0.05, -0.04, xc + hw + 0.05, ys, 0.12);
+      k.boxMM(lintM, xc - hw - 0.2, yc + hh, -0.012, xc + hw + 0.2, yc + hh + 0.2, 0.012);
+      if (f === 0 && R() < 0.55) {
+        for (let x = xc - hw + 0.08; x < xc + hw - 0.04; x += 0.13) k.boxMM(barM, x - 0.012, ys - 0.02, 0.03, x + 0.012, yc + hh + 0.02, 0.055);
+        for (const y of [ys + 0.3, yc + hh - 0.25]) k.boxMM(barM, xc - hw - 0.04, y - 0.015, 0.025, xc + hw + 0.04, y + 0.015, 0.06);
+      }
       const r = R();
-      if (r < 0.1) k.boxMM(acM, xc + hw + 0.18, yc - 0.05, 0, xc + hw + 0.9, yc + 0.45, 0.3);
-      else if (r < 0.15) k.mesh('dish', () => ellipsoid(0.3, 0.3, 0.08, { seg: 12, rings: 5, half: true }), dishM, M(tr(xc - hw - 0.35, yc + 0.35, 0.12), rx(-1.1)), 0);
+      if (r < 0.15) k.boxMM(acM, xc + hw + 0.18, yc - 0.05, 0, xc + hw + 0.9, yc + 0.45, 0.3);
+      else if (r < 0.23) k.mesh('dish', () => ellipsoid(0.3, 0.3, 0.08, { seg: 12, rings: 5, half: true }), dishM, M(tr(xc - hw - 0.35, yc + 0.35, 0.12), rx(-1.1)), 0);
     };
+    const CLOTHES = ['#e8e6e0', '#c94f45', '#4f6fa8', '#e2c34a', '#7aa36a', '#d98fb0', '#3d3f45'].map((c) => Object.assign(mat(c, { noise: 0.06, grain: 40, wind: [0.025, 1 / 14, 2.4, 0.6] }), { noShadow: false }));
     const loggia = (xc, yF, top, f) => {
       const x0 = xc - 1.3, x1 = xc + 1.3, D = 1.15;
       k.boxMM(slabM, x0 - 0.03, yF - 0.12, 0, x1 + 0.03, yF, D + 0.04);
@@ -1904,28 +2167,49 @@ void main(){
       k.boxMM(pm, x0, yF, D - 0.07, x1, yF + 1.0, D);
       k.boxMM(pm, x0, yF, 0, x0 + 0.07, yF + 1.0, D - 0.07);
       k.boxMM(pm, x1 - 0.07, yF, 0, x1, yF + 1.0, D - 0.07);
-      if (R() < 0.8) {
+      if (R() < 0.75) {
         k.box(glazF, [xc, yF + 1.76, D - 0.035], [1.27, 0.76, 0.015], null, R());
         k.box(glazS, [x0 + 0.035, yF + 1.76, D / 2], [0.56, 0.76, 0.015], ry(-Math.PI / 2), R());
         k.box(glazS, [x1 - 0.035, yF + 1.76, D / 2], [0.56, 0.76, 0.015], ry(Math.PI / 2), R());
       } else {
+        // open: a window and a balcony door in the wall, laundry on a line
         k.boxMM(sill, x0, yF + 1.0, D - 0.1, x1, yF + 1.05, D + 0.01);
         k.box(winA, [xc - 0.45, yF + 1.57, 0.025], [0.75, 0.725, 0.025], null, R());
-        k.lines(railM, [[[x0 + 0.1, yF + 2.1, D - 0.4], [x1 - 0.1, yF + 2.1, D - 0.4]]]);
+        const ly = yF + 2.1, lz = D - 0.4;
+        k.lines(railM, [[[x0 + 0.1, ly, lz], [x1 - 0.1, ly, lz]]]);
+        let x = x0 + 0.25 + R() * 0.2;
+        while (x < x1 - 0.5) {
+          const w = 0.22 + R() * 0.35, h = 0.3 + R() * 0.45;
+          k.boxMM(CLOTHES[(R() * CLOTHES.length) | 0], x, ly - h, lz - 0.01, x + w, ly, lz + 0.01);
+          x += w + 0.06 + R() * 0.2;
+        }
       }
       if (top) k.boxMM(slabM, x0 - 0.03, yF + 2.6, 0, x1 + 0.03, yF + 2.72, D + 0.04);
     };
+    // the facade shell: bands under and over the windows, piers between them, solid where there are loggias and entrances
     const children = [];
-    for (let i = 0; i < nb; i++) {
-      const xc = (i + 0.5) * bw;
-      const en = (o.entr || []).indexOf(i);
-      if (en >= 0) { children.push({ type: 'entrance', local: [xc, 0], idx: en, n: 11, frame: fr, door: o.door }); continue; }
-      const balc = (o.balc || []).includes(i);
-      for (let f = 0; f < F; f++) {
-        const yF = BASE + f * FH;
-        if (balc && f >= 1) loggia(xc, yF, f === F - 1, f);
-        else window_(xc, yF, i % 2 === 0);
+    const kindOf = (i, f) => (o.entr || []).includes(i) ? 'entr' : ((o.balc || []).includes(i) && f >= 1 ? 'loggia' : 'win');
+    for (let f = 0; f < F; f++) {
+      const yF = BASE + f * FH, ys = yF + 0.85, yt = ys + 1.45;
+      k.boxMM(brick, 0, yF, -REC, L, ys, 0);
+      k.boxMM(brick, 0, yt, -REC, L, yF + FH, 0);
+      let x = 0;
+      for (let i = 0; i < nb; i++) {
+        const xc = (i + 0.5) * bw, kind = kindOf(i, f);
+        if (kind === 'loggia') loggia(xc, yF, f === F - 1, f);
+        if (kind !== 'win') continue;
+        const hw = i % 2 === 0 ? 1.05 : 0.75;
+        k.boxMM(brick, x, ys, -REC, xc - hw, yt, 0);
+        windowIn(xc, ys, hw, f);
+        x = xc + hw;
       }
+      k.boxMM(brick, x, ys, -REC, L, yt, 0);
+    }
+    k.boxMM(brick, 0, BASE + F * FH, -REC, L, H, 0);
+    k.boxMM(brick, 0, 0, -REC, L, BASE, 0);
+    for (let i = 0; i < nb; i++) {
+      const en = (o.entr || []).indexOf(i);
+      if (en >= 0) children.push({ type: 'entrance', local: [(i + 0.5) * bw, 0], idx: en, n: 11, frame: fr, door: o.door });
     }
     return { kit: k, blocks, heights, spots, children, top: H + 1.4 };
   }
@@ -2182,28 +2466,42 @@ void main(){
   }
 
   // ---------- trees, bushes, tall grass ----------
+  // a lumpy clump of leaves: an ellipsoid pushed out by a few bulges, with a flatter underside (8 shapes)
+  function lumpMesh(v) {
+    return rawMesh('lump' + v, () => {
+      const m = ellipsoid(1, 0.8, 1, { seg: 8, rings: 5 });
+      const R = rng(700 + v * 13), P = m.pos, Nn = m.nrm, bumps = [];
+      for (let i = 0; i < 6; i++) bumps.push([nrm([R() * 2 - 1, R() * 1.6 - 0.5, R() * 2 - 1]), 0.16 + R() * 0.22]);
+      for (let i = 0; i < P.length; i += 3) {
+        const d = nrm([P[i], P[i + 1], P[i + 2]]);
+        let f = 0.9;
+        for (const [bv, am] of bumps) f += am * Math.max(0, dot(d, bv) - 0.35) * 1.7;
+        if (d[1] < 0) f *= 1 + d[1] * 0.28;
+        P[i] *= f; P[i + 1] *= f; P[i + 2] *= f;
+      }
+      for (let i = 0; i < P.length; i += 3) { const d = nrm([P[i], P[i + 1] * 1.2, P[i + 2]]); Nn[i] = d[0]; Nn[i + 1] = d[1]; Nn[i + 2] = d[2]; }
+      return m;
+    });
+  }
+  // h height · bole clear trunk · r0 trunk radius · w crown half-width · up how steeply limbs climb (0 flat … 1 upright) · limbs first-order limbs ·
+  // cl clump radius range · per clumps per twig · dens leaves per metre · droop how much twigs hang · stems trunks from one root
   const TREE = {
-    ash: { h: 8.6, trunk: 3.0, r0: 0.21, cr: 3.0, ch: 4.4, blobs: 34, br: 1.0, nb: 5, leaf: '#3f6b2d', aut: '#b9a83b', af: 0.12, bark: '#6c625a' },
-    maple: { h: 6.6, trunk: 2.3, r0: 0.17, cr: 2.4, ch: 3.6, blobs: 26, br: 0.82, nb: 4, leaf: '#4b7f30', aut: '#d38a2c', af: 0.2, bark: '#6a5f55' },
-    birch: { h: 8.2, trunk: 2.8, r0: 0.14, cr: 1.9, ch: 4.6, blobs: 26, br: 0.72, nb: 4, leaf: '#5d8c36', aut: '#d2b443', af: 0.22, bark: '#e3e0d8', birch: true },
-    poplar: { h: 10, trunk: 2.6, r0: 0.23, cr: 2.1, ch: 6.6, blobs: 36, br: 0.85, nb: 5, leaf: '#47722f', aut: '#c8b23e', af: 0.22, bark: '#6f675e' },
-    young: { h: 4.2, trunk: 1.6, r0: 0.08, cr: 1.4, ch: 2.2, blobs: 14, br: 0.58, nb: 3, leaf: '#5a9136', aut: '#cfa23a', af: 0.12, bark: '#6d6259' },
+    ash: { h: 8.6, bole: 2.4, r0: 0.21, w: 3.0, up: 0.55, limbs: 5, cl: [0.38, 0.68], per: 2.6, dens: 11, leaf: '#3f6b2d', aut: '#a9a23f', af: 0.06, bark: '#6c625a', solid: 0.62 },
+    maple: { h: 6.8, bole: 1.5, r0: 0.18, w: 3.1, up: 0.42, limbs: 5, cl: [0.38, 0.66], per: 2.6, dens: 9, leaf: '#4b7f30', aut: '#c99a35', af: 0.08, bark: '#5f564d', stems: 2, solid: 0.66 },
+    birch: { h: 8.4, bole: 2.4, r0: 0.14, w: 2.0, up: 0.74, limbs: 5, cl: [0.28, 0.48], per: 2.6, dens: 15, leaf: '#5d8c36', aut: '#c9b545', af: 0.1, bark: '#e3e0d8', birch: true, droop: 0.55, solid: 0.5 },
+    poplar: { h: 10.5, bole: 2.0, r0: 0.24, w: 2.0, up: 0.9, limbs: 7, cl: [0.38, 0.64], per: 2.6, dens: 12, leaf: '#47722f', aut: '#b8ad42', af: 0.06, bark: '#6f675e', solid: 0.66 },
+    willow: { h: 7.4, bole: 1.6, r0: 0.25, w: 3.3, up: 0.5, limbs: 6, cl: [0.32, 0.56], per: 2.6, dens: 16, leaf: '#6f8a4a', aut: '#a8a050', af: 0.04, bark: '#5c5650', droop: 0.85, solid: 0.56 },
+    young: { h: 4.2, bole: 1.2, r0: 0.08, w: 1.4, up: 0.62, limbs: 3, cl: [0.26, 0.42], per: 2.6, dens: 13, leaf: '#5a9136', aut: '#bfa23e', af: 0.06, bark: '#6d6259', solid: 0.6 },
     bare: { h: 6.4, trunk: 2.1, r0: 0.15, bark: '#7a6e64' }
   };
   function buildTree(o) {
     const P = TREE[o.kind || 'ash'], k = new Kit(o.seed || 53), R = k.R;
     const s = (o.h || P.h) / P.h;
     const barkM = P.birch ? mat(P.bark, { pat: 42, b: '#3b3836', noise: 0.05, grain: 40 }) : mat(P.bark, { noise: 0.14, grain: 30 });
-    const trunkH = P.trunk * s, r0 = P.r0 * s, r1 = r0 * 0.6;
-    const lean = [(R() - 0.5) * 0.5, (R() - 0.5) * 0.5];
-    const rings = [];
-    for (let i = 0; i <= 5; i++) {
-      const t = i / 5, r = lerp(r0 * (i === 0 ? 1.45 : 1.1), r1, Math.pow(t, 0.7));
-      rings.push({ a: t * trunkH, hu: r, hv: r, cu: lean[0] * t * t * 0.4, cv: lean[1] * t * t * 0.4 });
-    }
-    k.mesh('trunk' + (o.seed || 53) + ',' + s.toFixed(2) + (o.kind || 'ash'), () => loft(rings, { seg: 8, capAAt: 0, capBAt: trunkH }), barkM);
-    const top = [lean[0] * 0.4, trunkH, lean[1] * 0.4];
+    const r1 = P.r0 * s * 0.6, trunkH = (P.trunk || 2) * s, top = [0, trunkH, 0];
     if (o.kind === 'bare') {
+      const r0 = P.r0 * s;
+      k.mesh('trunkbare' + (o.seed || 53), () => loft([0, 1, 2, 3, 4, 5].map((i) => { const t = i / 5, r = lerp(r0 * (i === 0 ? 1.45 : 1.1), r1, Math.pow(t, 0.7)); return { a: t * trunkH, hu: r, hv: r }; }), { seg: 8, capAAt: 0, capBAt: trunkH }), barkM);
       const branch = (p, dir, L, r, depth) => {
         const q = add(p, scl(dir, L));
         k.rod(barkM, p, q, Math.max(r, 0.024), 5);
@@ -2220,52 +2518,169 @@ void main(){
       }
       return { kit: k, blocks: [{ c: [0, 0], r: r0 + 0.08 }], top: P.h * s };
     }
-    const CR = P.cr * s, CH = P.ch * s, cc = [top[0], trunkH + CH * 0.42, top[2]];
-    for (let i = 0; i < P.nb; i++) {
-      const a = (i / P.nb) * Math.PI * 2 + R() * 0.8;
-      const from = [top[0] * 0.8, trunkH * (0.72 + R() * 0.25), top[2] * 0.8];
-      const to = add(cc, [Math.cos(a) * CR * 0.62, (R() - 0.35) * CH * 0.45, Math.sin(a) * CR * 0.62]);
-      k.rod(barkM, from, to, r1 * 0.55, 6);
+    const H = P.h * s, bole = P.bole * s, W = P.w * s, r0 = P.r0 * s, stems = P.stems || 1, droop = P.droop || 0;
+    // 1. grow a branching skeleton in rough units; 2. stretch the crown to its size; 3. build limbs, twigs and clumps
+    const segs = [], tips = [], tops = [];
+    const grow = (a, d, L, r, order) => {
+      let p = a;
+      const n = order === 0 ? 4 : 3;
+      for (let i = 0; i < n; i++) {
+        const sag = droop * (order >= 2 ? 0.4 : 0.1) * (i + 1) / n;
+        d = nrm(add(d, [(R() - 0.5) * 0.34, (P.up - d[1]) * 0.22 - sag, (R() - 0.5) * 0.34]));
+        const q = add(p, scl(d, L / n));
+        const ra = r * (1 - 0.3 * i / n), rb = r * (1 - 0.3 * (i + 1) / n);
+        segs.push([p, q, ra, rb, order]);
+        if (order < 2 && i >= 1 && R() < 0.45) grow(q, nrm(add(d, [(R() - 0.5) * 1.5, 0.1 + R() * 0.45, (R() - 0.5) * 1.5])), L * (0.42 + R() * 0.18), rb * 0.55, order + 1);
+        if (order === 1 && R() < 0.2) tips.push([lerpV(p, q, 0.5), d, 1]);
+        p = q;
+      }
+      if (order >= 2) tips.push([p, d, 2]);
+      else for (let j = 0; j < 2; j++) grow(p, nrm(add(d, [(R() - 0.5) * 1.1, 0.25 + R() * 0.35, (R() - 0.5) * 1.1])), L * (0.5 + R() * 0.15), r * 0.55, order + 1);
+    };
+    const lean = [(R() - 0.5) * 0.5, (R() - 0.5) * 0.5];
+    for (let st = 0; st < stems; st++) {
+      const off = stems > 1 ? [Math.cos(st * 2.4 + R()) * 0.13, Math.sin(st * 2.4 + R()) * 0.13] : [0, 0];
+      const sl = [lean[0] + off[0] * 3, lean[1] + off[1] * 3];
+      const tH = bole + (H - bole) * 0.3, rt = r0 / Math.sqrt(stems);
+      const rings = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6, rr = lerp(rt * (i === 0 ? 1.5 : 1.08), rt * 0.62, Math.pow(t, 0.8));
+        rings.push({ a: t * tH, hu: rr, hv: rr, cu: off[0] + sl[0] * t * t * 0.35, cv: off[1] + sl[1] * t * t * 0.35 });
+      }
+      k.mesh('trunk' + (o.seed || 53) + ',' + st + ',' + s.toFixed(2) + (o.kind || 'ash'), () => loft(rings, { seg: 8, capAAt: 0, capBAt: tH }), barkM);
+      tops.push(tH);
+      const axis = (y) => [off[0] + sl[0] * 0.35 * (y / tH) ** 2, y, off[1] + sl[1] * 0.35 * (y / tH) ** 2];
+      const nl = Math.max(2, Math.round(P.limbs / stems));
+      for (let i = 0; i < nl; i++) {
+        const t = (i + R() * 0.5) / nl, a = i * 2.39996 + st * 1.3 + R() * 0.5;
+        grow(axis(lerp(bole, tH, t)), nrm([Math.cos(a) * (1.05 - P.up), P.up + 0.1, Math.sin(a) * (1.05 - P.up)]), 1.0, rt * 0.5 * (1 - t * 0.25), 0);
+      }
+      grow(axis(tH), nrm([sl[0] * 0.3, 1, sl[1] * 0.3]), 1.0, rt * 0.55, 0);
     }
-    const leaf = leafMat(P.leaf, P.af, P.aut);
-    for (let i = 0; i < P.blobs; i++) {
-      let d; do { d = [R() * 2 - 1, R() * 2 - 1, R() * 2 - 1]; } while (dot(d, d) > 1);
-      const pos = add(cc, [d[0] * CR * 0.6, d[1] * CH * 0.36, d[2] * CR * 0.6]);
-      const br = Math.round(P.br * s * (0.65 + R() * 0.7) * 20) / 20;
-      k.mesh('blob' + br, () => ellipsoid(br, br * 0.8, br, { seg: 11, rings: 7 }), leaf, M(tr(pos[0], pos[1], pos[2]), ry(R() * 3)), R());
+    // stretch the crown: up from the trunk tops to the full height, out to the crown's half-width
+    const cb = Math.min(...tops);
+    let maxR = 0.1, maxY = cb + 0.1;
+    for (const sg of segs) for (const q of [sg[0], sg[1]]) { maxR = Math.max(maxR, Math.hypot(q[0], q[2])); maxY = Math.max(maxY, q[1]); }
+    const sx = W * 0.82 / maxR, sy = (H - P.cl[1] * s - cb) / (maxY - cb);
+    const fit = (q) => [q[0] * sx, q[1] <= cb ? q[1] : cb + (q[1] - cb) * sy, q[2] * sx];
+    for (const sg of segs) {
+      const a = fit(sg[0]), b = fit(sg[1]), ra = Math.max(sg[2] * s, 0.012), rb = Math.max(sg[3] * s, 0.01);
+      k.taper(barkM, a, b, ra, rb, sg[4] === 0 ? 6 : sg[4] === 1 ? 4 : 3);
     }
-    return { kit: k, blocks: [{ c: [0, 0], r: r0 + 0.08 }], top: cc[1] + CH * 0.6 };
+    // leaf clumps on the twigs; weeping kinds also hang curtains of twigs with small clumps
+    const leaf = leafMat(P.leaf, P.af, P.aut, { dens: P.dens, solid: P.solid });
+    let cc = [0, 0, 0];
+    for (const [p0] of tips) cc = add(cc, fit(p0));
+    cc = scl(cc, 1 / Math.max(1, tips.length)); cc[1] -= (H - cb) * 0.12;
+    const clump = (c, rc, fy, yaw) => k.put(clumpRaw((R() * 8) | 0, nrm(sub(c, cc)), yaw, 0.55), M(tr(c[0], c[1], c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R());
+    const twigM = Object.assign(flat(P.birch ? '#4a3f37' : '#4f443b', 1), { noShadow: true });
+    const hang = [];
+    for (const [p0, d, ord] of tips) {
+      const p = fit(p0), n = ord === 2 ? (R() < P.per - 2 ? 2 : 1) + (R() < 0.35 ? 1 : 0) : 1;
+      for (let j = 0; j < n; j++) {
+        const rc = lerp(P.cl[0], P.cl[1], R()) * s * (ord === 1 ? 0.8 : 1);
+        const c = add(p, [(R() - 0.5) * rc * 1.1 + d[0] * rc * 0.3, (R() - 0.35) * rc * 0.7, (R() - 0.5) * rc * 1.1 + d[2] * rc * 0.3]);
+        const fy = droop > 0.5 ? 1.0 + R() * 0.25 : 0.72 + R() * 0.16;
+        clump([c[0], c[1] - (droop > 0.5 ? rc * 0.3 : 0), c[2]], rc, fy, R() * 6.28);
+      }
+      if (droop > 0 && ord === 2 && R() < droop) {
+        const L = (0.5 + R() * 0.9) * s * droop, q = add(p, [d[0] * 0.15, -L, d[2] * 0.15]);
+        hang.push([p, lerpV(p, q, 0.5)], [lerpV(p, q, 0.5), q]);
+        if (R() < 0.6) { const rc = P.cl[0] * s * 0.75; clump(lerpV(p, q, 0.7), rc * 0.7, 1.9, R() * 6.28); }
+      }
+    }
+    if (hang.length) k.lines(twigM, hang);
+    return { kit: k, blocks: [{ c: [0, 0], r: r0 + 0.08 }], top: H };
   }
+  // stems fanning out of one root, clumps along their upper parts
+  const BUSH = {
+    lilac: { leaf: '#3f6b2e', aut: '#8f8a3a', af: 0.03, dens: 10, stems: 7, h: 1.9, w: 1.1, cl: [0.34, 0.58] },
+    elder: { leaf: '#4a7a30', aut: '#b9a83b', af: 0.05, dens: 11, stems: 6, h: 1.7, w: 1.0, cl: [0.3, 0.52] },
+    hazel: { leaf: '#507e2f', aut: '#c2a23c', af: 0.06, dens: 9, stems: 8, h: 2.3, w: 1.3, cl: [0.34, 0.58] },
+    dogrose: { leaf: '#47702c', aut: '#8d7a3a', af: 0.06, dens: 15, stems: 9, h: 1.3, w: 0.9, cl: [0.22, 0.4], berries: '#c2342a' },
+    shoots: { leaf: '#5a8e35', aut: '#cfa23a', af: 0.05, dens: 13, stems: 5, h: 1.3, w: 0.7, cl: [0.2, 0.38] }
+  };
   function buildBush(o) {
-    const k = new Kit(o.seed || 59), R = k.R, sz = o.size || 1;
-    const leaf = leafMat(o.leaf || '#44732f', o.af ?? 0, o.aut || '#b9a83b', { cell: 16 });
-    const n = Math.round(4 + sz * 3);
-    for (let i = 0; i < n; i++) {
-      const a = R() * Math.PI * 2, r = R() * 0.55 * sz;
-      const br = Math.round((0.42 + R() * 0.3) * sz * 20) / 20;
-      k.mesh('blob' + br, () => ellipsoid(br, br * 0.84, br, { seg: 11, rings: 7 }), leaf, tr(Math.cos(a) * r, br * 0.8 + R() * 0.2 * sz, Math.sin(a) * r), R());
+    const B = BUSH[o.kind || 'lilac'], k = new Kit(o.seed || 59), R = k.R, sz = o.size || 1;
+    const stemM = mat('#5a4a3c', { noise: 0.12, grain: 40 });
+    const leaf = leafMat(o.leaf || B.leaf, o.af ?? B.af, o.aut || B.aut, { dens: B.dens, cut: 0.45, rr: 0.46, solid: 0.8, wind: [0.025, 1 / 1.6, 1.7, 0.45] });
+    const H = B.h * sz, up = [];
+    for (let i = 0; i < B.stems; i++) {
+      const a = (i / B.stems) * Math.PI * 2 + R() * 0.7, rad = R() * 0.22 * sz, sp = 0.3 + R() * 0.35;
+      let p = [Math.cos(a) * rad, 0, Math.sin(a) * rad], d = nrm([Math.cos(a) * sp, 1, Math.sin(a) * sp]);
+      const L = H * (0.7 + R() * 0.35);
+      for (let j = 0; j < 3; j++) {
+        d = nrm(add(d, [(R() - 0.5) * 0.3, -0.1, (R() - 0.5) * 0.3]));
+        const q = add(p, scl(d, L / 3));
+        k.taper(stemM, p, q, 0.022 * sz * (1 - j * 0.25), 0.022 * sz * (1 - (j + 1) * 0.25), 4);
+        if (j >= 1) up.push([q, d]);
+        p = q;
+      }
     }
-    return { kit: k, blocks: [{ c: [0, 0], r: 0.7 * sz }] };
+    const leafAt = (c, rc, fy) => { const y = Math.max(c[1], rc * 0.55), yaw = R() * 6.28; k.put(clumpRaw((R() * 8) | 0, nrm([c[0], y - H * 0.35, c[2]]), yaw, 0.5), M(tr(c[0], y, c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R()); };
+    const n = Math.round(up.length * 1.4);
+    for (let i = 0; i < n; i++) {
+      const [q, d] = up[i % up.length], rc = lerp(B.cl[0], B.cl[1], R()) * sz;
+      leafAt(add(q, [(R() - 0.5) * rc + d[0] * rc * 0.3, (R() - 0.4) * rc * 0.6, (R() - 0.5) * rc + d[2] * rc * 0.3]), rc, 0.8 + R() * 0.15);
+    }
+    for (let i = 0; i < 4; i++) { const a = i * 1.57 + R(), rc = B.cl[1] * sz * 0.8; leafAt([Math.cos(a) * rc * 0.8, H * 0.32, Math.sin(a) * rc * 0.8], rc, 0.75); }
+    if (B.berries) {
+      const bm = Object.assign(mat(B.berries, { noise: 0.05, spec: 0.5, gloss: 10 }), { noShadow: true, fl: 1 });
+      for (let i = 0; i < 12; i++) { const [q] = up[(R() * up.length) | 0]; k.mesh('berry', () => ellipsoid(0.028, 0.028, 0.028, { seg: 6, rings: 4 }), bm, tr(q[0] + (R() - 0.5) * 0.5 * sz, q[1] + (R() - 0.2) * 0.3 * sz, q[2] + (R() - 0.5) * 0.5 * sz)); }
+    }
+    return { kit: k, blocks: [{ c: [0, 0], r: 0.6 * sz }] };
   }
+  // a patch of tall weeds: grass cards, dry stalks with umbels, a few big burdock leaves near the ground
   function buildGrass(o) {
     const k = new Kit(o.seed || 61), R = k.R;
     const H = o.h || 1.0;
-    const gm = grassMat(o.col || '#6a9532', o.dryCol || '#c3aa5b', H, o.dry ?? 0.35);
-    const n = Math.round(Math.PI * o.rx * o.rz * 8);
+    const gm = grassMat(o.col || '#5b7d31', o.dryCol || '#c3aa5b', H, o.dry ?? 0.35);
+    const n = Math.round(Math.PI * o.rx * o.rz * 9);
     for (let i = 0; i < n; i++) {
       let x, z; do { x = R() * 2 - 1; z = R() * 2 - 1; } while (x * x + z * z > 1);
       const e = Math.sqrt(x * x + z * z);
-      const h = Math.round(H * (0.5 + 0.5 * R()) * (1 - 0.4 * e) * 20) / 20, rb = Math.round((0.16 + R() * 0.14) * 50) / 50;
-      k.mesh('tuft' + h + ',' + rb, () => loft([{ a: 0, hu: rb, hv: rb }, { a: h * 0.5, hu: rb * 0.8, hv: rb * 0.8 }, { a: h, hu: 0.03, hv: 0.03 }], { seg: 7, capAAt: 0, capBAt: h }), gm, M(tr(x * o.rx, 0, z * o.rz), rz((R() - 0.5) * 0.25)), R());
+      card(k, gm, x * o.rx, z * o.rz, 0.45 + R() * 0.4, H * (0.55 + 0.5 * R()) * (1 - 0.45 * e));
     }
-    const stalk = Object.assign(mat('#6f7a3c', { noise: 0.04 }), { noShadow: true, fl: 1 }), head = Object.assign(mat(o.headCol || '#a8996c', { noise: 0.12, grain: 60 }), { noShadow: true, fl: 1 });
-    for (let i = 0; i < Math.round(n / 16); i++) {
+    const stalk = Object.assign(mat('#6f7a3c', { noise: 0.04 }), { noShadow: true, fl: 1, wind: [0.06, 1, 1.9, 0.4] }), head = Object.assign(mat(o.headCol || '#a8996c', { noise: 0.12, grain: 60, wind: [0.06, 1, 1.9, 0.4] }), { noShadow: true, fl: 1 });
+    for (let i = 0; i < Math.round(n / 10); i++) {
       let x, z; do { x = R() * 2 - 1; z = R() * 2 - 1; } while (x * x + z * z > 0.7);
       const hh = H * (1.15 + R() * 0.45), lx = (R() - 0.5) * 0.15, lz = (R() - 0.5) * 0.15;
       k.rod(stalk, [x * o.rx, 0, z * o.rz], [x * o.rx + lx, hh, z * o.rz + lz], 0.013, 4);
       k.mesh('umbel', () => ellipsoid(0.05, 0.022, 0.05, { seg: 8, rings: 4 }), head, tr(x * o.rx + lx, hh + 0.02, z * o.rz + lz), R());
     }
+    const burdock = leafMat('#3f6a2b', 0.05, '#8a8a3a', { dens: 4.5, rr: 0.5, cut: 0.5, solid: 0.9, wind: [0.02, 1 / 0.6, 1.6, 0.4] });
+    for (let i = 0; i < Math.round(o.rx * o.rz * 1.2); i++) {
+      const a = R() * 6.28, r = R() * 0.8, rc = 0.22 + R() * 0.12;
+      k.put(lumpMesh((R() * 8) | 0), M(tr(Math.cos(a) * r * o.rx, rc * 0.45, Math.sin(a) * r * o.rz), ry(R() * 6.28), sc3(rc, rc * 0.55, rc)), burdock, R());
+    }
     return { kit: k, blocks: [], spots: [{ kind: 'grass', at: [0, 0], yaw: 0 }] };
+  }
+  // ---------- the meadow: grass tufts over every lawn and rough cell, a 6 × 6 m tile per instance ----------
+  const tuftMat = (hex, dryHex, dry) => Object.assign(mat(hex, { pat: 39, b: dryHex, p: [0, 0, dry, 0], noise: 0, thin: true, wind: [0.04, 1 / 0.6, 2.1, 0.45] }), { fl: 1, noShadow: true });
+  const MEADOW = {
+    lawn: tuftMat('#5a8732', '#a8a45c', 0.04), lush: tuftMat('#4f7c2e', '#a8a45c', 0.07),
+    rough: tuftMat('#52752e', '#b4a65c', 0.2), dry: tuftMat('#7c8440', '#c4b168', 0.55)
+  };
+  function buildMeadow(o) {
+    const [tx, tz, TL] = o.tile, k = new Kit(9000 + tx * 31 + tz), R = k.R, step = 0.31;
+    for (let z = tz + step / 2; z < tz + TL; z += step) for (let x = tx + step / 2; x < tx + TL; x += step) {
+      const px = x + (R() - 0.5) * step * 1.1, pz = z + (R() - 0.5) * step * 1.1;
+      const t = groundType(px, pz);
+      if (t !== '.' && t !== ',') continue;
+      const pd = o.pathD(px, pz);
+      if (pd < 0.42 + (vnoise(px * 2.8, pz * 2.8, 7) - 0.5) * 0.3) continue;
+      if (o.blocked(px, pz)) continue;
+      // lush and thin zones a few metres across, clumps about a metre across
+      const lush = fbm(px * 0.33, pz * 0.33, 21), clumpy = vnoise(px * 1.3, pz * 1.3, 23), shade = o.shadeOf(px, pz), rough = t === ',';
+      if (!rough && R() < 0.1 + shade * 0.4 + (0.45 - clumpy) * 0.3) continue;
+      let h = rough ? 0.34 + lush * 0.52 : 0.09 + lush * 0.2 + clumpy * 0.1;
+      if (R() < 0.08) h *= 1.7;                                                    // a tussock sticking out
+      h *= (0.7 + R() * 0.6) * (0.4 + 0.6 * smooth((pd - 0.35) / 0.9)) * (1 - shade * 0.35);
+      const w = (rough ? 0.44 : 0.34) + R() * 0.36;
+      const m = rough ? (lush > 0.6 && R() < 0.45 ? MEADOW.dry : MEADOW.rough) : (lush + clumpy * 0.3 > 0.72 ? MEADOW.lush : (R() < 0.04 ? MEADOW.dry : MEADOW.lawn));
+      card(k, m, px, pz, w, h);
+    }
+    return { kit: k, blocks: [] };
   }
   // ---------- bench and litter bin (the same ones as in the first yard) ----------
   function buildBench(o) {
@@ -2319,6 +2734,7 @@ void main(){
     pole: { build: buildPole, name: 'Столб с фонарём', size: '8,6 м', note: 'Траверса с изоляторами, провода считаются по провису.' },
     tree: { build: buildTree, name: 'Деревья', size: '4–10 м', note: 'Ствол, ветки и крона из комков листвы. Ясень, клён, берёза, тополь, сухое.' },
     bush: { build: buildBush, name: 'Куст', size: '1–2 м', note: 'Несколько комков листвы.' },
+    meadow: { build: buildMeadow, name: 'Трава', size: '', note: '' },
     grass: { build: buildGrass, name: 'Бурьян', size: 'пятно 2–5 м', note: 'Пучки травы со своими травинками и зонтики сорняков.' },
     bench: { build: buildBench, name: 'Лавочка', size: '1,5 м', note: 'Та самая лавочка из первого двора.' },
     urn: { build: buildUrn, name: 'Урна', size: '0,4 м', note: 'Тоже из первого двора.' },
@@ -2373,19 +2789,27 @@ void main(){
       { n: 17, type: 'tree', kind: 'maple', at: [25.0, 3.2], seed: 106 },
       { n: 17, type: 'tree', kind: 'poplar', at: [28.3, 4.4], seed: 107 },
       { n: 17, type: 'tree', kind: 'ash', at: [27.0, 9.0], seed: 108 },
-      { n: 17, type: 'tree', kind: 'maple', at: [28.2, 13.0], seed: 109 },
+      { n: 17, type: 'tree', kind: 'willow', at: [28.2, 13.0], seed: 109 },
       { n: 17, type: 'tree', kind: 'birch', at: [27.4, 17.0], seed: 110 },
       { n: 17, type: 'tree', kind: 'poplar', at: [28.6, 21.0], seed: 111 },
       { n: 17, type: 'tree', kind: 'ash', at: [28.8, 28.8], h: 9.2, seed: 112 },
       { n: 18, type: 'tree', kind: 'bare', at: [5.0, 27.6], seed: 113 },
       { n: 17, type: 'tree', kind: 'young', at: [16.8, 27.8], seed: 114 },
-      { n: 19, type: 'bush', at: [13.2, 6.8], size: 1.0, seed: 301 },
-      { n: 19, type: 'bush', at: [4.5, 8.4], size: 0.8, seed: 302 },
-      { n: 19, type: 'bush', at: [23.0, 6.0], size: 1.2, seed: 303 },
-      { n: 19, type: 'bush', at: [14.0, 13.7], size: 0.9, seed: 304 },
-      { n: 19, type: 'bush', at: [29.0, 25.0], size: 1.3, seed: 305 },
-      { n: 19, type: 'bush', at: [21.6, 29.3], size: 1.0, seed: 307 },
-      { n: 19, type: 'bush', at: [4.6, 15.6], size: 0.7, seed: 308 },
+      { n: 19, type: 'bush', kind: 'lilac', at: [13.2, 6.8], size: 1.0, seed: 301 },
+      { n: 19, type: 'bush', kind: 'elder', at: [4.5, 8.4], size: 0.8, seed: 302 },
+      { n: 19, type: 'bush', kind: 'hazel', at: [23.0, 6.0], size: 1.2, seed: 303 },
+      { n: 19, type: 'bush', kind: 'dogrose', at: [14.0, 13.7], size: 0.9, seed: 304 },
+      { n: 19, type: 'bush', kind: 'hazel', at: [29.0, 25.0], size: 1.3, seed: 305 },
+      { n: 19, type: 'bush', kind: 'lilac', at: [21.6, 29.3], size: 1.0, seed: 307 },
+      { n: 19, type: 'bush', kind: 'shoots', at: [4.6, 15.6], size: 0.7, seed: 308 },
+      { n: 19, type: 'bush', kind: 'hazel', at: [26.0, 11.0], size: 1.1, seed: 309 },
+      { n: 19, type: 'bush', kind: 'elder', at: [27.6, 15.2], size: 1.0, seed: 310 },
+      { n: 19, type: 'bush', kind: 'lilac', at: [26.6, 19.2], size: 1.1, seed: 311 },
+      { n: 19, type: 'bush', kind: 'shoots', at: [28.2, 23.2], size: 0.9, seed: 312 },
+      { n: 19, type: 'bush', kind: 'lilac', at: [16.2, 5.0], size: 0.9, seed: 313 },
+      { n: 19, type: 'bush', kind: 'shoots', at: [19.8, 5.8], size: 0.8, seed: 314 },
+      { n: 19, type: 'bush', kind: 'elder', at: [26.6, 6.4], size: 1.0, seed: 315 },
+      { n: 19, type: 'bush', kind: 'dogrose', at: [25.0, 27.6], size: 0.9, seed: 316 },
       { type: 'curb', at: [4.0, 7.0], rot: -90, len: 23 }
     ]
   };
@@ -2427,7 +2851,7 @@ void main(){
     const { chunks, bb } = bake(built.kit, M0);
     const active = ACTIVE.has(def.type) && !(def.type === 'swing' && def.plain);
     const inst = {
-      id: nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
+      id: def.type === 'meadow' ? 0 : nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
       sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: {},
       center: [(bb[0] + bb[3]) / 2, (bb[2] + bb[5]) / 2]
     };
@@ -2458,7 +2882,31 @@ void main(){
     runs.push([pa[0], [15.6, 6.4, 1.08], 0.45], [pa[2], [16.2, 6.4, 1.08], 0.45]);
     runs.push([pa[1], [2.12, 7.4, 9.6], 0.7]);
     instantiate({ type: 'wires', at: [0, 0], rot: 0, runs });
-    for (const i of INST) instById.set(i.id, i);
+    buildMeadowTiles();
+    for (const i of INST) if (i.id) instById.set(i.id, i);
+  }
+  // grass everywhere it can grow: off the paths, out of the objects' footprints, thinner under trees
+  // distance from a point to the nearest trodden path of the map
+  const PATH_SEGS = [];
+  for (const pl of MAP.paths) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
+  function pathDist(x, z) {
+    let best = 99;
+    for (const [a, b] of PATH_SEGS) {
+      const ex = b[0] - a[0], ez = b[1] - a[1], u = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez), 0, 1);
+      best = Math.min(best, (x - a[0] - ex * u) ** 2 + (z - a[1] - ez * u) ** 2);
+    }
+    return Math.sqrt(best);
+  }
+  function buildMeadowTiles() {
+    const pathD = pathDist;
+    const solid = INST.filter((i) => i.blocks && i.blocks.length);
+    const blocked = (x, z) => {
+      for (const i of solid) for (const b of i.blocks) if (b.poly ? pointInPoly(x, z, b.poly) : Math.hypot(x - b.c[0], z - b.c[1]) < b.r + 0.05) return true;
+      return false;
+    };
+    const trees = INST.filter((i) => i.type === 'tree');
+    const shadeOf = (x, z) => { let q = 0; for (const t of trees) q = Math.max(q, 1 - ((x - t.def.at[0]) ** 2 + (z - t.def.at[1]) ** 2) / 7.5); return q; };
+    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf });
   }
   const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
 
@@ -2466,8 +2914,8 @@ void main(){
   const GW = MAP.size[0], GH = MAP.size[1];
   const G = { x0: -HW * GH, y0: 0, w: HW * (GW + GH), h: HH * (GW + GH) + 14 };
   const PAL = {
-    '.': ['#5d892b', '#6c9832', '#79a43a', '#87ae42', '#98ba50'],
-    ',': ['#52752a', '#5f812e', '#6d8c35', '#829640', '#a09f51'],
+    '.': ['#3d5c23', '#476a28', '#52762e', '#5e8234', '#6c8e3b'],
+    ',': ['#3c5525', '#465f29', '#516a2e', '#5f7535', '#72803f'],
     ':': ['#6c5841', '#7c674b', '#8a7455', '#988260', '#a99470'],
     '#': ['#4e5153', '#56595b', '#5e6163', '#676a6c', '#717476'],
     '_': ['#97958e', '#a2a099', '#acaaa3', '#b6b4ad', '#c0beb7']
@@ -2540,10 +2988,10 @@ void main(){
         xi = xi < 0 ? 0 : xi > FNm ? FNm : xi; zi = zi < 0 ? 0 : zi > FNm ? FNm : zi;
         const k = zi * FN + xi, t = fType[k], tone = fTone[k];
         if (t <= 1) {
-          let q = 2 + Math.floor((tone - 0.5) * 2.6 + (h - 0.5) * 1.3 + 0.5);
-          if (h < 0.08) q -= 1; else if (h > 0.95) q += 1;
-          const s0 = hi(px, py, 2) & 1023, s1 = hi(px, py + 1, 2) & 1023, s2 = hi(px, py - 1, 2) & 1023;
-          if (s0 < 46 || s1 < 46) q = 4; else if (s2 < 46) q = 0;
+          // short vertical strokes: each column is cut into 2–4 px dashes of one tone
+          const cH = hi(px, 0, 5), seg = Math.floor((py + (cH & 7)) / (2 + (cH >>> 3 & 1) + (cH >>> 4 & 1))), hs = (hi(px, seg, 6) & 1023) / 1024;
+          let q = 2 + Math.floor((tone - 0.5) * 2.8 + (hs - 0.5) * 1.8 + 0.5);
+          if (h < 0.06) q -= 1; else if (h > 0.97) q += 1;
           set3(i, t === 0 ? PL : PR, q < 0 ? 0 : q > 4 ? 4 : q);
           const lf = fLeaf[k];
           if (lf > 0) { const hl = hi(px >> 1, py, 9); if ((hl & 1023) < lf * 31) set3(i, LV, (hl >>> 12) & 3); }
@@ -2583,26 +3031,6 @@ void main(){
       }
     }
     ctx.putImageData(img, 0, 0);
-    return c;
-  }
-  // a faint cell grid to show the metre squares
-  function buildGridOverlay() {
-    const c = document.createElement('canvas'); c.width = G.w; c.height = G.h;
-    const ctx = c.getContext('2d'); ctx.fillStyle = 'rgba(255,255,240,0.28)';
-    for (let k = 0; k <= GW; k++) {
-      for (let t = 0; t < GH * 2 * HH; t++) {
-        const a = wpx([k, 0, 0]), b = wpx([k, 0, GH]);
-        const u = t / (GH * 2 * HH);
-        ctx.fillRect(Math.round(a[0] + (b[0] - a[0]) * u - G.x0), Math.round(a[1] + (b[1] - a[1]) * u - G.y0), 1, 1);
-      }
-    }
-    for (let k = 0; k <= GH; k++) {
-      for (let t = 0; t < GW * 2 * HH; t++) {
-        const a = wpx([0, 0, k]), b = wpx([GW, 0, k]);
-        const u = t / (GW * 2 * HH);
-        ctx.fillRect(Math.round(a[0] + (b[0] - a[0]) * u - G.x0), Math.round(a[1] + (b[1] - a[1]) * u - G.y0), 1, 1);
-      }
-    }
     return c;
   }
 
@@ -3171,7 +3599,35 @@ void main(){
 
   // ================= 2D effects (in world art pixels) =================
   const smokeP = [], fx = [], hits = [], leavesP = [];
-  let wispT = 0, puffT = 0, leafT = 0;
+  let wispT = 0, puffT = 0, leafT = 0, stepPh = 0;
+  // smoke and dust are pixel puffs that grow, drift with the wind and thin out by dithering
+  const PUFF = {
+    blue: ['#cdd5de', '#aab5c1', '#8c97a4'],      // from the cigarette tip
+    white: ['#f3f1ed', '#d9d7d2', '#b8b6b1'],     // breathed out
+    gun: ['#e2dfd8', '#bebbb4', '#98958e'],
+    dust: ['#cdb894', '#ae9873', '#8b7757']
+  };
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const puffCache = new Map();
+  function puffSprite(tone, r, lv) {
+    const key = tone + r + '|' + lv;
+    let c = puffCache.get(key);
+    if (c) return c;
+    const n = 2 * r + 1, cols = PUFF[tone];
+    c = document.createElement('canvas'); c.width = n; c.height = n;
+    const g = c.getContext('2d');
+    for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+      const d = Math.hypot(i, j) + (hash2(i + 9, j + 9, r) - 0.5) * 0.9;
+      if (d > r + 0.35) continue;
+      if (BAYER[((j + 8) & 3) * 4 + ((i + 8) & 3)] >= lv * 4) continue;
+      const sh = (-i - j) / (r * 1.5 + 0.5);
+      g.fillStyle = cols[sh > 0.3 ? 0 : sh < -0.35 ? 2 : 1];
+      g.fillRect(i + r, j + r, 1, 1);
+    }
+    puffCache.set(key, c);
+    return c;
+  }
+  const puff = (o) => smokeP.push(Object.assign({ age: 0, seed: Math.random() * 6.28, a: 0.9, r0: 0.6, r1: 3, drag: 0.6, rise: 0, tone: 'white' }, o));
   const last = { tip: null, mouth: null, fistL: null, fistR: null, face: [0, 1], muzzle: null, port: null, portDir: [1, 0], canTop: null, glows: [], root: null, chest: null, flame: false, aim2d: [1, 0] };
   function fireShot() {
     if (!last.muzzle) return;
@@ -3184,7 +3640,8 @@ void main(){
     fx.push({ k: 'tracer', x: mx, y: my, x1: hx, y1: hy, life: 0.06 });
     if (last.port) fx.push({ k: 'casing', x: last.port[0], y: last.port[1], vx: last.portDir[0] * 40 + (Math.random() - 0.5) * 10, vy: -38 - Math.random() * 12, g: 190, life: 0.55, floor: (last.root ? last.root[1] : my) + 2 });
     for (let i = 0; i < 5; i++) fx.push({ k: 'spark', x: hx, y: hy, vx: (Math.random() - 0.3) * 50, vy: -Math.random() * 45, g: 150, life: 0.25 + Math.random() * 0.1 });
-    for (let i = 0; i < 2; i++) smokeP.push({ x: mx, y: my - 1, vx: (Math.random() - 0.5) * 6, vy: -7 - Math.random() * 4, life: 0.8, max: 0.8, odd: true });
+    const [ax, ay] = last.aim2d || [1, 0];
+    for (let i = 0; i < 6; i++) puff({ x: mx + ax * 2, y: my + ay * 2 - 1, vx: ax * (10 + Math.random() * 14) + (Math.random() - 0.5) * 6, vy: ay * 8 - 4 - Math.random() * 5, life: 0.9 + Math.random() * 0.5, r0: 1, r1: 4 + Math.random() * 2.5, a: 0.8, drag: 0.25, rise: -6, tone: 'gun' });
     if (hit) {
       const away = nrm([c.pos[0] - hero.x, 0, c.pos[2] - hero.z]);
       c.state = 'fly'; c.v = [away[0] * (1.6 + Math.random()) + (Math.random() - 0.5), 2.2 + Math.random() * 1.4, away[2] * (1.6 + Math.random()) + (Math.random() - 0.5)];
@@ -3202,17 +3659,28 @@ void main(){
   function updateFx(dt, view) {
     const sm = hero.smoke;
     if (sm.on && sm.w > 0.95 && sm.t > SMOKE_INTRO && last.tip) {
-      const s = smokeLoop(sm.t - SMOKE_INTRO + 0.5);
+      const st = smokeLoop(sm.t - SMOKE_INTRO + 0.5);
       wispT -= dt;
-      if (wispT <= 0 && !s.inhale) { wispT = 0.22; smokeP.push({ x: last.tip[0], y: last.tip[1] - 1, vx: (Math.random() - 0.5) * 3, vy: -10, life: 1.3, max: 1.3, odd: Math.random() < 0.5 }); }
-      if (s.exhale && last.mouth) {
+      if (wispT <= 0 && !st.inhale) { wispT = 0.06; puff({ x: last.tip[0], y: last.tip[1] - 1, vx: (Math.random() - 0.5) * 2, vy: -11 - Math.random() * 4, life: 1.6 + Math.random() * 0.8, r0: 0.5, r1: 2 + Math.random() * 1.4, a: 0.95, drag: 0.9, rise: -2, tone: 'blue' }); }
+      if (st.exhale && last.mouth) {
         puffT -= dt;
         if (puffT <= 0) {
-          puffT = 0.05;
-          for (let i = 0; i < 2; i++) smokeP.push({ x: last.mouth[0] + last.face[0] * 2, y: last.mouth[1], vx: last.face[0] * 14 + (Math.random() - 0.5) * 7, vy: last.face[1] * 7 - 5 - Math.random() * 4, life: 1.6, max: 1.6, big: Math.random() < 0.6 });
+          puffT = 0.04;
+          for (let i = 0; i < 3; i++) puff({ x: last.mouth[0] + last.face[0] * 2, y: last.mouth[1], vx: last.face[0] * (18 + Math.random() * 10) + (Math.random() - 0.5) * 6, vy: last.face[1] * 9 - 6 - Math.random() * 5, life: 2.0 + Math.random() * 0.8, r0: 1, r1: 5 + Math.random() * 3, a: 1, drag: 0.3, rise: -5, tone: 'white' });
         }
       }
+      last.ember = st.inhale ? 2 : 1;
+    } else last.ember = 0;
+    // dust from the feet on bare earth and paths, one puff per step
+    if (hero.walkW > 0.5 && !hero.act && last.root) {
+      const ph = hero.phase * 2;
+      if (Math.floor(ph) !== Math.floor(stepPh)) {
+        const t = groundType(hero.x, hero.z);
+        if (t === ':' || pathDist(hero.x, hero.z) < 0.45) for (let i = 0; i < (hero.run ? 4 : 2); i++) puff({ x: last.root[0] + (Math.random() - 0.5) * 6, y: last.root[1] - 1, vx: (Math.random() - 0.5) * 10, vy: -3 - Math.random() * 4, life: 0.5 + Math.random() * 0.3, r0: 0.8, r1: 2.2 + Math.random(), a: 0.55, drag: 0.2, rise: 2, tone: 'dust' });
+      }
+      stepPh = ph;
     }
+    updateButterflies(dt);
     const dr = hero.drink;
     if (dr.on && dr.t > 0.42 && dr.t - dt <= 0.42 && last.canTop) for (let i = 0; i < 6; i++) fx.push({ k: 'drop', x: last.canTop[0], y: last.canTop[1], vx: (Math.random() - 0.5) * 30, vy: -25 - Math.random() * 20, g: 140, life: 0.35 });
     // a few autumn leaves drifting down from crowns in view
@@ -3229,13 +3697,46 @@ void main(){
     }
     for (const l of leavesP) { l.ph += dt * 3; l.y += dt * 16; l.x += Math.sin(l.ph) * dt * 14; l.life -= dt; if (l.y >= l.floor) { l.y = l.floor; l.life = Math.min(l.life, 1.5); } }
     for (let i = leavesP.length - 1; i >= 0; i--) if (leavesP[i].life <= 0) leavesP.splice(i, 1);
-    for (const p of smokeP) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.985; p.life -= dt; }
-    for (let i = smokeP.length - 1; i >= 0; i--) if (smokeP[i].life <= 0) smokeP.splice(i, 1);
+    for (const p of smokeP) {
+      const dg = Math.pow(p.drag, dt);
+      p.vx = p.vx * dg + 4 * dt; p.vy = p.vy * dg + p.rise * dt;          // slows down, drifts with the breeze to the right
+      p.x += p.vx * dt + Math.sin(p.age * 4 + p.seed) * dt * 5; p.y += p.vy * dt;
+      p.age += dt;
+    }
+    for (let i = smokeP.length - 1; i >= 0; i--) if (smokeP[i].age >= smokeP[i].life) smokeP.splice(i, 1);
+    if (smokeP.length > 160) smokeP.splice(0, smokeP.length - 160);
     for (const f of fx) {
       f.life -= dt;
       if (f.vx !== undefined) { f.vy += (f.g || 0) * dt; f.x += f.vx * dt; f.y += f.vy * dt; if (f.floor && f.y > f.floor) { f.y = f.floor; f.vy *= -0.3; f.vx *= 0.5; } }
     }
     for (let i = fx.length - 1; i >= 0; i--) if (fx[i].life <= 0) fx.splice(i, 1);
+  }
+  // a few cabbage whites over the grass: they wander, flap, and keep away from the hero
+  const BUTTERFLIES = [];
+  function updateButterflies(dt) {
+    if (!BUTTERFLIES.length) {
+      const R = rng(808);
+      for (let i = 0; i < 4; i++) BUTTERFLIES.push({ x: 9 + R() * 14, z: 9 + R() * 14, y: 0.6, tx: 0, tz: 0, ph: R() * 6, bob: R() * 6, col: i === 3 ? '#efd95c' : '#f6f4ec', wait: 0 });
+      for (const b of BUTTERFLIES) { b.tx = b.x; b.tz = b.z; }
+    }
+    for (const b of BUTTERFLIES) {
+      const dh = Math.hypot(b.x - hero.x, b.z - hero.z);
+      if (dh < 1.6) { const a = Math.atan2(b.z - hero.z, b.x - hero.x) + (Math.random() - 0.5); b.tx = clamp(b.x + Math.cos(a) * 3, 1, 29); b.tz = clamp(b.z + Math.sin(a) * 3, 1, 29); b.wait = 0; }
+      const dx = b.tx - b.x, dz = b.tz - b.z, d = Math.hypot(dx, dz);
+      if (d < 0.2) { b.wait -= dt; if (b.wait <= 0) { b.tx = clamp(b.x + (Math.random() - 0.5) * 5, 2, 28); b.tz = clamp(b.z + (Math.random() - 0.5) * 5, 2, 28); b.wait = 0.5 + Math.random() * 2; } }
+      else { const v = (dh < 2.5 ? 1.6 : 0.7) * dt; b.x += dx / d * v + Math.sin(b.ph * 0.37) * dt * 0.4; b.z += dz / d * v + Math.cos(b.ph * 0.29) * dt * 0.4; }
+      b.ph += dt * 15; b.bob += dt * 2.3;
+      b.y = 0.45 + Math.sin(b.bob) * 0.22 + (d < 0.2 ? -0.2 : 0.25);
+    }
+  }
+  function drawButterflies(ctx, k, X, Y) {
+    for (const b of BUTTERFLIES) {
+      const [sx, sy] = wpx([b.x, b.y, b.z]), x = X(sx), y = Y(sy);
+      if (Math.sin(b.ph) > 0) { px(ctx, x - 1, y, k, b.col); px(ctx, x + 1, y, k, b.col); px(ctx, x, y, k, '#5b564c'); }
+      else { px(ctx, x, y - 1, k, b.col); px(ctx, x, y, k, '#5b564c'); }
+      const [gx, gy] = wpx([b.x, 0, b.z]);
+      px(ctx, X(gx), Y(gy), k, 'rgba(20,30,10,0.35)');
+    }
   }
   function px(ctx, x, y, k, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k))); }
   // draw effects; X/Y map world art px to the target canvas, k is the size of one art pixel there
@@ -3243,11 +3744,17 @@ void main(){
     const X = (x) => x - ox, Y = (y) => y - oy;
     for (const [x, y] of hits) px(ctx, X(x), Y(y), k, 'rgba(40,28,22,0.85)');
     for (const l of leavesP) { px(ctx, X(l.x), Y(l.y), k, l.col); if (Math.sin(l.ph) > 0) px(ctx, X(l.x + 1), Y(l.y), k, l.col); }
+    drawButterflies(ctx, k, X, Y);
     for (const p of smokeP) {
-      const f = p.life / p.max, x = Math.round(X(p.x)), y = Math.round(Y(p.y));
-      const coreA = f > 0.6 ? 0.95 : f > 0.3 ? 0.7 : 0.4, rimA = f > 0.6 ? 0.75 : f > 0.3 ? 0.45 : 0;
-      if (p.big && rimA > 0) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) px(ctx, x + dx, y + dy, k, `rgba(150,147,142,${rimA})`);
-      px(ctx, x, y, k, p.big ? `rgba(240,238,233,${coreA})` : (p.odd ? `rgba(172,169,164,${coreA})` : `rgba(236,234,229,${coreA})`));
+      const t = p.age / p.life, r = Math.round(p.r0 + (p.r1 - p.r0) * (1 - (1 - t) * (1 - t)));
+      const lv = Math.round(p.a * Math.pow(1 - t, 1.2) * 4);
+      if (lv <= 0) continue;
+      const sp = puffSprite(p.tone, r, lv);
+      ctx.drawImage(sp, Math.round((X(p.x) - r) * k), Math.round((Y(p.y) - r) * k), sp.width * Math.max(k, 1e-3), sp.height * Math.max(k, 1e-3));
+    }
+    if (last.ember && last.tip) {
+      px(ctx, X(last.tip[0]), Y(last.tip[1]), k, last.ember > 1 ? '#ffd27a' : '#e2562c');
+      if (last.ember > 1) px(ctx, X(last.tip[0]) + 1, Y(last.tip[1]), k, '#ff8a3a');
     }
     for (const f of fx) {
       if (f.k === 'tracer') {
@@ -3520,7 +4027,7 @@ void main(){
   const scx = scene.getContext('2d');
   const layer = document.createElement('canvas');
   const lcx = layer.getContext('2d');
-  let ground = null, gridCv = null, groundSmall = null, groundSmallKey = '';
+  let ground = null;
   let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
   let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
   const CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
@@ -3597,7 +4104,7 @@ void main(){
     }
     const c = rig.c;
     const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
-    const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey()].join('|');
+    const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid].join('|');
     if (key !== lastKey) {
       lastKey = key;
       const L = buildLists(rect, rig);
@@ -3608,7 +4115,10 @@ void main(){
       const r = 64 * v.s / S;
       const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
       drawCalls = 0;
-      render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, { xray: true, hover: hoverId, fade });
+      render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
+        xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 },
+        ground: { x0: G.x0, y0: G.y0, w: G.w, h: G.h, mode: over ? 2 : 1 }, target: hero.target, grid: showGrid
+      });
       lastView = { v, ox, oy, sc, over, raw };
       rememberPoints(rig);
     }
@@ -3643,40 +4153,18 @@ void main(){
     last.hit = pose.st.punch ? (pose.st.punch.hitL ? last.fistL : pose.st.punch.hitR ? last.fistR : null) : null;
     last.root = wpx(rig.root);
   }
-  function drawTarget(ctx, ox, oy, k) {
-    if (!hero.target) return;
-    ctx.fillStyle = 'rgba(226,160,72,0.95)';
-    for (let i = 0; i < 28; i++) {
-      const a = i / 28 * Math.PI * 2, p = wpx([hero.target[0] + Math.cos(a) * 0.32, 0, hero.target[1] + Math.sin(a) * 0.32]);
-      ctx.fillRect(Math.round((p[0] - ox) * k), Math.round((p[1] - oy) * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k)));
-    }
-  }
   function compose(lv) {
     if (!lv) return;
     const { v, ox, oy, sc, over } = lv;
     sctx.imageSmoothingEnabled = false;
     sctx.clearRect(0, 0, stageEl.width, stageEl.height);
     if (over) {
-      const key = sc.toFixed(5);
-      if (groundSmallKey !== key) {
-        groundSmallKey = key;
-        groundSmall = document.createElement('canvas');
-        groundSmall.width = Math.ceil(G.w * sc); groundSmall.height = Math.ceil(G.h * sc);
-        const g = groundSmall.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-        g.drawImage(ground, 0, 0, groundSmall.width, groundSmall.height);
-      }
-      sctx.drawImage(groundSmall, Math.round((G.x0 - ox) * sc), Math.round((G.y0 - oy) * sc));
-      if (showGrid && gridCv) { sctx.imageSmoothingEnabled = true; sctx.drawImage(gridCv, (G.x0 - ox) * sc, (G.y0 - oy) * sc, G.w * sc, G.h * sc); sctx.imageSmoothingEnabled = false; }
-      drawTarget(sctx, ox, oy, sc);
       sctx.drawImage(layer, 0, 0);
       drawFx(sctx, sc, ox, oy);
       return;
     }
     if (!raw) {
       scx.clearRect(0, 0, VW, VH);
-      scx.drawImage(ground, ox - G.x0, oy - G.y0, VW, VH, 0, 0, VW, VH);
-      if (showGrid && gridCv) scx.drawImage(gridCv, ox - G.x0, oy - G.y0, VW, VH, 0, 0, VW, VH);
-      drawTarget(scx, ox, oy, 1);
       scx.drawImage(layer, 0, 0);
       drawFx(scx, 1, ox, oy);
       if (last.hit) {
@@ -3686,8 +4174,6 @@ void main(){
       }
       sctx.drawImage(scene, 0, 0, VW, VH, 0, 0, VW * kDev, VH * kDev);
     } else {
-      sctx.drawImage(ground, ox - G.x0, oy - G.y0, VW, VH, 0, 0, VW * kDev, VH * kDev);
-      drawTarget(sctx, ox, oy, kDev);
       sctx.drawImage(layer, 0, 0);
       drawFx(sctx, kDev, ox, oy);
     }
@@ -3794,7 +4280,7 @@ void main(){
     viewMode = m; for (const [m2, b2] of Object.entries(vBtns)) b2.setAttribute('aria-pressed', String(m2 === m));
     camX = null; fitStage(); lastKey = '';
   });
-  $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; if (showGrid && !gridCv) gridCv = buildGridOverlay(); });
+  $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; });
   $('rawChk').addEventListener('change', (e) => { raw = e.target.checked; lastKey = ''; });
 
   // ---------- stage input ----------
@@ -4248,7 +4734,7 @@ void main(){
     initDyn();
     initPigeons();
     buildNav(); mark('nav');
-    ground = buildGround(); mark('ground');
+    ground = buildGround(); uploadGround(ground); mark('ground');
     HERO = buildHero(equip);
     for (const it of ITEMS) icons[it.id] = iconCanvas(it.id);
     renderItems(); mark('ui');

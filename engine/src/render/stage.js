@@ -5,7 +5,7 @@
   const scx = scene.getContext('2d');
   const layer = document.createElement('canvas');
   const lcx = layer.getContext('2d');
-  let ground = null, gridCv = null, groundSmall = null, groundSmallKey = '';
+  let ground = null;
   let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
   let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
   const CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
@@ -82,7 +82,7 @@
     }
     const c = rig.c;
     const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
-    const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey()].join('|');
+    const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid].join('|');
     if (key !== lastKey) {
       lastKey = key;
       const L = buildLists(rect, rig);
@@ -93,7 +93,10 @@
       const r = 64 * v.s / S;
       const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
       drawCalls = 0;
-      render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, { xray: true, hover: hoverId, fade });
+      render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
+        xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 },
+        ground: { x0: G.x0, y0: G.y0, w: G.w, h: G.h, mode: over ? 2 : 1 }, target: hero.target, grid: showGrid
+      });
       lastView = { v, ox, oy, sc, over, raw };
       rememberPoints(rig);
     }
@@ -128,40 +131,18 @@
     last.hit = pose.st.punch ? (pose.st.punch.hitL ? last.fistL : pose.st.punch.hitR ? last.fistR : null) : null;
     last.root = wpx(rig.root);
   }
-  function drawTarget(ctx, ox, oy, k) {
-    if (!hero.target) return;
-    ctx.fillStyle = 'rgba(226,160,72,0.95)';
-    for (let i = 0; i < 28; i++) {
-      const a = i / 28 * Math.PI * 2, p = wpx([hero.target[0] + Math.cos(a) * 0.32, 0, hero.target[1] + Math.sin(a) * 0.32]);
-      ctx.fillRect(Math.round((p[0] - ox) * k), Math.round((p[1] - oy) * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k)));
-    }
-  }
   function compose(lv) {
     if (!lv) return;
     const { v, ox, oy, sc, over } = lv;
     sctx.imageSmoothingEnabled = false;
     sctx.clearRect(0, 0, stageEl.width, stageEl.height);
     if (over) {
-      const key = sc.toFixed(5);
-      if (groundSmallKey !== key) {
-        groundSmallKey = key;
-        groundSmall = document.createElement('canvas');
-        groundSmall.width = Math.ceil(G.w * sc); groundSmall.height = Math.ceil(G.h * sc);
-        const g = groundSmall.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-        g.drawImage(ground, 0, 0, groundSmall.width, groundSmall.height);
-      }
-      sctx.drawImage(groundSmall, Math.round((G.x0 - ox) * sc), Math.round((G.y0 - oy) * sc));
-      if (showGrid && gridCv) { sctx.imageSmoothingEnabled = true; sctx.drawImage(gridCv, (G.x0 - ox) * sc, (G.y0 - oy) * sc, G.w * sc, G.h * sc); sctx.imageSmoothingEnabled = false; }
-      drawTarget(sctx, ox, oy, sc);
       sctx.drawImage(layer, 0, 0);
       drawFx(sctx, sc, ox, oy);
       return;
     }
     if (!raw) {
       scx.clearRect(0, 0, VW, VH);
-      scx.drawImage(ground, ox - G.x0, oy - G.y0, VW, VH, 0, 0, VW, VH);
-      if (showGrid && gridCv) scx.drawImage(gridCv, ox - G.x0, oy - G.y0, VW, VH, 0, 0, VW, VH);
-      drawTarget(scx, ox, oy, 1);
       scx.drawImage(layer, 0, 0);
       drawFx(scx, 1, ox, oy);
       if (last.hit) {
@@ -171,8 +152,6 @@
       }
       sctx.drawImage(scene, 0, 0, VW, VH, 0, 0, VW * kDev, VH * kDev);
     } else {
-      sctx.drawImage(ground, ox - G.x0, oy - G.y0, VW, VH, 0, 0, VW * kDev, VH * kDev);
-      drawTarget(sctx, ox, oy, kDev);
       sctx.drawImage(layer, 0, 0);
       drawFx(sctx, kDev, ox, oy);
     }

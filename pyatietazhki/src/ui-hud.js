@@ -88,7 +88,7 @@
     viewMode = m; for (const [m2, b2] of Object.entries(vBtns)) b2.setAttribute('aria-pressed', String(m2 === m));
     camX = null; fitStage(); lastKey = '';
   });
-  $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; if (showGrid && !gridCv) gridCv = buildGridOverlay(); });
+  $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; });
   $('rawChk').addEventListener('change', (e) => { raw = e.target.checked; lastKey = ''; });
 
   // ---------- stage input ----------

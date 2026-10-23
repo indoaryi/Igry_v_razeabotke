@@ -24,7 +24,7 @@
     initDyn();
     initPigeons();
     buildNav(); mark('nav');
-    ground = buildGround(); mark('ground');
+    ground = buildGround(); uploadGround(ground); mark('ground');
     HERO = buildHero(equip);
     for (const it of ITEMS) icons[it.id] = iconCanvas(it.id);
     renderItems(); mark('ui');

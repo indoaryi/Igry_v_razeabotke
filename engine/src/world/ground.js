@@ -2,8 +2,8 @@
   const GW = MAP.size[0], GH = MAP.size[1];
   const G = { x0: -HW * GH, y0: 0, w: HW * (GW + GH), h: HH * (GW + GH) + 14 };
   const PAL = {
-    '.': ['#5d892b', '#6c9832', '#79a43a', '#87ae42', '#98ba50'],
-    ',': ['#52752a', '#5f812e', '#6d8c35', '#829640', '#a09f51'],
+    '.': ['#3d5c23', '#476a28', '#52762e', '#5e8234', '#6c8e3b'],
+    ',': ['#3c5525', '#465f29', '#516a2e', '#5f7535', '#72803f'],
     ':': ['#6c5841', '#7c674b', '#8a7455', '#988260', '#a99470'],
     '#': ['#4e5153', '#56595b', '#5e6163', '#676a6c', '#717476'],
     '_': ['#97958e', '#a2a099', '#acaaa3', '#b6b4ad', '#c0beb7']
@@ -76,10 +76,10 @@
         xi = xi < 0 ? 0 : xi > FNm ? FNm : xi; zi = zi < 0 ? 0 : zi > FNm ? FNm : zi;
         const k = zi * FN + xi, t = fType[k], tone = fTone[k];
         if (t <= 1) {
-          let q = 2 + Math.floor((tone - 0.5) * 2.6 + (h - 0.5) * 1.3 + 0.5);
-          if (h < 0.08) q -= 1; else if (h > 0.95) q += 1;
-          const s0 = hi(px, py, 2) & 1023, s1 = hi(px, py + 1, 2) & 1023, s2 = hi(px, py - 1, 2) & 1023;
-          if (s0 < 46 || s1 < 46) q = 4; else if (s2 < 46) q = 0;
+          // short vertical strokes: each column is cut into 2–4 px dashes of one tone
+          const cH = hi(px, 0, 5), seg = Math.floor((py + (cH & 7)) / (2 + (cH >>> 3 & 1) + (cH >>> 4 & 1))), hs = (hi(px, seg, 6) & 1023) / 1024;
+          let q = 2 + Math.floor((tone - 0.5) * 2.8 + (hs - 0.5) * 1.8 + 0.5);
+          if (h < 0.06) q -= 1; else if (h > 0.97) q += 1;
           set3(i, t === 0 ? PL : PR, q < 0 ? 0 : q > 4 ? 4 : q);
           const lf = fLeaf[k];
           if (lf > 0) { const hl = hi(px >> 1, py, 9); if ((hl & 1023) < lf * 31) set3(i, LV, (hl >>> 12) & 3); }
@@ -119,26 +119,6 @@
       }
     }
     ctx.putImageData(img, 0, 0);
-    return c;
-  }
-  // a faint cell grid to show the metre squares
-  function buildGridOverlay() {
-    const c = document.createElement('canvas'); c.width = G.w; c.height = G.h;
-    const ctx = c.getContext('2d'); ctx.fillStyle = 'rgba(255,255,240,0.28)';
-    for (let k = 0; k <= GW; k++) {
-      for (let t = 0; t < GH * 2 * HH; t++) {
-        const a = wpx([k, 0, 0]), b = wpx([k, 0, GH]);
-        const u = t / (GH * 2 * HH);
-        ctx.fillRect(Math.round(a[0] + (b[0] - a[0]) * u - G.x0), Math.round(a[1] + (b[1] - a[1]) * u - G.y0), 1, 1);
-      }
-    }
-    for (let k = 0; k <= GH; k++) {
-      for (let t = 0; t < GW * 2 * HH; t++) {
-        const a = wpx([0, 0, k]), b = wpx([GW, 0, k]);
-        const u = t / (GW * 2 * HH);
-        ctx.fillRect(Math.round(a[0] + (b[0] - a[0]) * u - G.x0), Math.round(a[1] + (b[1] - a[1]) * u - G.y0), 1, 1);
-      }
-    }
     return c;
   }
 

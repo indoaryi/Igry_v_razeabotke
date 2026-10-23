@@ -13,7 +13,7 @@
     const { chunks, bb } = bake(built.kit, M0);
     const active = ACTIVE.has(def.type) && !(def.type === 'swing' && def.plain);
     const inst = {
-      id: nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
+      id: def.type === 'meadow' ? 0 : nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
       sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: {},
       center: [(bb[0] + bb[3]) / 2, (bb[2] + bb[5]) / 2]
     };
@@ -44,7 +44,31 @@
     runs.push([pa[0], [15.6, 6.4, 1.08], 0.45], [pa[2], [16.2, 6.4, 1.08], 0.45]);
     runs.push([pa[1], [2.12, 7.4, 9.6], 0.7]);
     instantiate({ type: 'wires', at: [0, 0], rot: 0, runs });
-    for (const i of INST) instById.set(i.id, i);
+    buildMeadowTiles();
+    for (const i of INST) if (i.id) instById.set(i.id, i);
+  }
+  // grass everywhere it can grow: off the paths, out of the objects' footprints, thinner under trees
+  // distance from a point to the nearest trodden path of the map
+  const PATH_SEGS = [];
+  for (const pl of MAP.paths) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
+  function pathDist(x, z) {
+    let best = 99;
+    for (const [a, b] of PATH_SEGS) {
+      const ex = b[0] - a[0], ez = b[1] - a[1], u = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez), 0, 1);
+      best = Math.min(best, (x - a[0] - ex * u) ** 2 + (z - a[1] - ez * u) ** 2);
+    }
+    return Math.sqrt(best);
+  }
+  function buildMeadowTiles() {
+    const pathD = pathDist;
+    const solid = INST.filter((i) => i.blocks && i.blocks.length);
+    const blocked = (x, z) => {
+      for (const i of solid) for (const b of i.blocks) if (b.poly ? pointInPoly(x, z, b.poly) : Math.hypot(x - b.c[0], z - b.c[1]) < b.r + 0.05) return true;
+      return false;
+    };
+    const trees = INST.filter((i) => i.type === 'tree');
+    const shadeOf = (x, z) => { let q = 0; for (const t of trees) q = Math.max(q, 1 - ((x - t.def.at[0]) ** 2 + (z - t.def.at[1]) ** 2) / 7.5); return q; };
+    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf });
   }
   const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
 

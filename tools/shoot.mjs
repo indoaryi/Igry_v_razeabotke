@@ -27,13 +27,16 @@ const SCEN = {
   far: { at: [14.2, 20.4], view: 'far' },
   near: { at: [14.2, 20.4], view: 'near' },
   all: { at: [14.2, 20.4], view: 'all' },
-  smoke: { at: [14.2, 20.4], view: 'near', run: 'smoke', steps: [3.0, 1.2, 1.4] },
+  smoke: { at: [14.2, 20.4], view: 'near', run: 'smoke', steps: [3.0, 0.6, 0.6] },
+  smokefar: { at: [14.2, 20.4], view: 'far', run: 'smoke', steps: [3.5] },
   trees: { at: [24.6, 12.5], view: 'near' },
   playground: { at: [15.6, 14.2], view: 'near' },
   building: { at: [5.2, 16.0], view: 'near' },
   shed: { at: [8.4, 14.0], view: 'near' },
   far2: { at: [20.0, 8.0], view: 'far' },
-  shoot: { at: [6.8, 16.2], view: 'near', run: 'shoot', steps: [1.25] }
+  shoot: { at: [6.8, 16.2], view: 'near', run: 'shoot', steps: [1.25] },
+  facade: { at: [20.5, 3.4], view: 'near' },
+  facade2: { at: [4.6, 12.6], view: 'near' }
 };
 const names = pos.slice(1).length ? pos.slice(1) : Object.keys(SCEN);
 
@@ -56,9 +59,23 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + 
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 const t0 = Date.now();
 await page.goto(`http://127.0.0.1:${port}/${pagePath}`);
-await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 });
+try { await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 }); }
+catch (e) { console.log('the page did not start:\n' + errors.join('\n')); await browser.close(); server.close(); process.exit(1); }
 const boot = await page.evaluate(() => { window.__yard.noIntro = true; return { bootMs: window.__yard.bootMs, times: window.__yard.times }; });
 console.log(`boot ${boot.bootMs} ms`, JSON.stringify(boot.times), `(page ready in ${Date.now() - t0} ms)`);
+if (opt.probe) {
+  const stats = await page.evaluate(() => {
+    const by = {};
+    for (const i of window.__yard.INST) {
+      const b = by[i.type] || (by[i.type] = { n: 0, tris: 0, draws: 0 });
+      b.n++; for (const c of i.chunks) { b.draws++; b.tris += c.lines ? 0 : c.mesh.n / 3; }
+    }
+    return by;
+  });
+  let T = 0, D = 0;
+  for (const [k, v] of Object.entries(stats).sort((a, b) => b[1].tris - a[1].tris)) { console.log(k.padEnd(12), String(v.n).padStart(4), 'objects', String(Math.round(v.tris)).padStart(8), 'triangles', String(v.draws).padStart(5), 'draws'); T += v.tris; D += v.draws; }
+  console.log('total', Math.round(T), 'triangles,', D, 'draws');
+}
 const frames = (n) => page.evaluate((n) => new Promise((res) => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 
 for (const name of names) {
@@ -84,7 +101,8 @@ for (const name of names) {
     await frames(3);
     const dbg = await page.evaluate(() => window.__yard.dbg());
     const file = path.join(outDir, `${prefix}${name}${steps.length > 1 ? '-' + (++i) : ''}.png`);
-    await page.locator('#stage').screenshot({ path: file });
+    const box = await page.locator('#stage').boundingBox();
+    await page.screenshot({ path: file, clip: box, timeout: 600000 });
     console.log(`${name}: ${path.basename(file)} — ${dbg.VW}×${dbg.VH} art px ×${dbg.kDev}, ${dbg.drawCalls} draw calls, ${Date.now() - t1} ms`);
   }
 }

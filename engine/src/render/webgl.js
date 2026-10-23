@@ -11,11 +11,22 @@ layout(location=2) in vec3 aLoc;
 layout(location=3) in float aSeed;
 uniform mat4 uVP; uniform mat4 uModel;
 uniform vec4 uShadow;
-out vec3 vN; out vec3 vL; out vec3 vW; out float vSeed; out vec2 vG;
+uniform vec4 uWind;     // x: sway in metres at the reference height, y: 1 / reference height, z: speed, w: share of the fast flutter
+uniform float uTime;
+out vec3 vN; out vec3 vL; out vec3 vW; out float vSeed; out vec2 vG; out vec3 vS;
 void main(){
   vec4 w = uModel * vec4(aPos, 1.0);
   vW = w.xyz; vL = aLoc; vSeed = aSeed; vN = mat3(uModel) * aNrm;
   vec3 p = w.xyz;
+  if (uWind.x > 0.0) {
+    // plants lean along the screen's horizontal: slow sway plus a gusty flutter that rolls across the yard
+    float k = clamp(p.y * uWind.y, 0.0, 1.6); k *= k;
+    float ph = dot(p.xz, vec2(0.37, 0.23)) + aSeed * 6.2831;
+    float gust = 0.55 + 0.45 * sin(uTime * 0.55 + p.x * 0.13 - p.z * 0.09);
+    float s = sin(uTime * uWind.z + ph) * (1.0 - uWind.w) * gust + sin(uTime * uWind.z * 2.7 + ph * 1.9) * uWind.w * gust;
+    p += vec3(0.7071, 0.0, -0.7071) * (uWind.x * k * s);
+  }
+  vS = p;
   if (uShadow.w > 0.5) p -= uShadow.xyz * (p.y / uShadow.y);
   vG = p.xz;
   gl_Position = uVP * vec4(p, 1.0);
@@ -42,9 +53,29 @@ uniform vec4 uGround;
 uniform vec4 uFade;
 uniform int uFadeOn;
 uniform vec3 uSil;
+uniform vec3 uPU;
+uniform vec3 uPV;
+uniform sampler2D uLeaf;
+uniform int uShadowOn;
+uniform mat4 uLVP;
+uniform highp sampler2DShadow uShadowTex;
+uniform vec3 uSun;
+uniform vec3 uAmb;      // shade level: base, extra for faces looking at the sky, depth bias of the sun lookup
+in vec3 vS;
 layout(location=0) out vec4 o;
 layout(location=1) out vec4 oId;
 float h3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+// 1 where the sun reaches this point, 0 in shade. uS.z = 1: thin stuff (grass) that is lit from both sides
+float sunVis(vec3 n){
+  float ndl = dot(n, uSun);
+  bool thin = uS.z > 0.5;
+  if (ndl <= 0.0 && !thin) return 0.0;
+  vec3 wp = vS + (thin ? uSun * 0.05 : n * 0.045 + uSun * 0.012);
+  vec4 lp = uLVP * vec4(wp, 1.0);
+  vec3 sc = lp.xyz * 0.5 + 0.5;
+  if (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
+  return texture(uShadowTex, vec3(sc.xy, sc.z - uAmb.z));
+}
 void main(){
   if (uMode == 2 && (vG.x < uGround.x || vG.y < uGround.y || vG.x > uGround.z || vG.y > uGround.w)) discard;
   if (uMode == 1) {
@@ -56,8 +87,13 @@ void main(){
     if (dot(dp, dp) < uFade.z && gl_FragCoord.z < uFade.w && ((int(gl_FragCoord.x) + int(gl_FragCoord.y)) & 1) == 0) discard;
   }
   vec3 n = normalize(vN);
-  float v = dot(n, uLight) * 0.5 + 0.5;
-  v += (h3(floor(vL * uQ.y + 0.5)) - 0.5) * uQ.x;
+  float nz = (h3(floor(vL * uQ.y + 0.5)) - 0.5) * uQ.x;
+  float v = dot(n, uLight) * 0.5 + 0.5 + nz;
+  float sv = 1.0;
+  if (uShadowOn == 1 && uMode == 0) {
+    sv = sunVis(n);
+    v = min(v, mix(uAmb.x + uAmb.y * n.y + nz, v, sv));
+  }
   int idx = v < 0.30 ? 0 : (v < 0.46 ? 1 : (v < 0.64 ? 2 : (v < 0.82 ? 3 : 4)));
   int li = idx;
   bool useB = false, forced = false, isDecal = false; int shift = 0;
@@ -170,6 +206,8 @@ void main(){
       if (fract(vW.y / uP.x) < uP.z) shift = -1;
       else if (fract(bx) < uP.z * uP.x / uP.y) shift = -1;
       else if (h3(vec3(floor(bx), row, 3.0)) > uP.w) useB = true;
+      float dirt = uR.x + 0.9 - vW.y;                              // damp and dirt over the plinth
+      if (dirt > 0.0 && h3(floor(vW * 26.0)) < dirt * 0.55) shift = -1;
     }
   } else if (uPat == 32) {            // louvre: frame in ramp B, slats along local y
     float fr = min(uP.z - ax, uP.w - abs(vL.y));
@@ -192,16 +230,21 @@ void main(){
       if (sp > 0.94) shift = 1; else if (sp < 0.07) shift = -1;
       if (h3(floor(vW * vec3(0.9, 1.0, 1.7)) + 2.0) > 0.86 && sp > 0.3) shift = -1;
     }
-  } else if (uPat == 35) {            // foliage: leaf marks, clumps, ragged silhouette, yellowing branches
-    vec3 pf = vL * uP.y + vSeed * 13.7;
-    float hc = h3(floor(pf)), hm = h3(floor(pf * 0.42) + 5.3);
-    float facing = dot(n, uView);
-    if (facing < uP.z * 1.35 && hm > 0.62) discard;
-    if (facing < uP.z && hc > 0.38) discard;
-    if (facing < uP.z * 0.45 && hc > 0.1) discard;
-    if (hm > 0.95 && hc > 0.45 && facing > 0.5) discard;
-    if (hc > 0.84) shift = 1; else if (hc < 0.16 || (hm < 0.2 && hc < 0.45)) shift = -1;
-    if (vSeed < uP.x && n.y + (hc - 0.5) * 0.7 > 0.12) useB = true;
+  } else if (uPat == 35) {            // foliage: separate leaves as seen from the eye (or the sun), lit on their upper-left side, dark gaps, ragged edge
+    vec2 q = vec2(dot(uPU, vW), dot(uPV, vW)) * uP.y + vSeed * 31.7;
+    vec4 lt = texelFetch(uLeaf, ivec2(fract(q / 16.0) * 256.0), 0);  // r: cell hash, g: how much the pixel faces the light, b: distance to the leaf centre, a: leaf hash
+    float best = lt.b, lit = lt.g * 2.0 - 1.0, bh = lt.a;
+    float edge = clamp(dot(n, uView) / max(uP.z, 0.01), 0.0, 1.0);   // 0 at the silhouette of the clump
+    float rr = uP.w;
+    if (best > rr) {                                                    // between leaves: a hole near the edge or now and then, a dark gap inside
+      if (edge < 0.9 || lt.r > uR.x) discard;
+      idx = max(idx - 2, 0); forced = true;
+    } else {
+      if (edge < 0.55 && best > rr * (0.35 + edge)) discard;              // leaves thin out towards the edge
+      if (best > rr * 0.42 && lit > 0.3) shift = 1; else if (best > rr * 0.55 && lit < -0.5) shift = -1;
+      if (bh < 0.12) shift -= 1; else if (bh > 0.92) shift += 1;
+    }
+    if (bh < uP.x * (vSeed < uP.x ? 2.6 : 0.6)) useB = true;           // turning leaves, more of them on some clumps
   } else if (uPat == 36) {            // tall grass: one blade per screen column, each with its own height
     float col = floor(dot(uRV, vW) * uSc * uP.y);
     float hb = h3(vec3(col, floor(vSeed * 97.0), 5.0));
@@ -212,6 +255,28 @@ void main(){
     if (h3(vec3(col, 9.0, floor(vSeed * 31.0))) > 0.8 && idx > 1) idx -= 1;
     forced = true;
     if (f > 0.62 && h3(vec3(col, 2.0, floor(vSeed * 50.0))) < uP.z) useB = true;
+  } else if (uPat == 49) {            // window glass, vL in −1…1: sky streaks over a dark room; tulle, drapes or blinds in the curtain colour (ramp B)
+    float ty = fract(vSeed * 13.7);
+    float st = fract((vL.x * 0.55 + vL.y) * 1.15 + vSeed * 7.0);
+    idx = st < 0.07 ? 4 : (st < 0.12 ? 3 : 1);
+    if (vL.y < -0.5 && st >= 0.12) idx = 0;
+    forced = true;
+    if (ty < 0.3) { if (vL.y < 0.9) { useB = true; idx = fract(vL.x * 9.0) < 0.5 ? 3 : 2; if (vL.y < -0.85) idx = 1; } }
+    else if (ty < 0.56) { if (abs(vL.x) > 0.6) { useB = true; idx = fract(vL.x * 7.0) < 0.5 ? 2 : 3; } }
+    else if (ty < 0.68) { useB = true; idx = fract(vL.y * 12.0) < 0.5 ? 3 : 2; }
+    else if (ty < 0.76) { if (vL.y > 0.35 && abs(vL.x + 0.3) < 0.18) { useB = true; idx = 4; } }
+  } else if (uPat == 39) {            // a grass tuft on a card facing the camera: a blade per screen column, dome-shaped, lighter tips, some dry
+    float col = floor(dot(uRV, vW) * uSc);
+    float hb = h3(vec3(col, floor(vSeed * 97.0), 5.0));
+    float u = vL.x * 2.0;
+    if (abs(u) > 0.55 && h3(vec3(col, 4.0, floor(vSeed * 71.0))) > 0.5) discard;
+    float top = (0.3 + 0.7 * hb) * (1.0 - u * u * 0.7);
+    if (vL.y > top) discard;
+    float f = vL.y / max(top, 0.01);
+    idx = f > 0.86 ? 4 : (f > 0.62 ? 3 : (f > 0.3 ? 2 : (f > 0.12 ? 1 : 0)));
+    if (h3(vec3(col, 9.0, floor(vSeed * 31.0))) > 0.74 && idx > 1) idx -= 1;
+    forced = true;
+    if (f > 0.5 && h3(vec3(col, 2.0, floor(vSeed * 50.0))) < uP.z) useB = true;
   } else if (uPat == 37) {            // planks: boards along local x (p.y = 0) or local y (p.y = 1)
     float pc = uP.y > 0.5 ? vL.x : vL.z, pa = uP.y > 0.5 ? vL.y : vL.x;
     float pl = pc / uP.x;
@@ -259,9 +324,11 @@ void main(){
     float sp = h3(floor(vW * 14.0));
     if (sp > 0.96) shift = -1; else if (sp < 0.03) shift = 1;
   }
+  if (uMode == 3) { o = vec4(0.0); oId = vec4(0.0); return; }
   if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, 0.32); oId = vec4(0.0); return; }
+  if (forced && !isDecal && uPat != 10 && sv < 0.5) idx = max(idx - 2, 0);
   vec3 hv = normalize(uLight + uView);
-  float sp = uS.x > 0.0 ? pow(max(dot(n, hv), 0.0), uS.y) * uS.x : 0.0;
+  float sp = uS.x > 0.0 ? pow(max(dot(n, hv), 0.0), uS.y) * uS.x * sv : 0.0;
   vec3 c;
   if (isDecal) {
     float k = li == 0 ? 0.56 : (li == 1 ? 0.7 : (li == 2 ? 0.86 : (li == 3 ? 1.0 : 1.06)));
@@ -294,15 +361,59 @@ uniform int uHover;
 uniform vec3 uAccent;
 uniform vec4 uShadowCol;
 uniform vec4 uFade;
+uniform int uGroundOn;                 // 0: no ground here, 1: texel-exact, 2: filtered (overview)
+uniform sampler2D uGroundTex;
+uniform vec4 uGMap;                    // ground canvas origin and size, world art px
+uniform vec4 uView2;                   // view offset (ax, ay), world art px per target px, view height
+uniform int uSunOn;
+uniform mat4 uLVP;
+uniform highp sampler2DShadow uShadowTex;
+uniform float uBias;
+uniform vec3 uShadeMul;                // ground colour in the shade
+uniform vec4 uTarget;                  // walk target: x, z, radius, on
+uniform int uGrid;
 out vec4 o;
 const ivec2 OFF[4] = ivec2[4](ivec2(1,0), ivec2(-1,0), ivec2(0,1), ivec2(0,-1));
 int idOf(vec4 t){ return int(t.r * 255.0 + 0.5); }
 int flOf(vec4 t){ return int(t.g * 255.0 + 0.5); }
+// the painted ground under a pixel no object covers, in the shade where the sun is blocked
+vec4 groundHere(){
+  vec2 fp = vec2(gl_FragCoord.x, uView2.w - gl_FragCoord.y);
+  vec2 wp = (fp - uView2.xy) * uView2.z;
+  vec2 g = wp - uGMap.xy;
+  vec4 gc;
+  if (uGroundOn == 1) {
+    ivec2 gi = ivec2(floor(g));
+    if (gi.x < 0 || gi.y < 0 || gi.x >= int(uGMap.z) || gi.y >= int(uGMap.w)) return vec4(0.0);
+    gc = texelFetch(uGroundTex, gi, 0);
+    if (gc.a < 0.5) return vec4(0.0);
+  } else {
+    if (g.x < 0.0 || g.y < 0.0 || g.x > uGMap.z || g.y > uGMap.w) return vec4(0.0);
+    gc = texture(uGroundTex, g / uGMap.zw);
+    if (gc.a < 0.02) return vec4(0.0);
+  }
+  float a = wp.x / 54.0, b = wp.y / 27.0;
+  vec2 xz = vec2(a + b, b - a) * 0.5;
+  vec3 c = gc.rgb;
+  if (uSunOn == 1) {
+    vec4 lp = uLVP * vec4(xz.x, 0.0, xz.y, 1.0);
+    vec3 sc = lp.xyz * 0.5 + 0.5;
+    float lit = (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0) ? 1.0 : texture(uShadowTex, vec3(sc.xy, sc.z - uBias));
+    c = mix(c * uShadeMul, c, lit);
+  }
+  float pw = 0.0105 * uView2.z;
+  if (uGrid == 1 && xz.x >= -pw && xz.y >= -pw && xz.x <= 30.0 + pw && xz.y <= 30.0 + pw) {
+    vec2 d = abs(xz - floor(xz + 0.5));
+    if (min(d.x, d.y) < pw) c = mix(c, vec3(1.0, 1.0, 0.94) * gc.a, 0.28);
+  }
+  if (uTarget.w > 0.5 && abs(length(xz - uTarget.xy) - uTarget.z) < pw * 1.6) c = vec3(0.886, 0.627, 0.282) * gc.a;
+  return vec4(c, gc.a);
+}
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 c = texelFetch(uCol, p, 0);
   bool obj = c.a > 0.5, sh = !obj && c.a > 0.1;
-  if (uRaw == 1) { o = obj ? vec4(c.rgb, 1.0) : (sh ? uShadowCol : vec4(0.0)); return; }
+  if (uRaw == 1) { o = obj ? vec4(c.rgb, 1.0) : (uGroundOn > 0 ? groundHere() : (sh ? uShadowCol : vec4(0.0))); return; }
   vec4 it = texelFetch(uIdT, p, 0);
   int myId = idOf(it), myFl = flOf(it);
   float d = texelFetch(uDep, p, 0).r;
@@ -330,8 +441,9 @@ void main(){
   }
   if (acc) { o = vec4(uAccent, 1.0); return; }
   if (!obj) {
-    vec3 lc = nsoft > 0 ? mix(uLine, soft / float(nsoft) * 0.32, 0.55) : uLine;
-    o = line ? vec4(lc, 1.0) : (sh ? uShadowCol : vec4(0.0)); return;
+    if (line) { o = vec4(nsoft > 0 ? mix(uLine, soft / float(nsoft) * 0.32, 0.55) : uLine, 1.0); return; }
+    if (uGroundOn > 0) { o = groundHere(); return; }
+    o = sh ? uShadowCol : vec4(0.0); return;
   }
   int occ = 0;
   for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++) {
@@ -360,12 +472,13 @@ void main(){
     const u = {}; for (const n of names) u[n] = gl.getUniformLocation(p, n);
     return { p, u };
   }
-  const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil']);
-  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade']);
+  const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil', 'uWind', 'uTime', 'uShadowOn', 'uLVP', 'uShadowTex', 'uSun', 'uAmb', 'uPU', 'uPV', 'uLeaf']);
+  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid']);
   const fsVAO = gl.createVertexArray();
   const LIGHT = nrm(add(add(scl(RV, -0.9), [0, 0.9, 0]), scl(FV, -0.25)));
-  const SUN = nrm([-0.15, 1, 0.72]);           // shadows fall up and to the right on screen
+  const SUN = nrm([-0.15, 1, 0.72]);           // the sun stands over the front of the yard, shadows fall up and to the right
   const LINE = [22 / 255, 16 / 255, 14 / 255];
+  const GROUND_SHADE = [0.6, 0.66, 0.8];        // ground colour multiplier in the shade: darker and cooler
   const SIL = [0.89, 0.6, 0.27];
   gl.vertexAttrib1f(3, 0.0);
 
@@ -446,6 +559,7 @@ void main(){
       if (m !== lastMat) {
         gl.uniform3fv(u.uRampA, m.a); gl.uniform3fv(u.uRampB, m.b);
         gl.uniform1i(u.uPat, m.pat); gl.uniform4fv(u.uP, m.p); gl.uniform4fv(u.uQ, m.q); gl.uniform4fv(u.uR, m.r); gl.uniform4fv(u.uS, m.s);
+        gl.uniform4fv(u.uWind, m.w || NO_WIND);
         lastMat = m;
       }
       const idv = (it.id || 0) * 256 + (it.flags || 0);
@@ -457,8 +571,102 @@ void main(){
       drawCalls++;
     }
   }
-  // L = { shadow: [...], main: [...], hero: [...] }; o = { xray, hover, fade: [x, y, r2, depth] }
+  const NO_WIND = new Float32Array(4);
+
+  // ---- the sun: a depth map seen from the sun, fitted to what the camera sees ----
+  const LZ = scl(SUN, -1), LX = nrm(cross([0, 1, 0], LZ)), LY = cross(LZ, LX);
+  const SHADOW = { res: Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE)), fbo: null, tex: null, vp: new Float32Array(16), bias: 0.0005, texel: 0.02 };
+  {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, SHADOW.res, SHADOW.res);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, t, 0);
+    gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    SHADOW.tex = t; SHADOW.fbo = f;
+  }
+  // world point at height y under a point of the screen (world art px)
+  function screenToWorld(sx, sy, y) { const d = SQ2 * sx / S, s2 = 2 * SQ2 * (sy / S + (SQ3 / 2) * y); return [(s2 + d) / 2, y, (s2 - d) / 2]; }
+  // everything the camera can see — the ground and anything up to hmax metres tall — must land on the map;
+  // the map keeps one size per view size and moves in whole texels, so shadows don't shimmer while the camera pans
+  function fitShadow(rect, hmax) {
+    let u0 = Infinity, u1 = -Infinity, w0 = Infinity, w1 = -Infinity, e0 = Infinity, e1 = -Infinity;
+    for (const sx of [rect[0], rect[2]]) for (const sy of [rect[1], rect[3]]) for (const y of [0, hmax]) {
+      const P = screenToWorld(sx, sy, y), q0 = dot(LX, P), q1 = dot(LY, P), q2 = dot(LZ, P);
+      u0 = Math.min(u0, q0); u1 = Math.max(u1, q0); w0 = Math.min(w0, q1); w1 = Math.max(w1, q1); e0 = Math.min(e0, q2); e1 = Math.max(e1, q2);
+    }
+    const size = Math.ceil(Math.max(u1 - u0, w1 - w0) + 2), tx = size / SHADOW.res;
+    const U0 = Math.floor(((u0 + u1) / 2 - size / 2) / tx) * tx, W0 = Math.floor(((w0 + w1) / 2 - size / 2) / tx) * tx;
+    const D0 = e0 - 40, D1 = e1 + 2, kx = 2 / size, kz = 2 / (D1 - D0), m = SHADOW.vp;
+    m[0] = LX[0] * kx; m[4] = LX[1] * kx; m[8] = LX[2] * kx; m[12] = -U0 * kx - 1;
+    m[1] = LY[0] * kx; m[5] = LY[1] * kx; m[9] = LY[2] * kx; m[13] = -W0 * kx - 1;
+    m[2] = LZ[0] * kz; m[6] = LZ[1] * kz; m[10] = LZ[2] * kz; m[14] = -D0 * kz - 1;
+    m[3] = m[7] = m[11] = 0; m[15] = 1;
+    SHADOW.bias = 0.018 / (D1 - D0); SHADOW.texel = tx;
+  }
+  function renderShadowMap(list, time) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+    gl.viewport(0, 0, SHADOW.res, SHADOW.res);
+    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+    gl.clearBufferfv(gl.DEPTH, 0, [1]);
+    gl.useProgram(P3.p);
+    const u = P3.u;
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.uniformMatrix4fv(u.uVP, false, SHADOW.vp);
+    gl.uniform1i(u.uMode, 3); gl.uniform1i(u.uShadowOn, 0); gl.uniform1i(u.uRaw, 0);
+    gl.uniform4f(u.uShadow, 0, 1, 0, 0); gl.uniform3fv(u.uView, SUN); gl.uniform3fv(u.uLight, LIGHT);
+    gl.uniform1f(u.uTime, time); gl.uniform4f(u.uFade, 0, 0, 0, 0);
+    gl.uniform3fv(u.uPU, LX); gl.uniform3fv(u.uPV, LY);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex); gl.uniform1i(u.uLeaf, 6);
+    drawList(list);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  // ---- leaf atlas: a seamless tile of 16 × 16 leaves, 16 texels per leaf cell (worked out once instead of per pixel) ----
+  const leafTex = gl.createTexture();
+  {
+    const T = 16, PX = 16, N = T * PX, data = new Uint8Array(N * N * 4);
+    const hw = (x, y, sd) => hash2(((x % T) + T) % T, ((y % T) + T) % T, sd);
+    for (let py = 0; py < N; py++) for (let px_ = 0; px_ < N; px_++) {
+      const qx = (px_ + 0.5) / PX, qy = (py + 0.5) / PX, cx = Math.floor(qx), cy = Math.floor(qy), fx = qx - cx, fy = qy - cy;
+      let best = 9, bx = 0, by = 0, bh = 0;
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+        const ha = hw(cx + i, cy + j, 7), hb = hw(cx + i, cy + j, 13);
+        const dx = fx - (i + 0.15 + ha * 0.7), dy = fy - (j + 0.15 + hb * 0.7);
+        const an = ha * 6.2831, ca = Math.cos(an), sa = Math.sin(an);
+        const dd = Math.hypot(ca * dx + sa * dy, (ca * dy - sa * dx) * 1.75);
+        if (dd < best) { best = dd; bx = dx; by = dy; bh = hb; }
+      }
+      const l = Math.hypot(bx, by) || 1, lit = (-0.6 * bx + 0.8 * by) / l, k = (py * N + px_) * 4;
+      data[k] = Math.round(hw(cx, cy, 3) * 255); data[k + 1] = Math.round((lit * 0.5 + 0.5) * 255);
+      data[k + 2] = Math.min(255, Math.round(best * 255)); data[k + 3] = Math.round(bh * 255);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, leafTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  }
+  // ---- the painted ground as a texture, so the scene can shade it ----
+  const groundTex = gl.createTexture();
+  function uploadGround(cv) {
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, groundTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  // L = { shadow: [...], main: [...], hero: [...] }
+  // o = { xray, hover, fade: [x, y, r2, depth], time, sun: { rect, hmax } (real shadows from L.shadow),
+  //       ground: { x0, y0, w, h, mode } (draw the ground under the scene), target: [x, z], grid }
   function render3D(T, v, L, raw, ctx, dx, dy, o = {}) {
+    const sunOn = !!o.sun;
+    if (sunOn) { fitShadow(o.sun.rect, o.sun.hmax || 18); renderShadowMap(L.shadow || [], o.time || 0); }
     ensureTarget(T, v.w, v.h);
     if (glc.width < v.w || glc.height < v.h) { glc.width = Math.max(glc.width, v.w); glc.height = Math.max(glc.height, v.h); }
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
@@ -478,7 +686,14 @@ void main(){
     const fade = o.fade || [0, 0, 0, 0];
     gl.uniform4f(u.uFade, fade[0], fade[1], fade[2], fade[3]);
     gl.uniform3fv(u.uSil, SIL);
-    if (L.shadow && L.shadow.length) {
+    gl.uniform1f(u.uTime, o.time || 0);
+    gl.uniform1i(u.uShadowOn, sunOn ? 1 : 0);
+    gl.uniformMatrix4fv(u.uLVP, false, SHADOW.vp);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(u.uShadowTex, 4);
+    gl.uniform3fv(u.uSun, SUN); gl.uniform3f(u.uAmb, 0.36, 0.14, SHADOW.bias);
+    gl.uniform3fv(u.uPU, RV); gl.uniform3fv(u.uPV, UV);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex); gl.uniform1i(u.uLeaf, 6);
+    if (!sunOn && L.shadow && L.shadow.length) {
       gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
       gl.uniform1i(u.uMode, 2); gl.uniform4f(u.uShadow, SUN[0], SUN[1], SUN[2], 1); gl.uniform3fv(u.uView, SUN);
       drawList(L.shadow);
@@ -509,6 +724,18 @@ void main(){
     gl.uniform1i(PP.u.uHover, o.hover || 0); gl.uniform3fv(PP.u.uAccent, o.accent || [0.89, 0.6, 0.27]);
     gl.uniform4f(PP.u.uShadowCol, 0.035, 0.05, 0.11, 0.3);
     gl.uniform4f(PP.u.uFade, fade[0], fade[1], fade[2], fade[3]);
+    const gr = o.ground;
+    gl.uniform1i(PP.u.uGroundOn, gr ? gr.mode : 0);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, groundTex); gl.uniform1i(PP.u.uGroundTex, 5);
+    if (gr) { gl.uniform4f(PP.u.uGMap, gr.x0, gr.y0, gr.w, gr.h); gl.uniform4f(PP.u.uView2, v.ax, v.ay, S / v.s, v.h); }
+    gl.uniform1i(PP.u.uSunOn, sunOn ? 1 : 0);
+    gl.uniformMatrix4fv(PP.u.uLVP, false, SHADOW.vp);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(PP.u.uShadowTex, 4);
+    gl.uniform1f(PP.u.uBias, SHADOW.bias * 0.5);
+    gl.uniform3fv(PP.u.uShadeMul, GROUND_SHADE);
+    const tg = o.target;
+    gl.uniform4f(PP.u.uTarget, tg ? tg[0] : 0, tg ? tg[1] : 0, 0.32, tg ? 1 : 0);
+    gl.uniform1i(PP.u.uGrid, o.grid ? 1 : 0);
     gl.bindVertexArray(fsVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.SCISSOR_TEST);
     gl.bindVertexArray(null);

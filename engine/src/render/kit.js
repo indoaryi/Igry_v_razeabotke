@@ -14,6 +14,12 @@
       const raw = rawMesh('c' + r.toFixed(3) + ',' + L.toFixed(3) + ',' + seg, () => cyl(r, r, L, seg));
       return this.put(raw, M(tr(a[0], a[1], a[2]), alongPlusY(sub(b, a))), m, seed);
     }
+    // a tapering rod from a to b (limbs, stems)
+    taper(m, a, b, r0, r1, seg = 6, seed) {
+      const L = len(sub(b, a));
+      const raw = rawMesh('t' + r0.toFixed(3) + ',' + r1.toFixed(3) + ',' + L.toFixed(3) + ',' + seg, () => r0 < 0.04 ? loft([{ a: 0, hu: r0, hv: r0 }, { a: L, hu: r1, hv: r1 }], { seg, capA: false, capB: false }) : cyl(r0, r1, L, seg));
+      return this.put(raw, M(tr(a[0], a[1], a[2]), alongPlusY(sub(b, a))), m, seed);
+    }
     mesh(key, fn, m, model, seed) { return this.put(rawMesh(key, fn), model, m, seed); }
     lines(m, segs) { return this.put(lineMesh(segs), ID4, m, 0); }
   }
