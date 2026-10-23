@@ -37,6 +37,8 @@ const SCEN = {
   shoot: { at: [6.8, 16.2], view: 'near', run: 'shoot', steps: [1.25] },
   facade: { at: [20.5, 3.4], view: 'near' },
   walk: { at: [12.0, 20.2], view: 'near', run: 'walk', steps: [0.9] },
+  raw: { at: [14.2, 20.4], view: 'near', run: 'raw' },
+  grid: { at: [14.2, 20.4], view: 'far', run: 'grid' },
   facade2: { at: [4.6, 12.6], view: 'near' }
 };
 const names = pos.slice(1).length ? pos.slice(1) : Object.keys(SCEN);
@@ -94,6 +96,8 @@ for (const name of names) {
   await frames(3);
   const steps = s.steps || [0.6];
   if (s.run === 'smoke') await page.evaluate(() => window.__yard.startSmoke());
+  if (s.run === 'raw' || s.run === 'grid') await page.evaluate((id) => { const c = document.getElementById(id); if (!c.checked) c.click(); }, s.run === 'raw' ? 'rawChk' : 'gridChk');
+  if (s.run !== 'raw' && s.run !== 'grid') await page.evaluate(() => { for (const id of ['rawChk', 'gridChk']) { const c = document.getElementById(id); if (c.checked) c.click(); } });
   if (s.run === 'walk') await page.evaluate(() => window.__yard.walkTo(16.5, 20.8));
   if (s.run === 'shoot') await page.evaluate(() => { const Y = window.__yard; Y.setGear && Y.setGear('hands', 'rifle'); Y.doShoot(); });
   let i = 0;
