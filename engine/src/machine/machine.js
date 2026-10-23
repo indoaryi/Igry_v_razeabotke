@@ -436,7 +436,8 @@
     const B = machineBones(m, m);
     if (m.mode === 'waking') updateWaking(m, dt, B);
     else if (m.mode === 'ready') {
-      if (m.leave && !m.sw && !m.walking) { m.leave = false; hero.path.length = 0; setMode(m, 'parking'); }
+      const square = [0, 1].every((i) => { const h = footHome(m, i), f = m.feet[i]; return Math.hypot(h[0] - f.p[0], h[1] - f.p[1]) + Math.abs(wrapA(m.yaw - f.yaw)) * 0.3 < 0.1; });
+      if (m.leave && !m.sw && !m.walking && square) { m.leave = false; hero.path.length = 0; setMode(m, 'parking'); }
       else updateWalk(m, dt);
       if (m.leave && m.walking) { hero.path.length = 0; }
       m.lamps = m.lampsOn ? 1 : 0;

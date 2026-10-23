@@ -96,10 +96,12 @@
       const L = buildLists(rect, rig);
       if (layer.width !== v.w || layer.height !== v.h) { layer.width = v.w; layer.height = v.h; }
       lcx.clearRect(0, 0, v.w, v.h);
-      const chest = xf(rig.B.chest, [0, 0.05, 0]);
+      // leaves in front of the hero (or of the machine he drives) thin out so he stays in sight
+      const veh = heroHidden() && hero.vehicle;
+      const chest = veh ? machineFocus(hero.vehicle) : xf(rig.B.chest, [0, 0.05, 0]);
       const cs = [hs[0] * v.s / S + v.ax, hs[1] * v.s / S + v.ay];
-      const r = 64 * v.s / S;
-      const fade = heroHidden() ? [0, 0, 0, 0] : [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
+      const r = (veh ? 112 : 64) * v.s / S;
+      const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
       drawCalls = 0;
       render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
         xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 },

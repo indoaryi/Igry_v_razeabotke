@@ -46,6 +46,8 @@ const SCEN = {
   y2birch: { loc: 'yard2', at: [27.9, 22.5], view: 'near' },
   y2suit: { loc: 'yard2', at: [25.6, 10.4], view: 'near' },
   y2house: { loc: 'yard2', at: [9.8, 9.5], view: 'far' },
+  // the suit: the hero inside, already awake, walking across the lawn
+  y2walk: { loc: 'yard2', at: [25.6, 10.4], view: 'near', steps: [2.4], js: "const m = MACHINES[0], inst = m.inst; hero.vehicle = inst; hero.inside = true; setMode(m, 'ready'); m.crouch = 0; m.lean = m.K.D.leanStand; m.feet = [0, 1].map((i) => footPose(m, i, 0)); m.engine = 1; m.glow = 1; m.shutter = 1; m.lamps = 1; NAV.big.skip = inst; buildNav(NAV.big); walkTo(21.6, 14.6);" },
   grid: { at: [14.2, 20.4], view: 'far', run: 'grid' },
   facade2: { at: [4.6, 12.6], view: 'near' }
 };
