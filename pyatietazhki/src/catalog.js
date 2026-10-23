@@ -5,8 +5,8 @@
   // leaf clumps: p = [share of turning leaves, leaves per metre, edge zone where leaves thin out, leaf radius in cells], r.x = how solid the inside is
   const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.dens || 11, o.cut || 0.42, o.rr || 0.44], r: [o.solid ?? 0.7, 0, 0, 0], noise: 0.04, grain: 30, wind: o.wind || [0.05, 1 / 8, 1.25, 0.35] }), { fade: true, fl: 4 });
   // a clump whose normals lean towards the outside of the whole crown, so the crown reads as one lit mass rather than a pile of balls
-  function clumpRaw(v, out, yaw, w) {
-    const base = lumpMesh(v), c = Math.cos(yaw), sn = Math.sin(yaw);
+  function clumpRaw(v, out, yaw, w, small) {
+    const base = lumpMesh(v, small), c = Math.cos(yaw), sn = Math.sin(yaw);
     const d = [c * out[0] - sn * out[2], out[1], sn * out[0] + c * out[2]], N = base.nrm, nn = new Array(N.length);
     for (let i = 0; i < N.length; i += 3) {
       const b = nrm([N[i] + (d[0] - N[i]) * w, N[i + 1] + (d[1] - N[i + 1]) * w, N[i + 2] + (d[2] - N[i + 2]) * w]);
@@ -437,9 +437,9 @@
 
   // ---------- trees, bushes, tall grass ----------
   // a lumpy clump of leaves: an ellipsoid pushed out by a few bulges, with a flatter underside (8 shapes)
-  function lumpMesh(v) {
-    return rawMesh('lump' + v, () => {
-      const m = ellipsoid(1, 0.8, 1, { seg: 8, rings: 5 });
+  function lumpMesh(v, small) {
+    return rawMesh((small ? 'lumpS' : 'lump') + v, () => {
+      const m = small ? ellipsoid(1, 0.8, 1, { seg: 6, rings: 4 }) : ellipsoid(1, 0.8, 1, { seg: 8, rings: 5 });
       const R = rng(700 + v * 13), P = m.pos, Nn = m.nrm, bumps = [];
       for (let i = 0; i < 6; i++) bumps.push([nrm([R() * 2 - 1, R() * 1.6 - 0.5, R() * 2 - 1]), 0.16 + R() * 0.22]);
       for (let i = 0; i < P.length; i += 3) {
@@ -542,7 +542,7 @@
     let cc = [0, 0, 0];
     for (const [p0] of tips) cc = add(cc, fit(p0));
     cc = scl(cc, 1 / Math.max(1, tips.length)); cc[1] -= (H - cb) * 0.12;
-    const clump = (c, rc, fy, yaw) => k.put(clumpRaw((R() * 8) | 0, nrm(sub(c, cc)), yaw, 0.55), M(tr(c[0], c[1], c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R());
+    const clump = (c, rc, fy, yaw, small) => k.put(clumpRaw((R() * 8) | 0, nrm(sub(c, cc)), yaw, 0.55, small), M(tr(c[0], c[1], c[2]), ry(yaw), sc3(rc, rc * fy, rc)), leaf, R());
     const twigM = Object.assign(flat(P.weep ? '#6e5a40' : P.birch ? '#4a3f37' : '#4f443b', 1), { noShadow: true });
     const hang = [];
     for (const [p0, d, ord] of tips) {
@@ -560,7 +560,7 @@
           const a = add(p, [out[0] * 0.12 + (R() - 0.5) * 0.3, -0.04, out[2] * 0.12 + (R() - 0.5) * 0.3]);
           const L = (0.9 + R() * 1.7) * s, b = add(a, [out[0] * 0.3 + (R() - 0.5) * 0.2, -L, out[2] * 0.3 + (R() - 0.5) * 0.2]);
           const nk = 2 + Math.round(L / (0.62 * s));
-          for (let q = 0; q < nk; q++) clump(add(lerpV(a, b, (q + 0.6) / (nk + 0.1)), [(R() - 0.5) * 0.08, 0, (R() - 0.5) * 0.08]), (0.11 + R() * 0.05) * s, 2.2 + R() * 0.9, R() * 6.28);
+          for (let q = 0; q < nk; q++) clump(add(lerpV(a, b, (q + 0.6) / (nk + 0.1)), [(R() - 0.5) * 0.08, 0, (R() - 0.5) * 0.08]), (0.11 + R() * 0.05) * s, 2.2 + R() * 0.9, R() * 6.28, true);
         }
       } else if (droop > 0 && ord === 2 && R() < droop) {
         const L = (0.5 + R() * 0.9) * s * droop, q = add(p, [d[0] * 0.15, -L, d[2] * 0.15]);
