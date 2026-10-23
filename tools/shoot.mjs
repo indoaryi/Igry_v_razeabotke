@@ -36,6 +36,7 @@ const SCEN = {
   far2: { at: [20.0, 8.0], view: 'far' },
   shoot: { at: [6.8, 16.2], view: 'near', run: 'shoot', steps: [1.25] },
   facade: { at: [20.5, 3.4], view: 'near' },
+  walk: { at: [12.0, 20.2], view: 'near', run: 'walk', steps: [0.9] },
   facade2: { at: [4.6, 12.6], view: 'near' }
 };
 const names = pos.slice(1).length ? pos.slice(1) : Object.keys(SCEN);
@@ -93,6 +94,7 @@ for (const name of names) {
   await frames(3);
   const steps = s.steps || [0.6];
   if (s.run === 'smoke') await page.evaluate(() => window.__yard.startSmoke());
+  if (s.run === 'walk') await page.evaluate(() => window.__yard.walkTo(16.5, 20.8));
   if (s.run === 'shoot') await page.evaluate(() => { const Y = window.__yard; Y.setGear && Y.setGear('hands', 'rifle'); Y.doShoot(); });
   let i = 0;
   for (const dt of steps) {
@@ -106,7 +108,15 @@ for (const name of names) {
     console.log(`${name}: ${path.basename(file)} — ${dbg.VW}×${dbg.VH} art px ×${dbg.kDev}, ${dbg.drawCalls} draw calls, ${Date.now() - t1} ms`);
   }
 }
-if (opt.full) await page.screenshot({ path: path.join(outDir, prefix + 'page.png'), fullPage: true });
+if (opt.full) {
+  await page.evaluate(() => window.__yard.renderCards && window.__yard.renderCards());
+  for (const id of ['cards', 'found', 'plan']) {
+    const el = page.locator('#' + id);
+    await el.scrollIntoViewIfNeeded({ timeout: 600000 });
+    const box = await el.boundingBox();
+    if (box) await page.screenshot({ path: path.join(outDir, prefix + 'section-' + id + '.png'), clip: box, timeout: 600000 });
+  }
+}
 const perf = await page.evaluate(async () => {
   // average time of a full stage redraw, in ms
   const Y = window.__yard; const n = 6; const t0 = performance.now();

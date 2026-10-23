@@ -66,9 +66,21 @@
       for (const i of solid) for (const b of i.blocks) if (b.poly ? pointInPoly(x, z, b.poly) : Math.hypot(x - b.c[0], z - b.c[1]) < b.r + 0.05) return true;
       return false;
     };
+    // how close a point is to something weeds like to hug: walls and big objects, the asphalt and concrete edges
+    const hug = INST.filter((i) => ['block5', 'substation', 'garage', 'towers', 'entrance', 'pole', 'tires'].includes(i.type));
+    const segDist = (x, z, a, b) => { const ex = b[0] - a[0], ez = b[1] - a[1], u = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez || 1), 0, 1); return Math.hypot(x - a[0] - ex * u, z - a[1] - ez * u); };
+    const edgeDist = (x, z) => {
+      let d = 9;
+      for (const i of hug) for (const b of i.blocks) {
+        if (b.poly) for (let j = 0; j < b.poly.length; j++) d = Math.min(d, segDist(x, z, b.poly[j], b.poly[(j + 1) % b.poly.length]));
+        else d = Math.min(d, Math.hypot(x - b.c[0], z - b.c[1]) - b.r);
+      }
+      for (const [dx, dz] of [[-0.45, 0], [0, -0.45], [0.45, 0], [0, 0.45]]) { const t = groundType(x + dx, z + dz); if (t === '#' || t === '_') d = Math.min(d, 0.3); }
+      return d;
+    };
     const trees = INST.filter((i) => i.type === 'tree');
     const shadeOf = (x, z) => { let q = 0; for (const t of trees) q = Math.max(q, 1 - ((x - t.def.at[0]) ** 2 + (z - t.def.at[1]) ** 2) / 7.5); return q; };
-    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf });
+    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf, edgeDist });
   }
   const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
 

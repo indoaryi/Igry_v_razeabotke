@@ -236,7 +236,13 @@
     decalOn(k, 'grafFront', [0, 1.2, 1.503], 'z');
     decalOn(k, 'grafSide', [2.503, 1.2, 0], 'x');
     const slots = [[-1.05, 2.47, 1.52], [-0.4, 2.47, 1.54], [0.3, 2.47, 1.53], [0.95, 2.47, 1.52]];
-    return { kit: k, blocks: [{ rect: [-2.55, -1.55, 2.55, 1.55] }], spots: [{ kind: 'front', at: [0, 2.35], yaw: Math.PI }], canSlots: slots };
+    // junk by the walls: an old tyre leaning at the corner, a few bricks, a plank
+    k.mesh('tyre', () => torus(0.3, 0.1, 16, 6), mat('#2b2b2d', { noise: 0.08, grain: 50 }), M(tr(2.15, 0.36, 1.66), ry(-0.4), rx(1.35)));
+    const brickM = mat('#a0533e', { noise: 0.1, grain: 40 }), plank = mat('#6e5640', { pat: 37, b: '#5a4632', p: [0.1, 0, 0, 0], noise: 0.08, grain: 40 });
+    k.box(brickM, [-2.05, 0.035, 1.75], [0.12, 0.035, 0.06], ry(0.3)); k.box(brickM, [-1.85, 0.035, 1.82], [0.12, 0.035, 0.06], ry(-0.5));
+    k.box(brickM, [-1.97, 0.1, 1.78], [0.12, 0.035, 0.06], ry(0.1));
+    k.box(plank, [2.56, 0.9, -0.6], [0.02, 0.92, 0.09], rz(0.16));
+    return { kit: k, blocks: [{ rect: [-2.55, -1.55, 2.55, 1.55] }, { c: [2.15, 1.66], r: 0.28 }], spots: [{ kind: 'front', at: [0, 2.35], yaw: Math.PI }], canSlots: slots };
   }
 
   // ---------- playground complex: two towers, a bridge, climbing bars ----------
@@ -403,6 +409,9 @@
     k.box(mat('#8d9296', { noise: 0.03, spec: 0.4 }), [0.9, 7.52, 0], [0.22, 0.06, 0.12], rz(-0.1));
     k.box(flat('#efe6c0', 3), [0.92, 7.45, 0], [0.16, 0.012, 0.08]);
     k.boxMM(mat('#8a8f93', { pat: 38, b: '#7b4b32', p: [8, 0.85, 0, 0], noise: 0.05 }), 0.12, 1.6, -0.18, 0.28, 2.15, 0.18);
+    decalOn(k, 'ads1', [-0.02, 1.62, 0.127], 'z');
+    decalOn(k, 'ads2', [0.06, 1.3, 0.128], 'z');
+    decalOn(k, 'ads3', [0.288, 1.42, 0.0], 'x');
     return { kit: k, blocks: [{ c: [0, 0], r: 0.22 }], attach: att };
   }
 
@@ -612,10 +621,12 @@
       if (pd < 0.42 + (vnoise(px * 2.8, pz * 2.8, 7) - 0.5) * 0.3) continue;
       if (o.blocked(px, pz)) continue;
       // lush and thin zones a few metres across, clumps about a metre across
-      const lush = fbm(px * 0.33, pz * 0.33, 21), clumpy = vnoise(px * 1.3, pz * 1.3, 23), shade = o.shadeOf(px, pz), rough = t === ',';
+      const lush = fbm(px * 0.33, pz * 0.33, 21), clumpy = vnoise(px * 1.3, pz * 1.3, 23), shade = o.shadeOf(px, pz);
+      const edge = o.edgeDist(px, pz) < 0.55, rough = t === ',' || edge;
       if (!rough && R() < 0.1 + shade * 0.4 + (0.45 - clumpy) * 0.3) continue;
       let h = rough ? 0.34 + lush * 0.52 : 0.09 + lush * 0.2 + clumpy * 0.1;
       if (R() < 0.08) h *= 1.7;                                                    // a tussock sticking out
+      if (edge) h *= 1.25;                                                        // weeds along walls and kerbs, where nobody mows
       h *= (0.7 + R() * 0.6) * (0.4 + 0.6 * smooth((pd - 0.35) / 0.9)) * (1 - shade * 0.35);
       const w = (rough ? 0.44 : 0.34) + R() * 0.36;
       const m = rough ? (lush > 0.6 && R() < 0.45 ? MEADOW.dry : MEADOW.rough) : (lush + clumpy * 0.3 > 0.72 ? MEADOW.lush : (R() < 0.04 ? MEADOW.dry : MEADOW.lawn));
@@ -643,6 +654,22 @@
     k.mesh('urn', () => loft([{ a: 0, hu: 0.13, hv: 0.13 }, { a: 0.05, hu: 0.14, hv: 0.14 }, { a: 0.44, hu: 0.17, hv: 0.17 }, { a: 0.48, hu: 0.185, hv: 0.185 }, { a: 0.53, hu: 0.185, hv: 0.185 }], { seg: 14, capAAt: 0, capB: false }), mat('#7b776f', { noise: 0.1, grain: 40 }));
     k.mesh('hole', () => ellipsoid(0.165, 0.004, 0.165, { seg: 14, rings: 4 }), mat('#1d1a18', { noise: 0 }), tr(0, 0.505, 0));
     return { kit: k, blocks: [{ c: [0, 0], r: 0.22 }] };
+  }
+  // ---------- painted tyres lying in a row as flower pots ----------
+  function buildTires(o) {
+    const k = new Kit(o.seed || 91), R = k.R, n = o.count || 3;
+    const cols = ['#ecebe4', '#3f7fd2', '#e2c34a', '#d9572f'];
+    const soil = mat('#4a3a2c', { noise: 0.12, grain: 50 });
+    const petals = ['#f0b52a', '#e0672b', '#f4e04a', '#c8352c'].map((c) => Object.assign(mat(c, { noise: 0.06, wind: [0.01, 1 / 0.4, 2, 0.5] }), { noShadow: true, fl: 1 }));
+    const leaves = leafMat('#41712e', 0.02, '#8a8a3a', { dens: 14, cut: 0.5, solid: 0.9, wind: [0.01, 1 / 0.4, 1.8, 0.5] });
+    for (let i = 0; i < n; i++) {
+      const x = (i - (n - 1) / 2) * 0.66, z = Math.sin(i * 1.7) * 0.08;
+      k.mesh('tyreFlat', () => torus(0.27, 0.1, 18, 6), mat(cols[(i + (o.shift || 0)) % cols.length], { pat: 38, b: '#2a2a2c', p: [11, 0.84, 0, 0], noise: 0.05, grain: 40 }), tr(x, 0.1, z));
+      k.mesh('tyreSoil', () => ellipsoid(0.24, 0.03, 0.24, { seg: 12, rings: 4 }), soil, tr(x, 0.15, z));
+      k.put(lumpMesh((R() * 8) | 0), M(tr(x, 0.24, z), sc3(0.2, 0.12, 0.2)), leaves, R());
+      for (let j = 0; j < 7; j++) { const a = R() * 6.28, r = R() * 0.17; k.mesh('bloom', () => ellipsoid(0.03, 0.022, 0.03, { seg: 6, rings: 4 }), petals[(R() * petals.length) | 0], tr(x + Math.cos(a) * r, 0.3 + R() * 0.06, z + Math.sin(a) * r), R()); }
+    }
+    return { kit: k, blocks: [{ rect: [-(n * 0.33 + 0.05), -0.4, n * 0.33 + 0.05, 0.4] }] };
   }
   // ---------- curb stone along a line ----------
   function buildCurb(o) {
@@ -673,13 +700,14 @@
     platform: { build: buildPlatform, name: 'Помост', size: '3 × 0,7 м', note: 'Длинная низкая доска на ножках, на ней сидят.' },
     hoop: { build: buildHoop, name: 'Баскетбольный щит', size: '3,8 м', note: 'Щит, кольцо и сетка на столбе.' },
     pole: { build: buildPole, name: 'Столб с фонарём', size: '8,6 м', note: 'Траверса с изоляторами, провода считаются по провису.' },
-    tree: { build: buildTree, name: 'Деревья', size: '4–10 м', note: 'Ствол, ветки и крона из комков листвы. Ясень, клён, берёза, тополь, сухое.' },
-    bush: { build: buildBush, name: 'Куст', size: '1–2 м', note: 'Несколько комков листвы.' },
+    tree: { build: buildTree, name: 'Деревья', size: '4–10 м', note: 'Ствол, сучья и веточки, на них комки листвы с отдельными листьями. Ясень, клён, берёза, тополь, ива, сухое.' },
+    bush: { build: buildBush, name: 'Куст', size: '1–2,3 м', note: 'Стебли из одного корня и листва на них. Сирень, бузина, лещина, шиповник, поросль.' },
     meadow: { build: buildMeadow, name: 'Трава', size: '', note: '' },
-    grass: { build: buildGrass, name: 'Бурьян', size: 'пятно 2–5 м', note: 'Пучки травы со своими травинками и зонтики сорняков.' },
+    grass: { build: buildGrass, name: 'Бурьян', size: 'пятно 2–5 м', note: 'Высокая трава с сухостоем, зонтики сорняков и лопухи у земли.' },
     bench: { build: buildBench, name: 'Лавочка', size: '1,5 м', note: 'Та самая лавочка из первого двора.' },
     urn: { build: buildUrn, name: 'Урна', size: '0,4 м', note: 'Тоже из первого двора.' },
     entrance: { build: buildEntrance, name: 'Подъезд', size: '2,8 × 1,8 м', note: 'Крыльцо со ступенькой, железная дверь, домофон, козырёк с лампой.' },
+    tires: { build: buildTires, name: 'Клумба из шин', size: '2 × 0,7 м', note: 'Покрашенные шины с землёй и бархатцами.' },
     curb: { build: buildCurb, name: 'Бордюр', size: 'по длине', note: '' },
     wires: { build: buildWires, name: 'Провода', size: '', note: '' }
   };

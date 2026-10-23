@@ -105,6 +105,22 @@
       g.strokeStyle = '#c8352c'; g.lineWidth = 2; g.strokeRect(3, 3, w - 6, h - 6);
       g.strokeRect(w / 2 - 12, h - 26, 24, 18);
     });
+    // notices stuck to the lamp post: one with tear-off phone strips, one printed, one faded
+    place('ads1', 0.22, 0.3, (g, w, h) => {
+      g.fillStyle = '#f2f0e8'; g.fillRect(0, 0, w, h - 5);
+      outlinedText(g, 'ПРОДАМ', 1, 1, 'bold 5px ' + SANS, '#1d1d1f', null, 0);
+      g.fillStyle = '#5b5b58'; for (let y = 9; y < h - 9; y += 2) g.fillRect(1, y, w - 2 - ((y * 5) % 4), 1);
+      g.fillStyle = '#f2f0e8'; for (let x = 0; x < w; x += 2) g.fillRect(x, h - 5, 1, 5 - ((x * 3) % 3));
+    });
+    place('ads2', 0.2, 0.26, (g, w, h) => {
+      g.fillStyle = '#e8d562'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#c8352c'; g.fillRect(1, 1, w - 2, 3);
+      g.fillStyle = '#3b3a35'; for (let y = 6; y < h - 2; y += 2) g.fillRect(1, y, w - 2 - ((y * 3) % 5), 1);
+    });
+    place('ads3', 0.18, 0.2, (g, w, h) => {
+      g.fillStyle = '#dcd8cc'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#9a978e'; for (let y = 2; y < h - 2; y += 3) g.fillRect(1, y, w - 3 - ((y * 7) % 4), 1);
+    });
     binarize(atlas);
     uploadDecals(atlas);
     return atlas;

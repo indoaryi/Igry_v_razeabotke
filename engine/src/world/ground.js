@@ -104,6 +104,23 @@
         }
       }
     }
+    // litter where people sit and wait: cigarette butts, sunflower husks, bottle caps, a wrapper or two
+    const RL = rng(57), BUTT = [hexRGB('#ece8dc'), hexRGB('#d78a3c')], HUSK = hexRGB('#2c2a27'), CAPS = ['#c8352c', '#d9d6cf', '#2f7d3c', '#d1b04a'].map(hexRGB), WRAP = [hexRGB('#d9d4c8'), hexRGB('#b84a3a')];
+    for (const it of INST) {
+      if (!['bench', 'urn', 'platform', 'entrance', 'garage', 'swing'].includes(it.type)) continue;
+      const n = it.type === 'entrance' ? 16 : it.type === 'swing' ? 6 : 24;
+      for (let j = 0; j < n; j++) {
+        const a = RL() * 6.28, r = 0.25 + RL() * 1.4, x = it.center[0] + Math.cos(a) * r, z = it.center[1] + Math.sin(a) * r;
+        if (x < 0.2 || z < 0.2 || x >= GW - 0.2 || z >= GH - 0.2) continue;
+        const [sx, sy] = wpx([x, 0, z]), qx = Math.round(sx - G.x0), qy = Math.round(sy - G.y0);
+        const put = (dx, dy, c) => { const q = ((qy + dy) * G.w + qx + dx) * 4; d[q] = c[0]; d[q + 1] = c[1]; d[q + 2] = c[2]; d[q + 3] = 255; };
+        const kind = RL();
+        if (kind < 0.42) { put(0, 0, BUTT[0]); put(1, 0, BUTT[1]); }
+        else if (kind < 0.72) put(0, 0, HUSK);
+        else if (kind < 0.88) put(0, 0, CAPS[(RL() * CAPS.length) | 0]);
+        else { put(0, 0, WRAP[0]); put(1, 0, WRAP[1]); put(0, 1, WRAP[0]); }
+      }
+    }
     // asphalt cracks: short random walks
     const R = rng(91);
     for (let n = 0; n < 70; n++) {

@@ -65,6 +65,8 @@
       { n: 19, type: 'bush', kind: 'shoots', at: [19.8, 5.8], size: 0.8, seed: 314 },
       { n: 19, type: 'bush', kind: 'elder', at: [26.6, 6.4], size: 1.0, seed: 315 },
       { n: 19, type: 'bush', kind: 'dogrose', at: [25.0, 27.6], size: 0.9, seed: 316 },
+      { n: 20, type: 'tires', at: [5.0, 27.0], rot: 90, count: 3, seed: 91 },
+      { n: 20, type: 'tires', at: [4.9, 23.3], rot: 90, count: 2, seed: 92, shift: 2 },
       { type: 'curb', at: [4.0, 7.0], rot: -90, len: 23 }
     ]
   };

@@ -16,9 +16,10 @@
     { n: 14, name: 'Пятиэтажка справа', note: 'Тот же предмет, жёлтый кирпич и красные балконы.', decor: true },
     { n: 15, name: 'Старая рама', note: 'Металлолом, просто стоит.', decor: true },
     { n: 16, name: 'Столб с фонарём', note: 'Провода идут к подстанции и к домам.', decor: true },
-    { n: 17, name: 'Деревья', note: 'Ясени, клёны, берёзы и тополя, кое-где уже желтеют.', decor: true },
+    { n: 17, name: 'Деревья', note: 'Ясени, клёны, берёзы, тополя и ива; кое-где листья уже желтеют.', decor: true },
     { n: 18, name: 'Сухое дерево', note: 'Голые ветки перед левым домом.', decor: true },
-    { n: 19, name: 'Кусты', note: 'Вдоль домов и у подстанции.', decor: true }
+    { n: 19, name: 'Кусты', note: 'Сирень, бузина, лещина, шиповник с ягодами и поросль вдоль домов и у подстанции.', decor: true },
+    { n: 20, name: 'Клумбы из шин', note: 'Покрашенные шины с бархатцами у подъезда.', decor: true, added: true }
   ];
   const PINS = [[1, 8.4, 53.3], [2, 12.4, 53.0], [3, 20.1, 49.6], [4, 25.2, 52.3], [5, 23.6, 56.4], [6, 30.6, 51.8], [7, 35.6, 51.4], [8, 44.8, 49.0], [9, 62.5, 49.2], [10, 55.6, 53.6],
     [13, 3.8, 37.3], [14, 71.2, 36.4], [15, 16.4, 56.8], [16, 51.2, 43.2], [17, 89, 42], [18, 9.4, 42.6], [19, 7.4, 73.3]];
@@ -220,7 +221,9 @@
     { title: 'Помост', pick: () => byType('platform'), tag: 'сесть', type: 'platform', act: true },
     { title: 'Баскетбольный щит', pick: () => byType('hoop'), tag: 'бросить мяч', type: 'hoop', act: true },
     { title: 'Столб с фонарём', pick: () => byType('pole'), tag: 'декор', type: 'pole' },
-    { title: 'Деревья', multi: () => [[INST.find((i) => i.def.kind === 'ash')], [INST.find((i) => i.def.kind === 'birch')], [INST.find((i) => i.def.kind === 'bare')]], tag: 'декор', type: 'tree' },
+    { title: 'Деревья', multi: () => [[INST.find((i) => i.def.kind === 'ash')], [INST.find((i) => i.def.kind === 'birch')], [INST.find((i) => i.def.kind === 'willow')]], tag: 'декор', type: 'tree' },
+    { title: 'Кусты', multi: () => [[INST.find((i) => i.def.kind === 'lilac')], [INST.find((i) => i.def.kind === 'dogrose')]], tag: 'декор', type: 'bush' },
+    { title: 'Клумба из шин', pick: () => [byType('tires')[0]], tag: 'декор', type: 'tires' },
     { title: 'Бурьян', pick: () => [byType('grass')[2]], tag: 'обыскать', type: 'grass', act: true },
     { title: 'Лавочка и урна', pick: () => [...byType('bench'), ...byType('urn')], tag: 'сесть', type: 'bench', act: true }
   ];
