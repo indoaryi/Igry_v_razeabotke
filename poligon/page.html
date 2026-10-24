@@ -1,0 +1,182 @@
+<title>Испытательный полигон</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* The smallest page for the engine: the stage, its chips, the context panel, the clock and the zoom. */
+:root {
+  --bg: #ECEEEC;
+  --surface: #F8F9F7;
+  --stage: #CBD3CF;
+  --ink: #1B1F22;
+  --muted: #586067;
+  --line: #C6CCC9;
+  --accent: #B8691C;
+  --accent-soft: #F2E4D3;
+  --ok: #2B7549;
+  --code: #E2E7E4;
+  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --body: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121518; --surface: #1A1E22; --stage: #2A3035; --ink: #E6E9EA; --muted: #98A1A8;
+    --line: #2C3238; --accent: #E2A048; --accent-soft: #3A2D1D; --ok: #72C595; --code: #1E2327;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121518; --surface: #1A1E22; --stage: #2A3035; --ink: #E6E9EA; --muted: #98A1A8;
+  --line: #2C3238; --accent: #E2A048; --accent-soft: #3A2D1D; --ok: #72C595; --code: #1E2327;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); -webkit-text-size-adjust: 100%; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 72px;
+  display: flex; flex-direction: column; gap: 44px;
+}
+h1, h2, h3, p, ul, ol, figure, pre { margin: 0; }
+.intro { display: flex; flex-direction: column; gap: 10px; max-width: 800px; }
+.eyebrow { font: 500 12px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 700 clamp(28px, 7vw, 44px)/1.08 var(--display); letter-spacing: -0.01em; text-wrap: balance; }
+.lead { color: var(--muted); max-width: 66ch; }
+h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
+.sec { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+.sec-text { color: var(--muted); font-size: 15px; }
+
+/* stage */
+.play { display: flex; flex-direction: column; gap: 14px; }
+.stage-wrap { min-width: 0; background: var(--bg); }
+@media (max-width: 899px) and (min-height: 600px) {
+  .stage-wrap { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; padding-block: 8px; margin-block: -8px; box-shadow: -24px 0 0 0 var(--bg), 24px 0 0 0 var(--bg); }
+}
+.stage { position: relative; background: var(--stage); border-radius: 12px; overflow: hidden; }
+#stage { display: block; width: 100%; height: auto; image-rendering: pixelated; touch-action: manipulation; cursor: pointer; }
+#stage.over { cursor: pointer; }
+.hud { position: absolute; left: 10px; top: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
+.chip { font: 500 12px/1 var(--mono); padding: 6px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+.chip.near { border-color: var(--accent); }
+.tip { position: absolute; transform: translate(-50%, calc(-100% - 12px)); pointer-events: none; font: 500 13px/1.25 var(--body); padding: 6px 9px; border-radius: 8px; background: var(--ink); color: var(--bg); white-space: nowrap; }
+.tip small { display: block; font-size: 11.5px; opacity: .75; }
+.toast { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px); font: 500 14px/1.3 var(--body); padding: 9px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); text-align: center; pointer-events: none; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; font: 500 14px/1.3 var(--mono); color: var(--muted); }
+.glnote { position: absolute; inset: auto 12px 12px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+
+.under { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
+@media (min-width: 900px) { .under { grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 32px; align-items: start; } }
+.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ctx { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ctx-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ctx-k { font: 500 11px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ctx-name { font: 600 17px/1.25 var(--body); }
+.ctx-note { font-size: 14px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  font: 500 14px/1 var(--body); padding: 11px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.btn.main { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] .btn.main { color: #1a1206; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.main { color: #1a1206; } }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible, .item:focus-visible, .seg button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.group-k { font: 500 11px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.view { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: 500 14px/1 var(--body); padding: 10px 12px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.hint { font-size: 13px; color: var(--muted); }
+.feat { list-style: none; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--line); }
+@media (min-width: 900px) { .feat { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; } }
+.feat li { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.feat .ft { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.feat b { font-weight: 600; font-size: 15px; }
+.feat span { font-size: 13.5px; color: var(--muted); line-height: 1.4; }
+.feat .btn { flex: none; padding: 9px 12px; font-size: 13.5px; }
+</style>
+
+<main class="wrap">
+  <header class="intro">
+    <p class="eyebrow">Проверка движка · все возможности</p>
+    <h1>Испытательный полигон</h1>
+    <p class="lead">Своя локация на отвязанном движке, без единой строчки кода дворов. Общежитие, подстанция с фонарём, контейнеры, вышка у огневого рубежа, ряд мишеней, будка КПП и два шагающих костюма на бетонной площадке. За воротами — опушка с берёзами и листопадом. Нажимай на землю, чтобы идти, на предметы — чтобы с ними что-то сделать. Внизу список всего, что умеет движок, и кнопка, которая это покажет.</p>
+  </header>
+
+  <section class="play" aria-label="Полигон">
+    <div class="stage-wrap">
+      <div class="stage" id="stageBox">
+        <canvas id="stage" aria-label="Полигон в изометрии. Нажми на землю, чтобы герой туда пошёл, или на предмет, чтобы он с ним что-то сделал."></canvas>
+        <div class="hud" aria-live="polite">
+          <span class="chip" id="hudClock" title="Время">14:00</span>
+          <span class="chip" id="hudState">стоит</span>
+          <span class="chip near" id="hudNear" hidden></span>
+        </div>
+        <p class="tip" id="tip" hidden></p>
+        <p class="toast" id="toast" role="status" hidden></p>
+        <p class="loading" id="loading">Собираю полигон…</p>
+        <p class="glnote" id="glNote" hidden>Этот браузер не умеет WebGL2, поэтому полигон не нарисовать. Открой страницу в свежем Chrome, Safari или Firefox.</p>
+      </div>
+    </div>
+
+    <div class="under">
+      <div class="panel">
+        <div class="ctx" id="ctx" aria-live="polite">
+          <div class="ctx-head"><span class="ctx-k" id="ctxK">Рядом</span><span class="ctx-name" id="ctxName">—</span></div>
+          <p class="ctx-note" id="ctxNote">Подойди к чему-нибудь или нажми на предмет.</p>
+          <div class="actions" id="ctxActs"></div>
+        </div>
+        <div class="actions" aria-label="Действия героя">
+          <button class="btn" id="aShoot" type="button">Стрелять</button>
+          <button class="btn" id="aThrow" type="button">Граната</button>
+          <button class="btn" id="aSmoke" type="button" aria-pressed="false">Закурить</button>
+          <button class="btn" id="aDrink" type="button" aria-pressed="false">Попить</button>
+          <button class="btn" id="aPunch" type="button">Удар</button>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="group-k">Снаряжение</p>
+        <div class="actions" id="gear" aria-label="Снаряжение"></div>
+        <div class="view">
+          <div class="seg" role="group" aria-label="Время суток" id="todSeg"></div>
+          <label class="check" for="clockChk"><input type="checkbox" id="clockChk"> Время идёт</label>
+        </div>
+        <div class="view">
+          <div class="seg" role="group" aria-label="Локация" id="locSeg"></div>
+          <div class="seg" role="group" aria-label="Камера">
+            <button type="button" id="vNear" aria-pressed="false">Ближе</button>
+            <button type="button" id="vFar" aria-pressed="true">Дальше</button>
+            <button type="button" id="vAll" aria-pressed="false">Всё</button>
+          </div>
+          <div class="checks">
+            <label class="check" for="gridChk"><input type="checkbox" id="gridChk"> Сетка</label>
+            <label class="check" for="rawChk"><input type="checkbox" id="rawChk"> 3D без пикселей</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="h-feat">
+    <div class="sec-head">
+      <h2 id="h-feat">Что здесь проверяется</h2>
+      <p class="sec-text">Всё, что есть в движке сейчас. Кнопка ведёт героя к нужному месту или переводит часы — дальше смотри на сцену.</p>
+    </div>
+    <ul class="feat" id="features"></ul>
+  </section>
+</main>
+
+<!--PHOTO-->
+<!--SCRIPT-->
