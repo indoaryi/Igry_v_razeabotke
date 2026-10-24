@@ -1,0 +1,6 @@
+{
+  "far": {"at": [8, 8.6], "view": "far"},
+  "near": {"at": [8, 8.6], "view": "near"},
+  "walk": {"at": [8, 8.6], "view": "near", "act": "walkTo(4, 12)", "steps": [1.2]},
+  "night": {"at": [8, 8.6], "view": "far", "js": "daySet(23.5)"}
+}
