@@ -65,11 +65,13 @@
     const set3 = (i, P, q) => { d[i] = P[q * 3]; d[i + 1] = P[q * 3 + 1]; d[i + 2] = P[q * 3 + 2]; d[i + 3] = 255; };
     // one 32-bit hash per pixel, sliced into several random numbers
     const hi = (x, y, s) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + s) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; };
-    const half = HH * GH, FNm = FN - 1, FNZm = FNZ - 1;
+    const FNm = FN - 1, FNZm = FNZ - 1;
     for (let py = 0; py < G.h; py++) {
       const sy = py + G.y0 + 0.5;
-      const wRow = 2 * Math.min(sy, 2 * half - sy) + 28;
-      const p0 = Math.max(0, Math.floor(-wRow - G.x0)), p1 = Math.min(G.w, Math.ceil(wRow - G.x0));
+      // the row crosses the map where x + z = s; x runs from max(0, s − GH) to min(GW, s), and 28 px more on each side for the soil under the edge
+      // (on a square map this is the same as ±(2·min(sy, 2·HH·GH − sy) + 28); a map wider than deep needs the general form)
+      const s = sy / HH, lo = HW * (2 * Math.max(0, s - GH) - s) - 28, hi_ = HW * (2 * Math.min(GW, s) - s) + 28;
+      const p0 = Math.max(0, Math.floor(lo - G.x0)), p1 = Math.min(G.w, Math.ceil(hi_ - G.x0));
       for (let px = p0; px < p1; px++) {
         const sx = px + G.x0 + 0.5, i = (py * G.w + px) * 4;
         const x = (sx / HW + sy / HH) / 2, z = (sy / HH - sx / HW) / 2;

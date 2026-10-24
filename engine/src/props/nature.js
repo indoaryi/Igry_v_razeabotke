@@ -227,6 +227,7 @@
     const [tx, tz, TL] = o.tile, k = new Kit(9000 + tx * 31 + tz), R = k.R, step = 0.31;
     const L = o.look || {}, MM = Object.assign({}, MEADOW, L.mats || {});
     for (let z = tz + step / 2; z < tz + TL; z += step) for (let x = tx + step / 2; x < tx + TL; x += step) {
+      if (x >= GW || z >= GH) continue;     // the last tiles of a map whose sides are not a multiple of 6 m reach past its edge
       const px = x + (R() - 0.5) * step * 1.1, pz = z + (R() - 0.5) * step * 1.1;
       const t = groundType(px, pz);
       if (t !== '.' && t !== ',') continue;
