@@ -1,22 +1,31 @@
-  // ================= instances: each map entry built, baked into world space and given an id =================
+  // ================= the things in a location: each map entry built from the catalog, baked into world space, given an id =================
+  // CATALOG says what can stand on a map: CATALOG[type] = { build(def) → { kit, blocks, spots, seats, heights, lamp, … }, name, size, note,
+  //   and flags the engine reads: xray (big enough to hide the hero: he shows through it as a silhouette), hug (weeds grow thick along it),
+  //   litter (how many butts and caps lie around it), bounds: false (left out of the overview's frame), leafy(def) (drops leaves),
+  //   midges (midges swarm over it at dusk), near(inst, x, z) (distance to its edge, when that is not its blocks) }.
+  // The engine's library (engine/src/props) and the game fill it.
+  // USE says what the player can do with a type: USE[type] = { name(inst), note(inst), acts(inst) → [{ label, run, off }], active(def) }.
+  // Only types with a USE answer taps; an instance may carry its own .use (the walking machines do).
+  const CATALOG = {};
+  const USE = {};
   // all of these belong to the current location; locations.js swaps them when the hero walks to another one
   let INST = [];
   let HEIGHTS = [];      // walkable raised areas (porches, steps)
   let nextId = 2;        // object ids are written into an 8-bit picking buffer, so each location numbers its own from 2
-  const ACTIVE = new Set(['swing', 'pullbar', 'slide', 'platform', 'hoop', 'towers', 'garage', 'substation', 'grass', 'bench', 'entrance', 'metalgarage', 'car']);
   function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
   function instantiate(def, parentM) {
     const T = CATALOG[def.type];
+    if (!T) throw new Error('no such type in the catalog: ' + def.type);
     const built = T.build(def);
     const rot = (def.rot || 0) * Math.PI / 180;
     const M0 = parentM ? M(parentM, tr(def.local[0], 0, def.local[1])) : M(tr(def.at[0], 0, def.at[1]), ry(rot));
     const yaw0 = Math.atan2(M0[8], M0[10]);
     const { chunks, bb } = bake(built.kit, M0);
-    const active = ACTIVE.has(def.type) && !(def.type === 'swing' && def.plain);
+    const U = USE[def.type], active = !!U && (!U.active || U.active(def));
     const inst = {
       id: def.type === 'meadow' ? 0 : nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
       sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: {},
-      center: [(bb[0] + bb[3]) / 2, (bb[2] + bb[5]) / 2]
+      center: [(bb[0] + bb[3]) / 2, (bb[2] + bb[5]) / 2], leafy: !!(T.leafy && T.leafy(def))
     };
     inst.blocks = (built.blocks || []).map((b) => b.rect ? { poly: [[b.rect[0], b.rect[1]], [b.rect[2], b.rect[1]], [b.rect[2], b.rect[3]], [b.rect[0], b.rect[3]]].map((p) => toWorld2(M0, p)) } : { c: toWorld2(M0, b.c), r: b.r });
     inst.spots = (built.spots || []).map((s) => Object.assign({}, s, { w: toWorld2(M0, s.at), wyaw: wrapA(yaw0 + s.yaw) }));
@@ -35,15 +44,15 @@
   }
   const byType = (t) => INST.filter((i) => i.type === t);
   let instById = new Map();
-  // builds every object of the current location (MAP) from scratch
+  // builds every object of the current location (MAP) from scratch; then the engine's modules add theirs (LOC_HOOKS.objects:
+  // the walking machines that stand here, the meadow over the lawns)
   function buildWorld() {
     INST = []; HEIGHTS = []; nextId = 2; instById = new Map();
     PATH_SEGS = [];
-    for (const pl of MAP.paths) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
-    for (const d of MAP.objects) instantiate(d);
+    for (const pl of MAP.paths || []) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
+    for (const d of MAP.objects || []) instantiate(d);
     if (MAP.afterBuild) MAP.afterBuild();
-    spawnMachines();
-    buildMeadowTiles();
+    for (const f of LOC_HOOKS.objects) f(MAP);
     for (const i of INST) if (i.id) instById.set(i.id, i);
   }
   // distance from a point to the nearest trodden path of the map
@@ -56,29 +65,15 @@
     }
     return Math.sqrt(best);
   }
-  function buildMeadowTiles() {
-    const pathD = pathDist;
-    const solid = INST.filter((i) => i.blocks && i.blocks.length);
-    const blocked = (x, z) => {
-      for (const i of solid) for (const b of i.blocks) if (b.poly ? pointInPoly(x, z, b.poly) : Math.hypot(x - b.c[0], z - b.c[1]) < b.r + 0.05) return true;
-      return false;
-    };
-    // how close a point is to something weeds like to hug: walls and big objects, the asphalt and concrete edges
-    const hug = INST.filter((i) => ['block5', 'substation', 'garage', 'towers', 'entrance', 'pole', 'tires'].includes(i.type));
-    const segDist = (x, z, a, b) => { const ex = b[0] - a[0], ez = b[1] - a[1], u = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez || 1), 0, 1); return Math.hypot(x - a[0] - ex * u, z - a[1] - ez * u); };
-    const edgeDist = (x, z) => {
-      let d = 9;
-      for (const i of hug) for (const b of i.blocks) {
-        if (b.poly) for (let j = 0; j < b.poly.length; j++) d = Math.min(d, segDist(x, z, b.poly[j], b.poly[(j + 1) % b.poly.length]));
-        else d = Math.min(d, Math.hypot(x - b.c[0], z - b.c[1]) - b.r);
-      }
-      for (const [dx, dz] of [[-0.45, 0], [0, -0.45], [0.45, 0], [0, 0.45]]) { const t = groundType(x + dx, z + dz); if (t === '#' || t === '_') d = Math.min(d, 0.3); }
-      return d;
-    };
-    const trees = INST.filter((i) => i.type === 'tree');
-    const shadeOf = (x, z) => { let q = 0; for (const t of trees) q = Math.max(q, 1 - ((x - t.def.at[0]) ** 2 + (z - t.def.at[1]) ** 2) / 7.5); return q; };
-    const leaves = (MAP.style && MAP.style.leaves) || (() => 0);
-    for (let tz = 0; tz < MAP.size[1]; tz += 6) for (let tx = 0; tx < MAP.size[0]; tx += 6) instantiate({ type: 'meadow', at: [0, 0], rot: 0, tile: [tx, tz, 6], pathD, blocked, shadeOf, edgeDist, leaves, look: MAP.meadow || {} });
-  }
   const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
-
+  // a point in an instance's own frame → world
+  const localPt = (inst, p) => xf(inst.M0, p);
+  // what the player sees and can do with a thing
+  const useOf = (inst) => inst.use || USE[inst.type] || null;
+  function nameOf(inst) {
+    const U = useOf(inst);
+    if (U && U.name) return typeof U.name === 'function' ? U.name(inst) : U.name;
+    return CATALOG[inst.type] ? CATALOG[inst.type].name : inst.type;
+  }
+  function noteOf(inst) { const U = useOf(inst); return U && U.note ? (typeof U.note === 'function' ? U.note(inst) : U.note) : ''; }
+  function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }

@@ -2,10 +2,34 @@
   function initDyn() {
     for (const s of byType('swing')) if (s.def.seat) Object.assign(s.dyn, { theta: 0, amp: 0.04, ph: 0, occupied: false });
     const g = byType('garage')[0];
-    if (g && g.built.canSlots) g.dyn.cans = g.built.canSlots.map((p, i) => ({ slot: p, pos: localPt(g, p), state: 'up', v: [0, 0, 0], rot: 0, spin: 0, axis: [1, 0, 0], col: i }));
+    // the cans are targets for the rifle (see fireShot): they stand 'up' until a hit knocks them off the roof
+    if (g && g.built.canSlots) g.dyn.cans = g.built.canSlots.map((p, i) => { const c = { slot: p, pos: localPt(g, p), state: 'up', v: [0, 0, 0], rot: 0, spin: 0, axis: [1, 0, 0], col: i }; c.onHit = (away, hx, hy) => canHit(g, c, away, hx, hy); return c; });
     const h = byType('hoop')[0];
     if (h) { const rest = localPt(h, [0.34, 0.12, 0.3]); h.dyn.ball = { state: 'rest', pos: rest, home: rest, v: [0, 0, 0], rot: 0, score: 0, tries: 0 }; }
     for (const c of byType('car')) c.dyn.alarm = 0;
+  }
+  LOC_HOOKS.build.push(initDyn);
+  hook(GAME.update, (dt) => updateDyn(dt), 20);
+  // a hit can flies off the roof; the hero turns to the next one standing
+  function canHit(g, c, away, hx, hy) {
+    c.state = 'fly'; c.v = [away[0] * (1.6 + Math.random()) + (Math.random() - 0.5), 2.2 + Math.random() * 1.4, away[2] * (1.6 + Math.random()) + (Math.random() - 0.5)];
+    c.spin = 10 + Math.random() * 8; c.axis = nrm([away[2], 0.2, -away[0]]);
+    fx.push({ k: 'clank', x: hx, y: hy, life: 0.12 });
+    const up = g.dyn.cans.filter((q) => q.state === 'up');
+    if (up.length) { up.sort((a, b) => Math.hypot(a.pos[0] - hero.x, a.pos[2] - hero.z) - Math.hypot(b.pos[0] - hero.x, b.pos[2] - hero.z)); hero.aimAt = up[0]; }
+    else { hero.aimAt = null; setTimeout(() => toast('Все банки сбиты! Расставить их можно у сарая.'), 500); }
+  }
+  // throwing the basketball: the order for the hero's queue, with what happens to the ball when he grabs, lets go or is called away
+  function ballThrow(inst) {
+    return {
+      type: 'throw', inst,
+      grab: () => { inst.dyn.ball.state = 'held'; },
+      release: (rig) => releaseBall(rig),
+      drop: () => {     // a throw cut short: the ball drops at his feet instead of vanishing
+        const b = inst.dyn.ball;
+        b.pos = [hero.x + Math.sin(hero.yaw) * 0.3, 0.12, hero.z + Math.cos(hero.yaw) * 0.3]; b.v = [Math.sin(hero.yaw) * 0.6, 0, Math.cos(hero.yaw) * 0.6]; b.state = 'roll';
+      }
+    };
   }
   function resetCans(g) { for (const c of g.dyn.cans) { c.state = 'up'; c.pos = localPt(g, c.slot); c.rot = 0; c.v = [0, 0, 0]; } }
   function updateDyn(dt) {

@@ -3,8 +3,9 @@
   const CHAIN_MAT = Object.assign(flat('#45474b', 1), { fl: 1 });
   const CAN_MATS = ['#c8352c', '#2f7d3c', '#d1b04a', '#8a96a2'].map((h) => mat(h, { pat: 47, b: '#e7e4dc', p: [0.02, 0.035, 0.085, 0.1], noise: 0.03, spec: 0.8, gloss: 10 }));
   const UNIT_LINE = () => getMesh('unitLine', () => lineMesh([[[0, 0, 0], [0, -1, 0]]]));
-  function dynItems() {
-    const items = [];
+  // the yard's moving parts in the frame: swing seats, cans, the ball, pigeons, blinking indicators (GAME.items);
+  // the walking machines add themselves after these (see machine.js)
+  hook(GAME.items, (items) => {
     for (const s of byType('swing')) if (s.def.seat) {
       const th = s.dyn.thetaD ?? s.dyn.theta;
       const F = M(s.M0, tr(0, SW.BAR, 0), rx(th));
@@ -20,9 +21,23 @@
     if (b && b.state !== 'held') items.push({ mesh: BALL_MESH(), model: M(tr(...b.pos), rx(b.rot)), mat: BALL_MAT, id: h.id, flags: 2, shadow: true });
     for (const it of pigeonItems()) items.push(it);
     for (const it of carLightItems()) items.push(it);
-    for (const it of machineItemsAll()) items.push(it);
-    return items;
-  }
+  });
+  // the stage is redrawn when any of them moves (GAME.key) …
+  hook(GAME.key, () => {
+    const g = byType('garage')[0], h = byType('hoop')[0];
+    let k = '';
+    if (g && g.dyn.cans) k += g.dyn.cans.map((c) => c.state[0] + c.pos.map((x) => x.toFixed(2)).join(',') + c.rot.toFixed(1)).join(';');
+    if (h && h.dyn.ball) k += '|' + h.dyn.ball.state + h.dyn.ball.pos.map((x) => x.toFixed(2)).join(',');
+    for (const c of byType('car')) if (c.dyn.alarm > 0) k += '|a' + c.id + (Math.floor(c.dyn.alarm * 3) & 1);
+    return k;
+  });
+  // … the swings are frozen twelve times a second like everything else (GAME.tick) …
+  hook(GAME.tick, () => { for (const s of byType('swing')) if (s.def.seat) s.dyn.thetaD = s.dyn.theta; });
+  // … and while the ball is in the hero's hands or in the air, the camera leans towards the hoop (GAME.focus)
+  hook(GAME.focus, (hs) => {
+    const hp = byType('hoop')[0], ball = hp && hp.dyn.ball;
+    return ball && (hero.thr.on || ball.state === 'fly') ? lerpV([...hs, 0], [...wpx(localPt(hp, hp.built.rim)), 0], 0.5) : null;
+  }, 10);
   function rotAxis(a, t) {
     const [x, y, z] = nrm(a), c = Math.cos(t), s = Math.sin(t), C = 1 - c, m = I4();
     m[0] = c + x * x * C; m[1] = y * x * C + z * s; m[2] = z * x * C - y * s;

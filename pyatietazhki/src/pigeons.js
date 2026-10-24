@@ -12,6 +12,11 @@
       PIGEONS.push({ p: [x, 0, z], yaw: pigR() * 6.28, state: 'walk', t: 0, tgt: pigTarget(), timer: 1 + pigR() * 2, flap: 0, from: null, to: null, dur: 1, col: i % 2, perch: null });
     }
   }
+  // each location keeps its own flock: built with the location, kept and given back when the hero comes and goes
+  LOC_HOOKS.build.push(initPigeons);
+  LOC_HOOKS.save.push((rt) => Object.assign(rt, { PIGEONS, PIG_HOME, PERCHES }));
+  LOC_HOOKS.restore.push((rt) => { ({ PIGEONS, PIG_HOME, PERCHES } = rt); });
+  hook(GAME.update, (dt) => updatePigeons(dt), 30);
   function takeOff(b, to, dur) { b.state = 'fly'; b.from = b.p.slice(); b.to = to; b.t = 0; b.dur = dur; b.yaw = Math.atan2(to[0] - b.p[0], to[2] - b.p[2]); }
   function updatePigeons(dt) {
     const dark = DAYP.night > 0.55;     // after dusk they go up to the roofs and sleep till morning

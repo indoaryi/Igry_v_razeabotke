@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Снимки сцены в безголовом браузере — чтобы видеть, что получилось, и сравнивать «до/после».
-//   node tools/shoot.mjs <папка для снимков> [--page=pyatietazhki/index.html] [--w=1280 --h=900 --dpr=1] [сценарии…]
-// Сценарии: far near all smoke trees playground building shed (по умолчанию — все).
+//   node tools/shoot.mjs <папка для снимков> [--game=pyatietazhki] [--w=1280 --h=900 --dpr=1] [сценарии…] [--probe] [--full] [--js="код"]
+// Сценарии берутся из <игра>/shots.json (по умолчанию — все):
+//   { "имя": { "loc": "локация", "at": [x, z], "view": "near|far|all", "js": "код до снимка", "act": "код после подготовки",
+//              "steps": [секунды до каждого снимка], "checks": ["id галочки, которую включить"] } }
 // Нужен Playwright с Chromium (WebGL2 через SwiftShader).
 import fs from 'fs';
 import path from 'path';
@@ -18,49 +20,12 @@ const args = process.argv.slice(2);
 const opt = Object.fromEntries(args.filter((a) => a.startsWith('--')).map((a) => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
 const pos = args.filter((a) => !a.startsWith('--'));
 const outDir = path.resolve(pos[0] || 'shots');
-const pagePath = opt.page || 'pyatietazhki/index.html';
+const pagePath = opt.page || (opt.game || 'pyatietazhki') + '/index.html';
 const W = +(opt.w || 1280), H = +(opt.h || 900), DPR = +(opt.dpr || 1);
 const prefix = opt.prefix || '';
 
-// hero position, view and what to do before the shot
-const SCEN = {
-  far: { at: [14.2, 20.4], view: 'far' },
-  near: { at: [14.2, 20.4], view: 'near' },
-  all: { at: [14.2, 20.4], view: 'all' },
-  smoke: { at: [14.2, 20.4], view: 'near', run: 'smoke', steps: [3.0, 0.6, 0.6] },
-  smokefar: { at: [14.2, 20.4], view: 'far', run: 'smoke', steps: [3.5] },
-  trees: { at: [24.6, 12.5], view: 'near' },
-  playground: { at: [15.6, 14.2], view: 'near' },
-  building: { at: [5.2, 16.0], view: 'near' },
-  shed: { at: [8.4, 14.0], view: 'near' },
-  far2: { at: [20.0, 8.0], view: 'far' },
-  shoot: { at: [6.8, 16.2], view: 'near', run: 'shoot', steps: [1.25] },
-  facade: { at: [20.5, 3.4], view: 'near' },
-  walk: { at: [12.0, 20.2], view: 'near', run: 'walk', steps: [0.9] },
-  raw: { at: [14.2, 20.4], view: 'near', run: 'raw' },
-  y2far: { loc: 'yard2', at: [27.6, 7.2], view: 'far' },
-  y2all: { loc: 'yard2', at: [27.6, 7.2], view: 'all' },
-  y2cars: { loc: 'yard2', at: [10.2, 15.2], view: 'near' },
-  y2carsfar: { loc: 'yard2', at: [11.5, 16.5], view: 'far' },
-  y2garage: { loc: 'yard2', at: [18.6, 15.4], view: 'near' },
-  y2birch: { loc: 'yard2', at: [27.9, 22.5], view: 'near' },
-  y2suit: { loc: 'yard2', at: [25.6, 10.4], view: 'near' },
-  y2house: { loc: 'yard2', at: [9.8, 9.5], view: 'far' },
-  y2suit32: { loc: 'yard2', at: [16.2, 10.9], view: 'near' },
-  // the time of day: the same places at different hours
-  morningfar: { at: [14.2, 20.4], view: 'far', js: 'daySet(8)' },
-  eveningfar: { at: [14.2, 20.4], view: 'far', js: 'daySet(17.75)' },
-  nightporch: { at: [6.4, 15.2], view: 'far', js: 'daySet(23.5)' },
-  nightpole: { at: [12.6, 6.4], view: 'far', js: 'daySet(22)' },
-  y2morning: { loc: 'yard2', at: [19.4, 10.4], view: 'far', js: 'daySet(8)' },
-  y2evening: { loc: 'yard2', at: [12.4, 13.6], view: 'far', js: 'daySet(17.75)' },
-  y2night: { loc: 'yard2', at: [22.6, 8.4], view: 'far', js: 'daySet(23.5)' },
-  y2suits: { loc: 'yard2', at: [19.4, 10.4], view: 'far' },
-  // the suit: the hero inside, already awake, walking across the lawn
-  y2walk: { loc: 'yard2', at: [25.6, 10.4], view: 'near', steps: [2.4], js: "const m = MACHINES[0], inst = m.inst; hero.vehicle = inst; hero.inside = true; setMode(m, 'ready'); m.crouch = 0; m.lean = m.K.D.leanStand; m.feet = [0, 1].map((i) => footPose(m, i, 0)); m.engine = 1; m.glow = 1; m.shutter = 1; m.lamps = 1; NAV.big.skip = inst; buildNav(NAV.big); walkTo(21.6, 14.6);" },
-  grid: { at: [14.2, 20.4], view: 'far', run: 'grid' },
-  facade2: { at: [4.6, 12.6], view: 'near' }
-};
+const game = opt.game || 'pyatietazhki';
+const SCEN = JSON.parse(fs.readFileSync(path.join(root, game, 'shots.json'), 'utf8'));
 const names = pos.slice(1).length ? pos.slice(1) : Object.keys(SCEN);
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
@@ -82,14 +47,14 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + 
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 const t0 = Date.now();
 await page.goto(`http://127.0.0.1:${port}/${pagePath}`);
-try { await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 }); }
+try { await page.waitForFunction(() => window.__game && window.__game.bootMs >= 0, null, { timeout: 240000, polling: 250 }); }
 catch (e) { console.log('the page did not start:\n' + errors.join('\n')); await browser.close(); server.close(); process.exit(1); }
-const boot = await page.evaluate(() => { window.__yard.noIntro = true; return { bootMs: window.__yard.bootMs, times: window.__yard.times }; });
+const boot = await page.evaluate(() => { window.__game.noIntro = true; return { bootMs: window.__game.bootMs, times: window.__game.times }; });
 console.log(`boot ${boot.bootMs} ms`, JSON.stringify(boot.times), `(page ready in ${Date.now() - t0} ms)`);
 if (opt.probe) {
   const stats = await page.evaluate(() => {
     const by = {};
-    for (const i of window.__yard.INST) {
+    for (const i of window.__game.INST) {
       const b = by[i.type] || (by[i.type] = { n: 0, tris: 0, draws: 0 });
       b.n++; for (const c of i.chunks) { b.draws++; b.tris += c.lines ? 0 : c.mesh.n / 3; }
     }
@@ -105,8 +70,8 @@ for (const name of names) {
   const s = SCEN[name];
   if (!s) { console.log('unknown scenario', name); continue; }
   await page.evaluate(({ s, js }) => {
-    const Y = window.__yard;
-    const want = s.loc || 'yard1';
+    const Y = window.__game;
+    const want = s.loc || Object.keys(Y.LOCATIONS)[0];
     if (Y.MAP.id !== want) Y.enterLocation(want, 'start');
     Y.standUp && Y.standUp();
     Y.hero.act = null; Y.hero.path.length = 0; Y.hero.queue.length = 0; Y.hero.target = null;
@@ -118,17 +83,14 @@ for (const name of names) {
   }, { s, js: opt.js || s.js || '' });
   await frames(3);
   const steps = s.steps || [0.6];
-  if (s.run === 'smoke') await page.evaluate(() => window.__yard.startSmoke());
-  if (s.run === 'raw' || s.run === 'grid') await page.evaluate((id) => { const c = document.getElementById(id); if (!c.checked) c.click(); }, s.run === 'raw' ? 'rawChk' : 'gridChk');
-  if (s.run !== 'raw' && s.run !== 'grid') await page.evaluate(() => { for (const id of ['rawChk', 'gridChk']) { const c = document.getElementById(id); if (c.checked) c.click(); } });
-  if (s.run === 'walk') await page.evaluate(() => window.__yard.walkTo(16.5, 20.8));
-  if (s.run === 'shoot') await page.evaluate(() => { const Y = window.__yard; Y.setGear && Y.setGear('hands', 'rifle'); Y.doShoot(); });
+  await page.evaluate((on) => { for (const id of ['rawChk', 'gridChk']) { const c = document.getElementById(id); if (c && c.checked !== on.includes(id)) c.click(); } }, s.checks || []);
+  if (s.act) await page.evaluate((act) => window.__game.ev(act), s.act);
   let i = 0;
   for (const dt of steps) {
     const t1 = Date.now();
-    await page.evaluate((dt) => window.__yard.step(dt), dt);
+    await page.evaluate((dt) => window.__game.step(dt), dt);
     await frames(3);
-    const dbg = await page.evaluate(() => window.__yard.dbg());
+    const dbg = await page.evaluate(() => window.__game.dbg());
     const file = path.join(outDir, `${prefix}${name}${steps.length > 1 ? '-' + (++i) : ''}.png`);
     await page.evaluate(() => document.getElementById('stageBox').scrollIntoView({ block: 'start' }));
     const box = await page.locator('#stage').boundingBox();
@@ -137,7 +99,7 @@ for (const name of names) {
   }
 }
 if (opt.full) {
-  await page.evaluate(() => window.__yard.renderCards && window.__yard.renderCards());
+  await page.evaluate(() => window.__game.renderCards && window.__game.renderCards());
   for (const id of ['cards', 'found', 'plan']) {
     const el = page.locator('#' + id);
     await el.scrollIntoViewIfNeeded({ timeout: 600000 });
@@ -147,7 +109,7 @@ if (opt.full) {
 }
 const perf = await page.evaluate(async () => {
   // average time of a full stage redraw, in ms
-  const Y = window.__yard; const n = 6; const t0 = performance.now();
+  const Y = window.__game; const n = 6; const t0 = performance.now();
   for (let i = 0; i < n; i++) { Y.step(1 / 12); await new Promise((r) => requestAnimationFrame(() => r())); }
   return (performance.now() - t0) / n;
 });

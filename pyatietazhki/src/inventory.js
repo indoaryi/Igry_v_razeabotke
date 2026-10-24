@@ -7,9 +7,7 @@
     { id: 'cigs', name: 'Сигареты «Альде­бараан»', note: 'Спокойствие +2', use: true, count: 20 },
     { id: 'atom', name: 'Энергетик «ATOM»', note: 'Бодрость +5', use: true, count: 3 }
   ];
-  const equip = { body: 'jacket', head: null, hands: 'rifle' };
+  Object.assign(equip, { body: 'jacket', head: null, hands: 'rifle' });     // what he starts in (equip, HERO, armored() are the engine's)
   const itemById = (id) => ITEMS.find((i) => i.id === id);
   const isOn = (id) => equip.body === id || equip.head === id || equip.hands === id;
-  let HERO = null, gearVer = 0;
-  const armored = () => equip.body === 'armor';
 

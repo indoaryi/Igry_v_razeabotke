@@ -75,7 +75,8 @@
       const up = xfDir(B.chest, [0, 1, 0.1]), sipAx = xfDir(B.chest, [0.05, -0.75, -0.65]);
       out.push({ mesh: PROPS.can.mesh, model: M(tr(...hand), alongPlusY(lerpV(up, sipAx, dr.tilt)), tr(0, -0.06, 0)), mat: PROPS.can.mat, can: true, id: 1 });
     }
-    if (th && th.held) out.push({ mesh: BALL_MESH(), model: M(tr(...xf(B.chest, th.ball)), rx(hero.t * 2)), mat: BALL_MAT, id: 1 });
+    // what he throws: the game's own prop (hero.thr.prop = { mesh(), mat }) or the basketball
+    if (th && th.held) { const pr = hero.thr.prop; out.push({ mesh: pr ? pr.mesh() : BALL_MESH(), model: M(tr(...xf(B.chest, th.ball)), rx(hero.t * 2)), mat: pr ? pr.mat : BALL_MAT, id: 1 }); }
     return out;
   }
 

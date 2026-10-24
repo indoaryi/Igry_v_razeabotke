@@ -218,3 +218,8 @@
   const TIP_DIM = mat('#c4471f', { pat: 10, p: [1, 0, 0, 0] });
   const TIP_HOT = mat('#e8742c', { pat: 10, p: [4, 0, 0, 0] });
 
+  // what the hero wears and holds: body 'tank' (default) | 'jacket' | 'armor', head null | 'helmet', hands null | 'rifle'.
+  // The game sets it and rebuilds HERO = buildHero(equip) when it changes (gearVer++ makes the stage redraw).
+  const equip = { body: null, head: null, hands: null };
+  let HERO = null, gearVer = 0;
+  const armored = () => equip.body === 'armor';

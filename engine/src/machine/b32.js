@@ -5,6 +5,16 @@
   // a lattice sensor mast with a four-prong claw on the roof and a whip antenna, canisters, a pump and hoses on the back.
   // Grey hammered steel, rust in the chips. It parks low on both feet, knees forward, leaning back, so the pod faces up.
   // Sizes in metres; +x is the suit's left, +z its front.
+  // ---------- the suit «32»: a big worn number on the shoulder plate, a red-and-white tag on a canister ----------
+  addDecal('s32', 0.4, 0.33, (g, w, h) => {
+    outlinedText(g, '32', 0, -1, 'bold 25px ' + SANS, '#e9e6dc', null, 0);
+    g.fillStyle = '#000'; g.globalCompositeOperation = 'destination-out';
+    g.fillRect(6, 10, 2, 1); g.fillRect(14, 4, 1, 2); g.fillRect(27, 12, 2, 1); g.fillRect(20, 15, 1, 1);     // stencil bridges
+    const R = rng(3232);
+    for (let i = 0; i < 26; i++) g.fillRect(Math.floor(R() * w), Math.floor(R() * h), 1 + (R() < 0.3 ? 1 : 0), 1);      // worn off in specks
+    g.globalCompositeOperation = 'source-over';
+  });
+  addDecal('sTag32', 0.1, 0.14, (g, w, h) => { g.fillStyle = '#e9e6dc'; g.fillRect(0, 0, w, h); g.fillStyle = '#c8352c'; g.fillRect(0, 0, w, 3); g.fillRect(0, h - 3, w, 1); g.fillStyle = '#5a5852'; g.fillRect(1, 5, w - 2, 1); g.fillRect(1, 7, w - 3, 1); });
   {
     const STEEL = '#7b8186', RUSTY = '#7a5946';
     const steel = (o = {}) => mat(o.c || STEEL, { pat: 50, b: o.b || RUSTY, p: [o.hs ?? 0, o.vs ?? 0, o.rv ?? 0, o.wear ?? 0.28], r: [0, o.mud ?? 0.015, 0, 0], noise: o.noise ?? 0.07, grain: 30, spec: o.spec ?? 0.3, gloss: 10 });

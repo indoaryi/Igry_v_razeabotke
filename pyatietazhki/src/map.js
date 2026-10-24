@@ -157,6 +157,3 @@
     dataTypes: ['swing', 'hoop', 'slide', 'platform', 'pullbar', 'garage', 'substation', 'towers', 'bench', 'pole'],
     dataNote: `  { n: 13, type: 'block5', at: [2, 29], rot: 90, len: 20, brick: '#d9d6ce', entr: [1, 4], … },`
   };
-  // the location being played; locations.js switches it
-  let MAP = YARD1;
-  const groundType = (x, z) => { const r = MAP.ground[Math.floor(z)]; return r ? (r[Math.floor(x)] || '.') : '.'; };

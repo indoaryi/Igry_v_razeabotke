@@ -603,6 +603,10 @@ void main(){
   const TOD_U = ['uSunTint', 'uShadeTint', 'uShadowK', 'uSat', 'uNL', 'uLP', 'uLC', 'uLD'];
   const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil', 'uWind', 'uTime', 'uShadowOn', 'uLVP', 'uShadowTex', 'uSun', 'uAmb', 'uPU', 'uPV', 'uLeaf', 'uWin', ...TOD_U]);
   const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid', 'uMapWH', 'uMist', 'uMistCol', 'uRV3', 'uUV3', 'uFV3', 'uDZ', ...TOD_U]);
+  // every sampler gets its own texture unit from the start: left at 0 together, a 2D and a shadow sampler make the first draws fail
+  gl.useProgram(P3.p); gl.uniform1i(P3.u.uDecal, 3); gl.uniform1i(P3.u.uShadowTex, 4); gl.uniform1i(P3.u.uLeaf, 6);
+  gl.useProgram(PP.p); gl.uniform1i(PP.u.uCol, 0); gl.uniform1i(PP.u.uIdT, 1); gl.uniform1i(PP.u.uDep, 2); gl.uniform1i(PP.u.uShadowTex, 4); gl.uniform1i(PP.u.uGroundTex, 5);
+  gl.useProgram(null);
   // the light of the hour for one program (see daytime.js); without it everything looks as at noon (catalog cards, the portrait)
   const TOD_NONE = { sunTint: [1, 1, 1], shadeTint: [1, 1, 1], shadowK: 1, sat: 1, win: [0, 0, 0, 0], nl: 0, LP: new Float32Array(48), LC: new Float32Array(48), LD: new Float32Array(48), mist: 0, mistCol: [0.86, 0.88, 0.9], time: 0 };
   function setTod(u, t) {

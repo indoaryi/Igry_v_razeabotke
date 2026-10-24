@@ -44,3 +44,7 @@
     paper: '#e4ddcf', target: '#b43a2c', cable: '#18181a'
   };
 
+  // painted metal with rust patches and chips (o: rustCol, rf — patches per metre, rt — how rare, spec)
+  const paint = (hex, o = {}) => mat(hex, { pat: 38, b: o.rustCol || '#7c4c33', p: [o.rf || 6, o.rt ?? 0.9, 0, 0], noise: 0.05, grain: 60, spec: o.spec ?? 0.35, gloss: 14 });
+  // one flat tone of the palette; tone 4 glows (lamps, lenses)
+  const flat = (hex, idx) => mat(hex, { pat: 10, p: [idx, 0, 0, 0] });

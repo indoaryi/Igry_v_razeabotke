@@ -13,7 +13,7 @@
   let WORLD_B = { x0: -2130, x1: 2130, y0: -1140, y1: HH * (GW + GH) + 20 };
   function fitWorldBounds() {
     let x0 = -HW * GH, x1 = HW * GW, y0 = 0, y1 = HH * (GW + GH);
-    for (const i of INST) if (i.chunks.length && i.type !== 'meadow' && i.type !== 'wires') { x0 = Math.min(x0, i.sr[0]); x1 = Math.max(x1, i.sr[2]); y0 = Math.min(y0, i.sr[1]); }
+    for (const i of INST) if (i.chunks.length && !(i.T && i.T.bounds === false)) { x0 = Math.min(x0, i.sr[0]); x1 = Math.max(x1, i.sr[2]); y0 = Math.min(y0, i.sr[1]); }
     CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: Math.max(y0 - 20, -420), y1: HH * (GW + GH) + 30 };
     WORLD_B = { x0: Math.min(x0 - 30, -HW * GH - 30), x1: Math.max(x1 + 30, HW * GW + 30), y0: y0 - 30, y1: HH * (GW + GH) + 20 };
   }
@@ -36,12 +36,13 @@
   function heroScreen(rig) { return wpx(xf(rig.B.chest, [0, 0, 0])); }
   function itemsFor(inst) {
     if (!inst.items) {
-      const big = XRAY_TYPES.has(inst.type);
+      const big = !!(inst.T && inst.T.xray);
       inst.items = inst.chunks.map((c) => ({ mesh: c.mesh, model: ID4, mat: c.mat, id: inst.id, flags: c.flags, fade: c.fade, shadow: c.shadow, xr: big || !!c.mat.xr }));
     }
     return inst.items;
   }
-  const XRAY_TYPES = new Set(['block5', 'entrance', 'substation', 'garage', 'tree', 'bush']);
+  // moving parts the game and the engine's modules draw this frame (GAME.items)
+  function dynItems() { const out = []; for (const f of GAME.items) f(out); return out; }
   function buildLists(rect, rig) {
     const main = [], shadow = [], occ = [];
     for (const inst of INST) {
@@ -59,21 +60,16 @@
     const tk = Math.floor(t * FPS);
     if (tk === tickNow) return false;
     tickNow = tk;
-    for (const s of byType('swing')) if (s.def.seat) s.dyn.thetaD = s.dyn.theta;
-    machinesSnap();
+    for (const f of GAME.tick) f();
     return true;
   }
   function drawStage(dt, clock) {
     snapshotTick(clock);
     const rig = heroRig(true);
-    const hs = heroHidden() && hero.vehicle ? wpx(machineFocus(hero.vehicle)) : heroScreen(rig);
-    // the camera leans towards what the hero is busy with: the hoop while throwing, the cans while shooting
+    const hs = heroHidden() && hero.vehicle ? wpx(hero.vehicle.ride.focus()) : heroScreen(rig);
+    // the camera leans towards what the hero is busy with (GAME.focus: the target he shoots at, a ball in the air, a hatch…)
     let fs = hs;
-    const hp = byType('hoop')[0], ball = hp && hp.dyn.ball;
-    if (ball && (hero.thr.on || ball.state === 'fly')) fs = lerpV([...hs, 0], [...wpx(localPt(hp, hp.built.rim)), 0], 0.5);
-    else if ((hero.shoot.on || hero.shoot.w > 0) && hero.aimAt) fs = lerpV([...hs, 0], [...wpx(hero.aimAt.pos), 0], 0.45);
-    // and towards the hull of a machine he is climbing into or out of, so its raised hatch stays in view
-    else if (hero.act && hero.act.kind === 'board' && hero.act.inst && hero.act.inst.machine) { const m = hero.act.inst.machine, B = m.bones || machineBones(m, m); fs = lerpV([...hs, 0], [...wpx(xf(B.torso, [0, 1.1, 0.3])), 0], 0.5); }
+    for (const f of GAME.focus) { const p = f(hs); if (p) { fs = p; break; } }
     const over = viewMode === 'all';
     let v, rect, ox, oy, sc;
     if (!over) {
@@ -101,7 +97,7 @@
       lcx.clearRect(0, 0, v.w, v.h);
       // leaves in front of the hero (or of the machine he drives) thin out so he stays in sight
       const veh = heroHidden() && hero.vehicle;
-      const chest = veh ? machineFocus(hero.vehicle) : xf(rig.B.chest, [0, 0.05, 0]);
+      const chest = veh ? hero.vehicle.ride.focus() : xf(rig.B.chest, [0, 0.05, 0]);
       const cs = [hs[0] * v.s / S + v.ax, hs[1] * v.s / S + v.ay];
       const r = (veh ? 112 : 64) * v.s / S;
       const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
@@ -115,14 +111,9 @@
     }
     compose(lastView);
   }
-  function dynKey() {
-    const g = byType('garage')[0], h = byType('hoop')[0];
-    let k = '';
-    if (g && g.dyn.cans) k += g.dyn.cans.map((c) => c.state[0] + c.pos.map((x) => x.toFixed(2)).join(',') + c.rot.toFixed(1)).join(';');
-    if (h && h.dyn.ball) k += '|' + h.dyn.ball.state + h.dyn.ball.pos.map((x) => x.toFixed(2)).join(',');
-    for (const c of byType('car')) if (c.dyn.alarm > 0) k += '|a' + c.id + (Math.floor(c.dyn.alarm * 3) & 1);
-    return k + machineKey();
-  }
+  function dynKey() { let k = ''; for (const f of GAME.key) k += f(); return k; }
+  // while shooting, the camera leans halfway towards the target
+  hook(GAME.focus, (hs) => (hero.shoot.on || hero.shoot.w > 0) && hero.aimAt ? lerpV([...hs, 0], [...wpx(hero.aimAt.pos), 0], 0.45) : null, 20);
   function rememberPoints(rig) {
     const { B, pose } = rig;
     const tipM = (() => { const sm = pose.st.smoke; if (!sm || !sm.lit) return null; const hand = xf(B.rHand, [0, 0, 0]), mouth = xf(B.head, [0, HC[1] - 0.045, HC[2] + 0.1]); const toMouth = nrm(sub(mouth, hand)), rest = nrm(xfDir(B.chest, [-0.45, 0.35, 0.85])); const u = nrm(lerpV(rest, scl(toMouth, -1), smooth(sm.b))); const filter = add(hand, scl(u, -(0.03 + 0.015 * smooth(sm.b)))); return add(filter, scl(u, CIG_LEN + 0.004)); })();

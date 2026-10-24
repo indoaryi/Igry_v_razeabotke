@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Лист «со всех сторон» для шагающей машины: восемь сторон стоя, стоянка на колене, открытый люк, герой для масштаба.
-//   node tools/machine-sheet.mjs <файл.png> [--loc=yard2] [--kind=b32] [--scale=3] [--views=stand,park,open]
+//   node tools/machine-sheet.mjs <файл.png> [--game=pyatietazhki] [--loc=yard2] [--kind=b32] [--scale=3] [--views=stand,park,open]
 // Рисует тем же движком, что и игра, без двора вокруг.
 import fs from 'fs';
 import path from 'path';
@@ -27,11 +27,11 @@ const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-await page.goto(`http://127.0.0.1:${server.address().port}/pyatietazhki/index.html`);
-await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 });
+await page.goto(`http://127.0.0.1:${server.address().port}/${opt.game || 'pyatietazhki'}/index.html`);
+await page.waitForFunction(() => window.__game && window.__game.bootMs >= 0, null, { timeout: 240000, polling: 250 });
 const views = String(opt.views || 'stand,park,open').split(',');
 const url = await page.evaluate(({ loc, k, views, kind }) => {
-  const Y = window.__yard;
+  const Y = window.__game;
   Y.noIntro = true;
   if (Y.MAP.id !== loc) Y.enterLocation(loc, 'start');
   return Y.ev(`(() => {

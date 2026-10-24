@@ -1,28 +1,15 @@
-  // ================= hero state =================
-  const DIR8 = [
-    { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
-    { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
-  ];
-  const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
-  const hero = {
-    x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
-    sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
-    smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
-    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
-    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
-  };
-  const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
-  const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
-  const standHips = (D) => plantY(poseIdle(0, D), D);
-  const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
-  const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
-  const localPt = (inst, p) => xf(inst.M0, p);
+  // ================= what the hero does in the yards: the playground, the shed, the cars, the weeds =================
+  // The engine has the hero himself (engine/src/hero/state.js): walking, orders, sitting, kneeling, looking, the overlays.
+  // Here are the yards' own activities and what each kind of thing offers (USE).
+  TEXTS.nothingNear = 'Подойди к чему-нибудь или нажми на предмет во дворе. Нажатие на землю — просто идти.';
+  const leaveBtn = (label) => (a) => a.stage === 'dismount' || a.stage === 'drop' || a.stage === 'down' ? null : label;
 
-  // ---------- activities: each owns the hero for a while and says where his hips are ----------
+  // ---------- activities ----------
   const SWING_W = Math.sqrt(9.8 / SW.CH);
   const seatFrame = (inst) => M(inst.M0, tr(0, SW.BAR, 0), rx(inst.dyn.theta || 0), tr(0, -SW.CH, 0));
-  const ACT = {
+  Object.assign(ACT, {
     swing: {
+      first: 'mount', leave: leaveBtn('Слезть'),
       update(a, dt) {
         const dy = a.inst.dyn; a.st += dt;
         if (a.stage === 'mount') { a.w = smooth(a.st / 0.6); if (a.st >= 0.6) { a.stage = 'swing'; a.st = 0; } }
@@ -41,6 +28,7 @@
       state: (a) => a.stage === 'mount' ? 'садится на качели' : a.stage === 'dismount' ? 'слезает' : 'качается'
     },
     hang: {
+      first: 'jump', leave: leaveBtn('Спрыгнуть'),
       update(a, dt) {
         a.st += dt;
         if (a.stage === 'jump') { a.w = smooth(a.st / 0.45); if (a.st >= 0.45) { a.stage = 'reps'; a.st = 0; } }
@@ -60,6 +48,7 @@
       state: (a) => a.stage === 'reps' ? 'подтягивается · ' + Math.min(a.reps, a.count + (a.pull > 0.9 ? 1 : 0)) : 'на турнике'
     },
     slide: {
+      first: 'climb',
       update(a, dt) {
         a.st += dt;
         const g = (p) => localPt(a.inst, p);
@@ -103,6 +92,8 @@
       state: (a) => a.stage === 'climb' ? 'лезет на горку' : a.stage === 'down' ? 'катится' : 'на горке'
     },
     tower: {
+      first: 'climb', leave: leaveBtn('Спуститься'),
+      handsFree: (a) => a.stage === 'top',      // on top of the tower he may shoot and smoke
       update(a, dt) {
         a.st += dt;
         const B = TW.B, path = (u) => localPt(a.inst, [B.cx, B.deck * u, lerp(B.hs + 0.75, -0.02, smooth(u))]);
@@ -120,148 +111,35 @@
       ctx: (a) => a.stage === 'top' ? null : { kind: 'climb', w: a.w, ph: a.ph },
       base: () => null,
       state: (a) => a.stage === 'top' ? 'на башне' : a.stage === 'climb' ? 'лезет на башню' : 'спускается'
-    },
-    kneel: {
-      update(a, dt) {
-        a.st += dt;
-        const T = 1.9;
-        if (a.leave && !a.fired && a.st < T + 0.35) { a.fired = true; a.st = T + 0.35 + Math.max(0, 0.35 - a.st); }     // called away: gets up at once, finds nothing
-
-        a.w = Math.min(smooth(a.st / 0.35), 1 - smooth((a.st - (T + 0.35)) / 0.35));
-        if (!a.fired && a.st > T) { a.fired = true; if (a.cb) a.cb(); }
-        if (a.st >= T + 0.7) a.done = true;
-      },
-      ctx: (a) => ({ kind: 'kneel', w: a.w }),
-      base: () => null,
-      state: () => 'ищет в траве'
-    },
-    look: {
-      update(a, dt) { a.st += dt; if (a.leave) { a.done = true; return; } if (!a.fired && a.st > (a.dur || 1.5) * 0.6) { a.fired = true; if (a.cb) a.cb(); } if (a.st >= (a.dur || 1.5)) a.done = true; },
-      ctx: () => null, base: () => null, state: () => 'смотрит'
     }
-  };
-  function startAct(kind, inst, opts = {}) {
-    hero.act = Object.assign({ kind, inst, st: 0, w: 0, stage: opts.stage || ({ swing: 'mount', hang: 'jump', slide: 'climb', tower: 'climb' }[kind] || 'go'), leave: false, done: false }, opts);
-    hero.path.length = 0;
-  }
+  });
   const onTower = () => hero.act && hero.act.kind === 'tower' && hero.act.stage === 'top';
-  const busyAct = () => hero.act && !onTower();
 
-  // ---------- commands ----------
-  // a new order replaces the old one at once: the hero drops the rest of his way, even mid-step, and heads off from where he stands
-  function clearPlans() {
-    hero.path.length = 0; hero.queue = []; hero.target = null;
-    const th = hero.thr;
-    if (th.on && !th.released && th.inst) {     // a throw cut short: the ball drops at his feet instead of vanishing
-      const b = th.inst.dyn.ball;
-      b.pos = [hero.x + Math.sin(hero.yaw) * 0.3, 0.12, hero.z + Math.cos(hero.yaw) * 0.3]; b.v = [Math.sin(hero.yaw) * 0.6, 0, Math.cos(hero.yaw) * 0.6]; b.state = 'roll';
-      th.released = true;
-    }
-  }
-  function leaveCmds() {
-    const out = [];
-    if (hero.act) out.push({ type: 'leave' });
-    if (hero.sitTarget === 1 || hero.sit > 0) out.push({ type: 'stand' }, { type: 'goto', x: hero.seat ? hero.seat.front[0] : hero.x, z: hero.seat ? hero.seat.front[1] : hero.z });
-    return out;
-  }
-  function plan(...cmds) {
-    hero.punch.on = false; hero.thr.on = false; hero.reach.on = false;
-    if (!onTower()) hero.shoot.on = false;
-    const lv = leaveCmds(); clearPlans();
-    if (hero.act) hero.act.leave = true;
-    hero.queue.push(...lv, ...cmds);
-  }
-  function runQueue() {
-    while (hero.queue.length) {
-      const c = hero.queue[0];
-      if (c.type === 'path') {
-        hero.queue.shift();
-        const pts = findPath([hero.x, hero.z], c.to, hero.vehicle ? NAV.big : NAV.hero);
-        if (!pts) { if (c.fail) c.fail(); continue; }
-        let L = 0, p = [hero.x, hero.z];
-        for (const q of pts) { L += Math.hypot(q[0] - p[0], q[1] - p[1]); p = q; }
-        hero.run = c.run ?? L > 6.5;
-        for (const q of pts) if (Math.hypot(q[0] - hero.x, q[1] - hero.z) > 0.02 || pts.length > 1) hero.path.push({ x: q[0], z: q[1] });
-        if (hero.path.length) return;
-        continue;
-      }
-      if (c.type === 'goto') { hero.queue.shift(); if (Math.hypot(c.x - hero.x, c.z - hero.z) > 0.01) { hero.path.push({ x: c.x, z: c.z, back: !!c.back }); hero.run = false; return; } continue; }
-      if (c.type === 'face') { hero.queue.shift(); hero.tyaw = c.yaw; continue; }
-      if (c.type === 'turned') { if (Math.abs(wrapA(hero.yaw - hero.tyaw)) > 0.06) return; hero.queue.shift(); continue; }
-      if (c.type === 'sit') { hero.seat = c.seat; hero.sitTarget = 1; if (hero.sit < 1) return; hero.queue.shift(); continue; }
-      if (c.type === 'stand') { hero.sitTarget = 0; if (hero.sit > 0) return; hero.seat = null; hero.queue.shift(); continue; }
-      if (c.type === 'act') { hero.queue.shift(); startAct(c.kind, c.inst, c.opts); return; }
-      if (c.type === 'leave') { hero.queue.shift(); continue; }
-      if (c.type === 'call') { hero.queue.shift(); c.fn(); continue; }
-      if (c.type === 'shoot') { hero.queue.shift(); startShoot(); continue; }
-      if (c.type === 'waitShoot') { if (hero.shoot.on || hero.shoot.w > 0) return; hero.queue.shift(); continue; }
-      if (c.type === 'smoke') { hero.queue.shift(); startSmoke(); continue; }
-      if (c.type === 'punch') { hero.queue.shift(); hero.smoke.on = false; hero.drink.on = false; hero.punch.on = true; hero.punch.t = 0; continue; }
-      if (c.type === 'throw') { hero.queue.shift(); startThrow(c.inst); continue; }
-      if (c.type === 'waitThrow') { if (hero.thr.on || hero.thr.w > 0) return; hero.queue.shift(); continue; }
-      if (c.type === 'reach') { hero.queue.shift(); Object.assign(hero.reach, { on: true, t: 0, to: c.to, cb: c.cb, fired: false }); continue; }
-      if (c.type === 'waitReach') { if (hero.reach.on || hero.reach.w > 0) return; hero.queue.shift(); continue; }
-      hero.queue.shift();
-    }
-  }
-
-  // ---------- overlays ----------
-  function startShoot() {
-    const cans = hero.aimAt;
-    if (!cans) return;
-    hero.aimYaw = yawTo(cans.pos[0], cans.pos[2]);
-    hero.tyaw = hero.aimYaw;
-    hero.smoke.on = false; hero.drink.on = false; hero.punch.on = false;
-    hero.shoot.on = true; hero.shoot.t = 0;
-  }
-  const inMachine = () => { if (!hero.inside && !(hero.act && hero.act.kind === 'board')) return false; toast('Руки на рычагах — сначала выберись из костюма.'); return true; };
+  // ---------- what he may do with his hands: the game's rules over the engine's overlays ----------
   function startSmoke() {
     const it = itemById('cigs');
     if (inMachine()) return false;
     if (equip.head === 'helmet') { toast('В шлеме не покуришь. Сними шлем в снаряжении.'); return false; }
-    if (busyAct()) { toast('Сначала слезь — руки заняты.'); return false; }
+    if (busyAct()) { toast(TEXTS.handsBusy); return false; }
     if (it.count <= 0) { toast('Сигареты кончились. Поищи в бурьяне.'); return false; }
     if (hero.smoke.on) return false;
     it.count--; renderItems();
-    hero.drink.on = false; hero.punch.on = false; hero.shoot.on = false;
-    hero.smoke.on = true; hero.smoke.t = 0; hero.smoke.w = 0;
+    beginSmoke();
     return true;
   }
   function startDrink() {
     const it = itemById('atom');
     if (inMachine()) return false;
     if (equip.head === 'helmet') { toast('Через шлем не попьёшь. Сними шлем в снаряжении.'); return false; }
-    if (busyAct()) { toast('Сначала слезь — руки заняты.'); return false; }
+    if (busyAct()) { toast(TEXTS.handsBusy); return false; }
     if (it.count <= 0) { toast('Энергетик кончился. Поищи в бурьяне.'); return false; }
     if (hero.drink.on) return false;
     it.count--; renderItems();
-    hero.smoke.on = false; hero.punch.on = false; hero.shoot.on = false;
-    hero.drink.on = true; hero.drink.t = 0; hero.drink.w = 0;
+    beginDrink();
     return true;
-  }
-  function startThrow(inst) {
-    hero.smoke.on = false; hero.drink.on = false;
-    hero.thr.on = true; hero.thr.t = 0; hero.thr.inst = inst; hero.thr.released = false;
-    const b = inst.dyn.ball; b.state = 'held';
   }
 
   // ---------- what the hero can do with each object ----------
-  const spotOf = (inst, kind) => inst.spots.find((s) => !kind || s.kind === kind) || inst.spots[0];
-  const goSpot = (sp, run) => [{ type: 'path', to: sp.w, run }, { type: 'goto', x: sp.w[0], z: sp.w[1] }, { type: 'face', yaw: sp.wyaw }, { type: 'turned' }];
-  function noArmor(msg) { if (!armored()) return false; toast(msg + ' Сними броню в снаряжении.'); return true; }
-  function seatsOf(inst) {
-    return (inst.built.seats || []).map((s) => {
-      const w = toWorld2(inst.M0, [s.x, s.z]), f = toWorld2(inst.M0, [s.x, s.z + 0.58]);
-      return { inst, s, at: w, front: f, yaw: wrapA(inst.yaw0 + s.yaw), rifleM: M(inst.M0, tr(...s.rifle), frameY([0, 0, 1], [Math.sign(s.rifle[0] - s.x) || 1, 0, 0]), tr(0, 0, -0.16)) };
-    });
-  }
-  function goSit(inst) {
-    const seats = seatsOf(inst).filter((s) => !(hero.seat && hero.seat.s === s.s));
-    seats.sort((a, b) => Math.hypot(a.at[0] - hero.x, a.at[1] - hero.z) - Math.hypot(b.at[0] - hero.x, b.at[1] - hero.z));
-    const st = seats[0];
-    plan({ type: 'path', to: st.front }, { type: 'goto', x: st.front[0], z: st.front[1] }, { type: 'face', yaw: st.yaw }, { type: 'turned' },
-      { type: 'goto', x: st.at[0], z: st.at[1], back: true }, { type: 'sit', seat: st });
-  }
   function goSwing(inst) {
     if (noArmor('Детские качели силовую броню не выдержат.')) return;
     const sp = spotOf(inst, 'swing');
@@ -285,7 +163,7 @@
   function goThrow(inst) {
     const sp = spotOf(inst, 'throw');
     const rim = localPt(inst, inst.built.rim);
-    plan(...goSpot(sp), { type: 'call', fn: () => { hero.tyaw = yawTo(rim[0], rim[2]); } }, { type: 'turned' }, { type: 'throw', inst }, { type: 'waitThrow' });
+    plan(...goSpot(sp), { type: 'call', fn: () => { hero.tyaw = yawTo(rim[0], rim[2]); } }, { type: 'turned' }, ballThrow(inst), { type: 'waitThrow' });
   }
   const FINDS = [
     { p: 0.3, item: 'cigs', n: 4, msg: 'Нашёл початую пачку «Альдебараана». Четыре штуки!' },
@@ -297,7 +175,7 @@
   ];
   let findRng = rng(2026);
   function goSearch(inst) {
-    if (inst.dyn.searched) { toast('Здесь уже всё перерыто.'); return; }
+    if (inst.dyn.searched) { toast(TEXTS.searched); return; }
     // walk to the nearest edge of the patch
     const cx = inst.def.at[0], cz = inst.def.at[1], dx = hero.x - cx, dz = hero.z - cz, dl = Math.hypot(dx, dz) || 1;
     const ex = cx + dx / dl * (inst.def.rx * 0.85), ez = cz + dz / dl * (inst.def.rz * 0.85);
@@ -359,7 +237,7 @@
     const sp = spotOf(inst, 'wheel');
     plan(...goSpot(sp), { type: 'reach', to: [-0.16, -0.62, 0.42], cb: () => carAlarm(inst) }, { type: 'waitReach' });
   }
-  function nameOf(inst) {
+  function yardName(inst) {
     const t = inst.type;
     if (t === 'swing') return inst.def.seat ? 'Качели' : 'Качели без сиденья';
     if (t === 'entrance') return 'Подъезд ' + (inst.def.idx + 1);
@@ -367,10 +245,9 @@
     if (t === 'garage') return 'Сарай с граффити';
     if (t === 'grass') return 'Бурьян';
     if (t === 'car') return { sedan: 'Седан', hatch: 'Хэтчбек', boxy: 'Внедорожник', suv: 'Кроссовер' }[inst.def.kind] || 'Машина';
-    if (t === 'ibk3') return 'Боевой костюм ИБК-3';
     return CATALOG[t] ? CATALOG[t].name : t;
   }
-  function actionsOf(inst) {
+  function yardActs(inst) {
     const t = inst.type;
     if (t === 'swing') return inst.def.seat ? [{ label: 'Покачаться', run: () => goSwing(inst) }] : [{ label: 'Подтянуться', run: () => goBar(inst) }];
     if (t === 'pullbar') return [{ label: 'Подтянуться', run: () => goBar(inst) }];
@@ -384,7 +261,6 @@
     if (t === 'entrance') return [{ label: 'Позвонить в домофон', run: () => goDoor(inst) }];
     if (t === 'metalgarage') return [{ label: 'Читать объявления', run: () => goPosters(inst) }, { label: 'Подёргать замок', run: () => goLock(inst) }];
     if (t === 'car') return [{ label: 'Заглянуть в окно', run: () => goCarLook(inst) }, { label: 'Постучать по колесу', run: () => goCarKnock(inst) }];
-    if (inst.machine) return machineActions(inst);
     return [];
   }
   const NOTES = {
@@ -403,18 +279,11 @@
     metalgarage: 'Ржавый, с объявлениями. Двери на навесном замке.',
     car: 'Стоит носом к дому. От пинка заорёт.'
   };
-  const noteOf = (inst) => inst.machine ? machineNote(inst) : inst.type === 'swing' && !inst.def.seat ? NOTES.swing0 : NOTES[inst.type] || '';
-  function doDefault(inst) {
-    // from inside a machine, tapping a thing walks the machine up to it
-    if (driving()) { if (inst !== hero.vehicle) { const c = inst.center || inst.def.at; walkTo(c[0], c[1]); } return; }
-    const a = actionsOf(inst)[0]; if (a && !a.off) a.run(); else if (a && a.off) toast('Здесь уже всё перерыто.'); }
-  function walkTo(x, z) {
-    hero.thr.on = false;
-    plan({ type: 'path', to: [x, z] });
-    hero.target = [x, z];
-  }
-  function standUp() { plan(); }
-  function doPunch() { if (inMachine()) return; plan({ type: 'punch' }); }
+  const yardNote = (inst) => inst.type === 'swing' && !inst.def.seat ? NOTES.swing0 : NOTES[inst.type] || '';
+  // everything in the yards that answers a tap; the frame without a seat (plain) is only scenery
+  for (const t of ['swing', 'pullbar', 'slide', 'platform', 'hoop', 'towers', 'garage', 'substation', 'grass', 'bench', 'entrance', 'metalgarage', 'car'])
+    USE[t] = { name: yardName, note: yardNote, acts: yardActs };
+  USE.swing.active = (def) => !def.plain;
   function doShoot() {
     if (inMachine()) return;
     if (equip.hands !== 'rifle') { toast('Сначала возьми винтовку в снаряжении.'); return; }
@@ -428,9 +297,3 @@
     if (onTower()) { startShoot(); return; }
     plan({ type: 'call', fn: () => { hero.tyaw = yawTo(up[0].pos[0], up[0].pos[2]); } }, { type: 'turned' }, { type: 'shoot' });
   }
-  function turn(d) {
-    if (driving()) return;
-    if (hero.path.length || hero.sit > 0 || hero.sitTarget || hero.shoot.on || busyAct()) return;
-    hero.tyaw = wrapA(hero.tyaw + d * Math.PI / 4);
-  }
-

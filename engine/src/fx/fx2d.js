@@ -37,6 +37,7 @@
   }
   const puff = (o) => smokeP.push(Object.assign({ age: 0, seed: Math.random() * 6.28, a: 0.9, r0: 0.6, r1: 3, drag: 0.6, rise: 0, tone: 'white' }, o));
   const last = { tip: null, mouth: null, fistL: null, fistR: null, face: [0, 1], muzzle: null, port: null, portDir: [1, 0], canTop: null, glows: [], root: null, chest: null, flame: false, aim2d: [1, 0] };
+  // a shot at hero.aimAt: a target { pos, state: 'up' while it can be hit, onHit(away, hx, hy) } — the game says what a hit does
   function fireShot() {
     if (!last.muzzle) return;
     const [mx, my] = last.muzzle;
@@ -52,12 +53,7 @@
     for (let i = 0; i < 6; i++) puff({ x: mx + ax * 2, y: my + ay * 2 - 1, vx: ax * (10 + Math.random() * 14) + (Math.random() - 0.5) * 6, vy: ay * 8 - 4 - Math.random() * 5, life: 0.9 + Math.random() * 0.5, r0: 1, r1: 4 + Math.random() * 2.5, a: 0.8, drag: 0.25, rise: -6, tone: 'gun' });
     if (hit) {
       const away = nrm([c.pos[0] - hero.x, 0, c.pos[2] - hero.z]);
-      c.state = 'fly'; c.v = [away[0] * (1.6 + Math.random()) + (Math.random() - 0.5), 2.2 + Math.random() * 1.4, away[2] * (1.6 + Math.random()) + (Math.random() - 0.5)];
-      c.spin = 10 + Math.random() * 8; c.axis = nrm([away[2], 0.2, -away[0]]);
-      fx.push({ k: 'clank', x: hx, y: hy, life: 0.12 });
-      const g = byType('garage')[0], up = g.dyn.cans.filter((q) => q.state === 'up');
-      if (up.length) { up.sort((a, b) => Math.hypot(a.pos[0] - hero.x, a.pos[2] - hero.z) - Math.hypot(b.pos[0] - hero.x, b.pos[2] - hero.z)); hero.aimAt = up[0]; }
-      else { hero.aimAt = null; setTimeout(() => toast('Все банки сбиты! Расставить их можно у сарая.'), 500); }
+      if (c.onHit) c.onHit(away, hx, hy);
     } else if (c) { hits.push([hx, hy]); if (hits.length > 24) hits.shift(); }
   }
   function sparkleAround() {
@@ -88,7 +84,7 @@
       }
       stepPh = ph;
     }
-    if (DAYP.cold < 0.3 && DAYP.night < 0.1) updateButterflies(dt);
+    if (DAYP.cold < 0.3 && DAYP.night < 0.1 && MAP.butterflies !== false) updateButterflies(dt);
     // a cold morning or night: the breath shows, a little cloud every few seconds
     breathT -= dt;
     if (breathT <= 0) {
@@ -103,7 +99,7 @@
     leafT -= dt;
     if (view && leafT <= 0 && !reduceMotion) {
       leafT = (0.35 + Math.random() * 0.6) / (MAP.leafRate || 1);
-      const trees = INST.filter((i) => i.type === 'tree' && i.def.kind !== 'bare' && rectsHit(i.sr, view));
+      const trees = INST.filter((i) => i.leafy && rectsHit(i.sr, view));
       if (trees.length && leavesP.length < 14 * (MAP.leafRate || 1)) {
         const t = trees[(Math.random() * trees.length) | 0], bb = t.bb;
         const P = [lerp(bb[0], bb[3], 0.2 + Math.random() * 0.6), bb[4] * (0.55 + Math.random() * 0.3), lerp(bb[2], bb[5], 0.2 + Math.random() * 0.6)];
@@ -127,19 +123,19 @@
     }
     for (let i = fx.length - 1; i >= 0; i--) if (fx[i].life <= 0) fx.splice(i, 1);
   }
-  // a few cabbage whites over the grass: they wander, flap, and keep away from the hero
+  // a few cabbage whites over the grass in the middle of the map: they wander, flap, and keep away from the hero (MAP.butterflies: false — none)
   const BUTTERFLIES = [];
   function updateButterflies(dt) {
     if (!BUTTERFLIES.length) {
       const R = rng(808);
-      for (let i = 0; i < 4; i++) BUTTERFLIES.push({ x: 9 + R() * 14, z: 9 + R() * 14, y: 0.6, tx: 0, tz: 0, ph: R() * 6, bob: R() * 6, col: i === 3 ? '#efd95c' : '#f6f4ec', wait: 0 });
+      for (let i = 0; i < 4; i++) BUTTERFLIES.push({ x: GW * 3 / 10 + R() * (GW * 7 / 15), z: GH * 3 / 10 + R() * (GH * 7 / 15), y: 0.6, tx: 0, tz: 0, ph: R() * 6, bob: R() * 6, col: i === 3 ? '#efd95c' : '#f6f4ec', wait: 0 });
       for (const b of BUTTERFLIES) { b.tx = b.x; b.tz = b.z; }
     }
     for (const b of BUTTERFLIES) {
       const dh = Math.hypot(b.x - hero.x, b.z - hero.z);
-      if (dh < 1.6) { const a = Math.atan2(b.z - hero.z, b.x - hero.x) + (Math.random() - 0.5); b.tx = clamp(b.x + Math.cos(a) * 3, 1, 29); b.tz = clamp(b.z + Math.sin(a) * 3, 1, 29); b.wait = 0; }
+      if (dh < 1.6) { const a = Math.atan2(b.z - hero.z, b.x - hero.x) + (Math.random() - 0.5); b.tx = clamp(b.x + Math.cos(a) * 3, 1, GW - 1); b.tz = clamp(b.z + Math.sin(a) * 3, 1, GH - 1); b.wait = 0; }
       const dx = b.tx - b.x, dz = b.tz - b.z, d = Math.hypot(dx, dz);
-      if (d < 0.2) { b.wait -= dt; if (b.wait <= 0) { b.tx = clamp(b.x + (Math.random() - 0.5) * 5, 2, 28); b.tz = clamp(b.z + (Math.random() - 0.5) * 5, 2, 28); b.wait = 0.5 + Math.random() * 2; } }
+      if (d < 0.2) { b.wait -= dt; if (b.wait <= 0) { b.tx = clamp(b.x + (Math.random() - 0.5) * 5, 2, GW - 2); b.tz = clamp(b.z + (Math.random() - 0.5) * 5, 2, GH - 2); b.wait = 0.5 + Math.random() * 2; } }
       else { const v = (dh < 2.5 ? 1.6 : 0.7) * dt; b.x += dx / d * v + Math.sin(b.ph * 0.37) * dt * 0.4; b.z += dz / d * v + Math.cos(b.ph * 0.29) * dt * 0.4; }
       b.ph += dt * 15; b.bob += dt * 2.3;
       b.y = 0.45 + Math.sin(b.bob) * 0.22 + (d < 0.2 ? -0.2 : 0.25);
@@ -179,7 +175,7 @@
     if (h > 16.4 && h < 19.7 && INST.length) {
       if (!drawCritters.swarms || drawCritters.map !== MAP.id) {
         drawCritters.map = MAP.id;
-        const R = rng(616), bushes = INST.filter((i) => i.type === 'bush');
+        const R = rng(616), bushes = INST.filter((i) => i.T && i.T.midges);
         drawCritters.swarms = bushes.filter(() => R() < 0.5).slice(0, 5).map((b) => ({ x: b.center[0] + (R() - 0.5), z: b.center[1] + (R() - 0.5), y: 1.6 + R() * 0.8, s: R() * 50 }));
       }
       const fade = Math.min(1, (h - 16.4) / 0.4, (19.7 - h) / 0.4);
@@ -222,7 +218,7 @@
     const X = (x) => x - ox, Y = (y) => y - oy;
     for (const [x, y] of hits) px(ctx, X(x), Y(y), k, 'rgba(40,28,22,0.85)');
     for (const l of leavesP) { px(ctx, X(l.x), Y(l.y), k, l.col); if (Math.sin(l.ph) > 0) px(ctx, X(l.x + 1), Y(l.y), k, l.col); }
-    if (DAYP.cold < 0.3 && DAYP.night < 0.1) drawButterflies(ctx, k, X, Y);
+    if (DAYP.cold < 0.3 && DAYP.night < 0.1 && MAP.butterflies !== false) drawButterflies(ctx, k, X, Y);
     drawCritters(ctx, k, X, Y);
     drawLampGlow(ctx, k, X, Y);
     for (const p of smokeP) {
@@ -257,7 +253,7 @@
         for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, 1], [1, -1], [-1, 1]]) px(ctx, X(f.x + dx), Y(f.y + dy), k, '#fff6dc');
       }
     }
-    drawMachineFx(ctx, k, X, Y);
+    for (const f of GAME.drawFx) f(ctx, k, X, Y);
     for (const g of last.glows) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) px(ctx, X(g[0] + dx), Y(g[1] + dy), k, 'rgba(110,255,150,0.38)');
     if (last.flame && last.tip) {
       px(ctx, X(last.tip[0]), Y(last.tip[1] - 1), k, '#ffe08a'); px(ctx, X(last.tip[0]), Y(last.tip[1] - 2), k, '#ff9f3a');

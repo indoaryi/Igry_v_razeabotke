@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Запустить код внутри игры с остановленными часами и напечатать результат — для быстрых проверок без снимков.
-//   node tools/probe.mjs --loc=yard1 "код1" "код2" …
+//   node tools/probe.mjs [--game=pyatietazhki] --loc=yard1 "код1" "код2" …
 // Каждый кусок кода выполняется внутри игры (видит её имена: hero, walkTo, MACHINES…); между кусками можно шагать время: step(сек).
 // Печатает то, что вернул каждый кусок (JSON), и ошибки страницы.
 import fs from 'fs';
@@ -29,14 +29,14 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if ((m.type() === 'error' || m.type() === 'warning') && !/Failed to load resource/.test(m.text())) errors.push(m.type() + ': ' + m.text()); });
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-await page.goto(`http://127.0.0.1:${server.address().port}/pyatietazhki/index.html`);
-await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 });
+await page.goto(`http://127.0.0.1:${server.address().port}/${opt.game || 'pyatietazhki'}/index.html`);
+await page.waitForFunction(() => window.__game && window.__game.bootMs >= 0, null, { timeout: 240000, polling: 250 });
 await page.evaluate(({ loc }) => {
-  const Y = window.__yard; Y.noIntro = true; Y.paused = true;
+  const Y = window.__game; Y.noIntro = true; Y.paused = true;
   if (loc && Y.MAP.id !== loc) Y.enterLocation(loc, 'start');
 }, { loc: opt.loc || '' });
 for (const c of codes) {
-  const r = await page.evaluate((c) => { try { return JSON.stringify(window.__yard.ev('{ const step = (s) => window.__yard.step(s); eval(' + JSON.stringify(c) + '); }')); } catch (e) { return 'THROW ' + e.message; } }, c);
+  const r = await page.evaluate((c) => { try { return JSON.stringify(window.__game.ev('{ const step = (s) => window.__game.step(s); eval(' + JSON.stringify(c) + '); }')); } catch (e) { return 'THROW ' + e.message; } }, c);
   console.log(r);
 }
 if (errors.length) console.log('PAGE ERRORS:', errors.join(' | '));

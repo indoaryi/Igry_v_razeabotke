@@ -97,7 +97,7 @@
       dayLamps.push({ p: bulb, k, kind: lp.kind });
       L.push({ p: add(bulb, [0, -0.08, 0]), r: lp.r, col: lp.col, k: k * lp.k, d: lp.dir || [0, -1, 0], cone: lp.cone ?? -2 });
     }
-    machineLights(L);
+    for (const f of GAME.lights) f(L);     // lights that move: a machine's headlamps
     // keep the ones that reach into the view, nearest to its centre first
     const cx = (rect[0] + rect[2]) / 2, cy = (rect[1] + rect[3]) / 2, pad = 60;
     const near = L.map((l) => { const s = wpx(l.p), g = wpx([l.p[0], 0, l.p[2]]), rp = l.r * S; return { l, d: Math.hypot(g[0] - cx, g[1] - cy), vis: g[0] + rp > rect[0] - pad && g[0] - rp < rect[2] + pad && Math.min(s[1], g[1]) - rp < rect[3] + pad && g[1] + rp > rect[1] - pad }; })

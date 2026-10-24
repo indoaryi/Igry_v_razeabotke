@@ -1,10 +1,8 @@
   // ================= portrait and icons =================
   const portraitCtx = $('portrait').getContext('2d');
-  let portraitKey = '', stageVisible = true, portraitVisible = true;
-  if ('IntersectionObserver' in window) {
-    const io = new IntersectionObserver((es) => { for (const e of es) { if (e.target === stageEl) stageVisible = e.isIntersecting; else portraitVisible = e.isIntersecting; } });
-    io.observe(stageEl); io.observe($('portrait'));
-  }
+  let portraitKey = '', portraitVisible = true;
+  if ('IntersectionObserver' in window) new IntersectionObserver((es) => { for (const e of es) portraitVisible = e.isIntersecting; }).observe($('portrait'));
+  hook(GAME.frame, (dt, now) => { if (portraitVisible) drawPortrait(now / 1000); }, 10);
   function drawPortrait(time) {
     const yaw = Math.floor(time / 1.1) % 8 * (Math.PI / 4) + Math.PI / 4;
     const c = { t: q(time), phase: 0, walkW: 0, sitW: 0, smokeW: 0, drinkW: 0, punchW: 0, shootW: 0 };

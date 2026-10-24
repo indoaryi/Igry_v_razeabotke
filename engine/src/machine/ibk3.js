@@ -3,6 +3,17 @@
   // with his head in the cupola; he gets in from the back through a hatch with a hand wheel and two gas struts,
   // stepping on the tread of the right calf (the suit parks on its right knee) and the ledge of the engine block.
   // Faded olive paint, chipped to rust on the edges, mud on the legs. Sizes in metres; +x is the suit's left.
+  // ---------- the combat suit: stencils and plates ----------
+  addDecal('sNum', 0.4, 0.32, (g, w, h) => { outlinedText(g, '07', 0, 0, 'bold 21px ' + SANS, '#ebe8de', null, 0); });
+  addDecal('sName', 0.56, 0.12, (g, w, h) => { outlinedText(g, 'ИБК-3', 1, 0, 'bold 8px ' + SANS, '#ebe8de', null, 0); });
+  addDecal('sHatch', 0.5, 0.12, (g, w, h) => { outlinedText(g, 'ЛЮК', 1, 0, 'bold 8px ' + SANS, '#ebe8de', null, 0); g.fillStyle = '#ebe8de'; g.fillRect(18, 3, 6, 2); g.fillRect(22, 2, 1, 4); g.fillRect(23, 3, 1, 2); });
+  addDecal('sWarn', 0.24, 0.16, (g, w, h) => {
+    g.fillStyle = '#d9a62a'; g.fillRect(0, 0, w, h); g.fillStyle = '#1c1c1e'; g.fillRect(1, 1, w - 2, 2);
+    for (let y = 5; y < h - 1; y += 2) g.fillRect(2, y, w - 4 - ((y * 5) % 4), 1);
+  });
+  addDecal('sHazard', 0.8, 0.08, (g, w, h) => {
+    for (let x = -h; x < w + h; x += 6) { g.fillStyle = '#d9a62a'; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 3, 0); g.lineTo(x + 3 - h, h); g.lineTo(x - h, h); g.closePath(); g.fill(); g.fillStyle = '#1c1c1e'; g.beginPath(); g.moveTo(x + 3, 0); g.lineTo(x + 6, 0); g.lineTo(x + 6 - h, h); g.lineTo(x + 3 - h, h); g.closePath(); g.fill(); }
+  });
   {
     const OLIVE = '#646850', RUST = '#76503a';
     const armour = (o = {}) => mat(o.c || OLIVE, { pat: 50, b: o.b || RUST, p: [o.hs ?? 0, o.vs ?? 0, o.rv ?? 12, o.wear ?? 0.3], r: [0, o.mud ?? 0.02, 0, 0], noise: 0.025, grain: 30, spec: 0.22, gloss: 9 });

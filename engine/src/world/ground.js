@@ -15,7 +15,8 @@
   // MAP.style may change the look of a location's ground:
   //   palette: { '.': [5 colours], … }   leafColors: [colours]   flowers: false
   //   leaves(x, z) → 0…1 how thickly fallen leaves lie there, leafMax: share of pixels covered where it is 1
-  //   litter: object types people hang around (butts and husks on the ground near them)
+  //   litter: object types people hang around (butts and husks on the ground near them); by default every type whose
+  //   catalog entry has `litter` (that many bits round it)
   function buildGround() {
     const st = MAP.style || {};
     const pal = Object.assign({}, PAL, st.palette || {}), PALRGB = {};
@@ -25,15 +26,15 @@
     const ctx = c.getContext('2d', { willReadFrequently: true });     // footprints read pixels back
     const img = ctx.createImageData(G.w, G.h), d = img.data;
     // everything low-frequency is worked out once per 8 cm sample; pixels then only look it up and dither
-    const FR = 8, FN = GW * FR + 1;
+    const FR = 8, FN = GW * FR + 1, FNZ = GH * FR + 1;
     const TYPES = ['.', ',', ':', '#', '_', 'p'], TI = { '.': 0, ',': 1, ':': 2, '#': 3, '_': 4, p: 5 };
-    const fType = new Uint8Array(FN * FN), fTone = new Float32Array(FN * FN), fLeaf = new Float32Array(FN * FN), fPath = new Float32Array(FN * FN);
-    const trees = INST.filter((i) => i.type === 'tree' && i.def.kind !== 'bare' && i.def.kind !== 'poplarBare');
+    const fType = new Uint8Array(FN * FNZ), fTone = new Float32Array(FN * FNZ), fLeaf = new Float32Array(FN * FNZ), fPath = new Float32Array(FN * FNZ);
+    const trees = INST.filter((i) => i.leafy);
     const leafAt = st.leaves || ((x, z) => { let lf = 0; for (const tr_ of trees) { const dx = x - tr_.def.at[0], dz = z - tr_.def.at[1], q = 1 - (dx * dx + dz * dz) / 10.24; if (q > lf) lf = q; } return lf; });
     const segs = [];
     for (const pl of MAP.paths) for (let i = 0; i < pl.length - 1; i++) segs.push([pl[i], pl[i + 1]]);
     const natural = (t) => t === '.' || t === ',' || t === ':';
-    for (let j = 0; j < FN; j++) for (let i = 0; i < FN; i++) {
+    for (let j = 0; j < FNZ; j++) for (let i = 0; i < FN; i++) {
       const x = Math.min(i / FR, GW - 0.001), z = Math.min(j / FR, GH - 0.001), k = j * FN + i;
       let t = groundType(x, z);
       if (natural(t)) {
@@ -64,7 +65,7 @@
     const set3 = (i, P, q) => { d[i] = P[q * 3]; d[i + 1] = P[q * 3 + 1]; d[i + 2] = P[q * 3 + 2]; d[i + 3] = 255; };
     // one 32-bit hash per pixel, sliced into several random numbers
     const hi = (x, y, s) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + s) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; };
-    const half = HH * GH, FNm = FN - 1;
+    const half = HH * GH, FNm = FN - 1, FNZm = FNZ - 1;
     for (let py = 0; py < G.h; py++) {
       const sy = py + G.y0 + 0.5;
       const wRow = 2 * Math.min(sy, 2 * half - sy) + 28;
@@ -82,7 +83,7 @@
         }
         const H0 = hi(px, py, 1), h = (H0 & 1023) / 1024, ja = ((H0 >>> 10) & 255) / 256 - 0.5, jb = ((H0 >>> 18) & 255) / 256 - 0.5;
         let xi = Math.round((x + ja * 0.13) * FR), zi = Math.round((z + jb * 0.13) * FR);
-        xi = xi < 0 ? 0 : xi > FNm ? FNm : xi; zi = zi < 0 ? 0 : zi > FNm ? FNm : zi;
+        xi = xi < 0 ? 0 : xi > FNm ? FNm : xi; zi = zi < 0 ? 0 : zi > FNZm ? FNZm : zi;
         const k = zi * FN + xi, t = fType[k], tone = fTone[k];
         if (t <= 1) {
           // short vertical strokes: each column is cut into 2–4 px dashes of one tone
@@ -119,10 +120,10 @@
     }
     // litter where people sit and wait: cigarette butts, sunflower husks, bottle caps, a wrapper or two
     const RL = rng(57), BUTT = [hexRGB('#ece8dc'), hexRGB('#d78a3c')], HUSK = hexRGB('#2c2a27'), CAPS = ['#c8352c', '#d9d6cf', '#2f7d3c', '#d1b04a'].map(hexRGB), WRAP = [hexRGB('#d9d4c8'), hexRGB('#b84a3a')];
-    const litter = st.litter || ['bench', 'urn', 'platform', 'entrance', 'garage', 'swing'];
+    const litterOf = (it) => st.litter ? (st.litter.includes(it.type) ? (CATALOG[it.type] && CATALOG[it.type].litter) || 24 : 0) : (it.T && it.T.litter) || 0;
     for (const it of INST) {
-      if (!litter.includes(it.type)) continue;
-      const n = it.type === 'entrance' ? 16 : it.type === 'swing' ? 6 : 24;
+      const n = litterOf(it);
+      if (!n) continue;
       for (let j = 0; j < n; j++) {
         const a = RL() * 6.28, r = 0.25 + RL() * 1.4, x = it.center[0] + Math.cos(a) * r, z = it.center[1] + Math.sin(a) * r;
         if (x < 0.2 || z < 0.2 || x >= GW - 0.2 || z >= GH - 0.2) continue;

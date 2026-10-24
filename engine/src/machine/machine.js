@@ -170,7 +170,9 @@
   // ---------- the machine in the current location ----------
   function machineInst(m) {
     const inst = { id: nextId++, def: { n: m.n, type: m.kind, kind: m.kind, at: [m.x, m.z] }, type: m.kind, T: null, M0: ID4, yaw0: m.yaw, built: {}, chunks: [], items: [],
-      bb: null, active: true, sr: null, shr: null, n: m.n, dyn: {}, center: [m.x, m.z], machine: m, blocks: [{ c: [m.x, m.z], r: m.K.D.blockR }], spots: [] };
+      bb: null, active: true, sr: null, shr: null, n: m.n, dyn: {}, center: [m.x, m.z], machine: m, blocks: [{ c: [m.x, m.z], r: m.K.D.blockR }], spots: [],
+      use: MACHINE_USE };
+    inst.ride = { hides: () => m.door < 0.03, focus: () => machineFocus(inst), canTravel: () => m.mode === 'ready', state: () => machineState(inst) };
     m.inst = inst;
     INST.push(inst);
     if (instById) instById.set(inst.id, inst);
@@ -181,6 +183,20 @@
     makeMachines();
     for (const m of MACHINES) if (m.loc === MAP.id) machineInst(m);
   }
+  // the engine's hooks: machines stand in their location, move, are drawn and frozen for the picture with everything else
+  hook(LOC_HOOKS.objects, spawnMachines, 10);
+  hook(GAME.update, (dt) => updateMachines(dt), 10);
+  hook(GAME.tick, machinesSnap);
+  hook(GAME.key, machineKey, 90);
+  hook(GAME.items, (out) => { for (const it of machineItemsAll()) out.push(it); }, 90);
+  hook(GAME.drawFx, (ctx, k, X, Y) => drawMachineFx(ctx, k, X, Y));
+  hook(GAME.lights, (out) => machineLights(out));
+  // the camera leans towards the hull of a machine he is climbing into or out of, so its raised hatch stays in view
+  hook(GAME.focus, (hs) => {
+    if (!(hero.act && hero.act.kind === 'board' && hero.act.inst && hero.act.inst.machine)) return null;
+    const m = hero.act.inst.machine, B = m.bones || machineBones(m, m);
+    return lerpV([...hs, 0], [...wpx(xf(B.torso, [0, 1.1, 0.3])), 0], 0.5);
+  }, 30);
   function dropMachineInst(m) {
     const i = m.inst; if (!i) return;
     const k = INST.indexOf(i); if (k >= 0) INST.splice(k, 1);
@@ -668,6 +684,7 @@
     }
   };
   ACT.board = {
+    vehicle: true,
     update(a, dt) {
       const m = a.inst.machine, st = boardStyle(m), T = st.T;
       if (!a.P) { a.P = st.anchors(m); a.dir = a.dir || 1; }
@@ -711,10 +728,6 @@
 
   // ---------- what the game asks ----------
   function machineFocus(inst) { const m = inst.machine, B = m.bones || machineBones(m, m); return xf(B.torso, [0, 0.5, 0]); }
-  const heroHidden = () => !!(hero.inside && hero.vehicle && hero.vehicle.machine && hero.vehicle.machine.door < 0.03);
-  const driving = () => !!(hero.inside && hero.vehicle);
-  function machineCanTravel(inst) { return inst.machine.mode === 'ready'; }
-  function machineWalkTo(inst, x, z) { walkTo(x, z); }
   function goBoard(inst) {
     const m = inst.machine, T = m.K.texts, st = boardStyle(m);
     if (armored()) { toast(T.armour); return; }
@@ -757,6 +770,8 @@
     if (driving() && hero.vehicle === inst) return m.mode === 'ready' ? T.pilotNote : T.wakeNote;
     return m.mode === 'parked' ? T.note : '';
   }
+  // what the context panel shows for a machine
+  const MACHINE_USE = { name: (inst) => CATALOG[inst.type] ? CATALOG[inst.type].name : inst.type, note: (inst) => machineNote(inst), acts: (inst) => machineActions(inst) };
   function machineState(inst) {
     const m = inst.machine;
     return m.mode === 'waking' ? 'в костюме · заводит' : m.mode === 'parking' ? 'в костюме · глушит' : m.walking ? 'в костюме · шагает' : 'в костюме';
