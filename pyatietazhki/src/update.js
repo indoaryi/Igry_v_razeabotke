@@ -4,6 +4,7 @@
   function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; toastT = 3.2; }
   function update(dt, view) {
     hero.t += dt;
+    if (!hero.path.length && !hero.act) runQueue();     // a fresh order starts this very frame
     if (hero.act) {
       if (hero.queue.length && hero.queue[0].type === 'leave') hero.act.leave = true;
       ACT[hero.act.kind].update(hero.act, dt);
@@ -17,7 +18,7 @@
         else { hero.x += dx / d * budget; hero.z += dz / d * budget; hero.phase += budget / cycleLen(); budget = 0; }
       }
     }
-    hero.yaw = approachAngle(hero.yaw, hero.tyaw, dt * (hero.path.length ? 10 : 7));
+    hero.yaw = approachAngle(hero.yaw, hero.tyaw, dt * (hero.path.length ? 15 : 8));
     if (!hero.path.length && !hero.act) runQueue();
     if (!hero.path.length && hero.target && Math.hypot(hero.target[0] - hero.x, hero.target[1] - hero.z) < 0.35) hero.target = null;
     const moving = hero.path.length > 0 && !hero.act && !driving();
@@ -42,6 +43,7 @@
     const re = hero.reach;
     if (re.on && !re.fired && re.t > 0.7) { re.fired = true; if (re.cb) re.cb(); }
     if (re.on && re.t > 1.7) re.on = false;
+    dayUpdate(dt);
     updateMachines(dt);
     updateDyn(dt);
     updatePigeons(dt);

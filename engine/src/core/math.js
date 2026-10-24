@@ -53,6 +53,18 @@
   function frameY(Y, Z) { Y = nrm(sub(Y, scl(Z, dot(Y, Z)))); return basis(cross(Y, Z), Y, Z); }   // Z forward, Y up
   function alongPlusY(u) { const Y = nrm(u); let X = cross(Y, [0, 0, 1]); if (len(X) < 1e-4) X = cross(Y, [1, 0, 0]); X = nrm(X); return basis(X, Y, cross(X, Y)); }
   function alongMinusY(u) { return alongPlusY(scl(u, -1)); }
+  // a smooth curve through [x, value] pairs with x rising (Catmull-Rom), held level past the ends
+  function curve1(pts) {
+    const L = pts.length - 1;
+    return (x) => {
+      if (x <= pts[0][0]) return pts[0][1];
+      if (x >= pts[L][0]) return pts[L][1];
+      let i = 0; while (pts[i + 1][0] < x) i++;
+      const p0 = pts[Math.max(i - 1, 0)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(i + 2, L)], h = p2[0] - p1[0], t = (x - p1[0]) / h;
+      const m1 = (p2[1] - p0[1]) / (p2[0] - p0[0]) * h, m2 = (p3[1] - p1[1]) / (p3[0] - p1[0]) * h, t2 = t * t, t3 = t2 * t;
+      return (2 * t3 - 3 * t2 + 1) * p1[1] + (t3 - 2 * t2 + t) * m1 + (3 * t2 - 2 * t3) * p2[1] + (t3 - t2) * m2;
+    };
+  }
   function track(t, keys, base) {
     const val = (v) => v || base;
     if (t <= keys[0][0]) return val(keys[0][1]);

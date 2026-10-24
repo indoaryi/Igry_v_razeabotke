@@ -194,7 +194,7 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
   <header class="intro">
     <p class="eyebrow">Два двора · собраны по фотографиям</p>
     <h1>Двор у пятиэтажек</h1>
-    <p class="lead">Дворы с твоих фотографий: я разобрал их на предметы, разложил по схемам из метровых клеток и собрал заново в изометрии. Герой тот же, 120 пикселей, со всем снаряжением. Асфальт вдоль левого дома ведёт в соседний двор с берёзами, а там у гаража на колене стоит боевой костюм ИБК-3: герой откроет люк, заберётся внутрь, и костюм оживёт. Изнутри нажимай на землю — он пойдёт тяжёлым шагом, хоть обратно в первый двор. Нажимай на землю, чтобы идти, и на предметы, чтобы с ними что-то сделать.</p>
+    <p class="lead">Дворы с твоих фотографий: я разобрал их на предметы, разложил по схемам из метровых клеток и собрал заново в изометрии. Герой тот же, 120 пикселей, со всем снаряжением. Асфальт вдоль левого дома ведёт в соседний двор с берёзами. Там ждут два боевых костюма: ИБК-3 на колене (люк сзади) и «32» по твоему эскизу — у него вверх откидывается вся передняя створка. Герой заберётся внутрь, костюм оживёт, и изнутри можно ходить тяжёлым шагом, хоть обратно в первый двор. Под сценой меняется время суток: утро с туманом, день, золотой вечер, ночь с фонарями и окнами. Нажимай на землю, чтобы идти, и на предметы, чтобы с ними что-то сделать.</p>
   </header>
 
   <section class="play" aria-label="Двор">
@@ -202,6 +202,7 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
       <div class="stage" id="stageBox">
         <canvas id="stage" aria-label="Двор в изометрии. Нажми на землю, чтобы герой туда пошёл, или на предмет, чтобы он с ним что-то сделал."></canvas>
         <div class="hud" aria-live="polite">
+          <span class="chip" id="hudClock" title="Время во дворе">14:00</span>
           <span class="chip" id="hudState">стоит</span>
           <span class="chip near" id="hudNear" hidden></span>
         </div>
@@ -224,6 +225,10 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
           <button class="btn" id="aSmoke" type="button" aria-pressed="false">Закурить</button>
           <button class="btn" id="aDrink" type="button" aria-pressed="false">Энергетик</button>
           <button class="btn" id="aPunch" type="button">Удар</button>
+        </div>
+        <div class="view">
+          <div class="seg" role="group" aria-label="Время суток" id="todSeg"></div>
+          <label class="check" for="clockChk"><input type="checkbox" id="clockChk"> Время идёт</label>
         </div>
         <div class="view">
           <div class="seg" role="group" aria-label="Двор" id="locSeg"></div>

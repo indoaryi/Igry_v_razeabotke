@@ -199,7 +199,8 @@
     return {
       kit: k, blocks: [],
       heights: [{ rect: [-1.25, 0, 1.25, 1.45], y: 0.3 }, { rect: [-1.25, 1.45, 1.25, 1.8], y: 0.15 }],
-      spots: [{ kind: 'door', at: [0.5, 0.95], yaw: Math.PI, wall: [0.85, 1.45, 0] }]
+      spots: [{ kind: 'door', at: [0.5, 0.95], yaw: Math.PI, wall: [0.85, 1.45, 0] }],
+      lamp: { at: [0, 2.62, 0.56], r: 6.5, col: [1.0, 0.86, 0.6], k: 1.8, kind: 'porch' }
     };
   }
 
@@ -432,7 +433,8 @@
     decalOn(k, 'ads1', [-0.02, 1.62, 0.127], 'z');
     decalOn(k, 'ads2', [0.06, 1.3, 0.128], 'z');
     decalOn(k, 'ads3', [0.288, 1.42, 0.0], 'x');
-    return { kit: k, blocks: [{ c: [0, 0], r: 0.22 }], attach: att };
+    // the street lamp: a sodium bulb that lights the ground round the pole at night (see daytime.js)
+    return { kit: k, blocks: [{ c: [0, 0], r: 0.22 }], attach: att, lamp: { at: [0.92, 7.4, 0], r: 15, col: [1.0, 0.7, 0.38], k: 2.4, cone: 0.05, kind: 'street', flicker: !!o.flicker } };
   }
 
   // ---------- trees, bushes, tall grass ----------

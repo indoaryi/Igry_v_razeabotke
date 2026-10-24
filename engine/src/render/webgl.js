@@ -61,10 +61,45 @@ uniform mat4 uLVP;
 uniform highp sampler2DShadow uShadowTex;
 uniform vec3 uSun;
 uniform vec3 uAmb;      // shade level: base, extra for faces looking at the sky, depth bias of the sun lookup
+// the time of day: tints of the sunlit and the shaded parts, how strong shadows are, lit windows, lamps
+uniform vec3 uSunTint;
+uniform vec3 uShadeTint;
+uniform float uShadowK;
+uniform float uSat;     // colour saturation of the hour: grey-blue at night, a little richer in the golden hour
+uniform vec4 uWin;      // x: share of lit windows, y: time in seconds, z: night 0…1
+uniform int uNL;
+uniform vec4 uLP[12];   // lamp: position, reach in metres
+uniform vec4 uLC[12];   // colour, strength
+uniform vec4 uLD[12];   // the way it shines, cosine of the edge of its cone (−2: all round)
 in vec3 vS;
 layout(location=0) out vec4 o;
 layout(location=1) out vec4 oId;
 float h3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+const float BY4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+float bayer(){ ivec2 q = ivec2(gl_FragCoord.xy) & 3; return (BY4[q.y * 4 + q.x] + 0.5) / 16.0; }
+// light of the lamps at a point, in three steps with a dithered edge, like the rest of the palette
+vec3 lampsAt(vec3 p, vec3 n){
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 12; i++) {
+    if (i >= uNL) break;
+    vec3 d = uLP[i].xyz - p; float dist = length(d), r = uLP[i].w;
+    if (dist >= r) continue;
+    vec3 l = d / max(dist, 1e-4);
+    float att = 1.0 - dist / r; att *= att;
+    float lam = clamp(dot(n, l) * 0.7 + 0.3, 0.0, 1.0);
+    float cone = uLD[i].w < -1.5 ? 1.0 : smoothstep(uLD[i].w, uLD[i].w + 0.1, dot(-l, uLD[i].xyz));
+    acc += uLC[i].rgb * (uLC[i].w * att * lam * cone);
+  }
+  float m = max(acc.r, max(acc.g, acc.b));
+  if (m <= 0.002) return vec3(0.0);
+  return acc * (floor(m * 3.0 + bayer()) / 3.0 / m);
+}
+// a window lit from inside at night: warm light, now and then the blue flicker of a television; each window decides by its own seed
+bool windowLit(float share){ return share > 0.0 && fract(vSeed * 91.7 + floor(uWin.y / 47.0 + vSeed * 7.0) * 0.371) < share; }
+vec3 roomLight(float y){
+  if (fract(vSeed * 53.3) < 0.2) { float f = h3(vec3(floor(uWin.y * 3.0 + vSeed * 17.0), vSeed * 31.0, 2.0)); return mix(vec3(0.42, 0.56, 0.95), vec3(0.78, 0.84, 1.0), f) * (0.72 + 0.28 * f); }
+  return mix(vec3(1.0, 0.8, 0.48), vec3(1.0, 0.9, 0.66), fract(vSeed * 13.1)) * (0.9 + 0.1 * y);
+}
 // 1 where the sun reaches this point, 0 in shade. uS.z = 1: thin stuff (grass) that is lit from both sides
 float sunVis(vec3 n){
   float ndl = dot(n, uSun);
@@ -91,12 +126,13 @@ void main(){
   float v = dot(n, uLight) * 0.5 + 0.5 + nz;
   float sv = 1.0;
   if (uShadowOn == 1 && uMode == 0) {
-    sv = sunVis(n);
+    sv = mix(1.0, sunVis(n), uShadowK);
     v = min(v, mix(uAmb.x + uAmb.y * n.y + nz, v, sv));
   }
   int idx = v < 0.30 ? 0 : (v < 0.46 ? 1 : (v < 0.64 ? 2 : (v < 0.82 ? 3 : 4)));
   int li = idx;
-  bool useB = false, forced = false, isDecal = false; int shift = 0;
+  bool useB = false, forced = false, isDecal = false, glow = false, lit = false; int shift = 0;
+  vec3 gcol = vec3(0.0), lcol = vec3(0.0);
   vec3 decal = vec3(0.0);
   float ax = abs(vL.x);
   if (uPat == 1) {                    // face: eye slits, brows, mouth, beard
@@ -124,8 +160,9 @@ void main(){
     if (vL.y < uQ.w) discard;
   } else if (uPat == 8) {             // darker cuff
     if (vL.y < uP.x) shift = -1;
-  } else if (uPat == 10) {            // emissive / flat
+  } else if (uPat == 10) {            // flat; tone 4 glows (lamps, lenses, the cigarette tip) and keeps its colour at night
     idx = int(uP.x); forced = true;
+    if (uP.x > 3.5) { glow = true; gcol = uRampA[4]; }
   } else if (uPat == 11) {            // armour chest: yellow plate with the radiation trefoil
     vec2 c = vec2(vL.x, vL.y - uP.y);
     if (vL.z > 0.05 && abs(c.x) < uP.x && abs(c.y) < uP.x) {
@@ -153,7 +190,7 @@ void main(){
     if (!useB && !forced && vL.y < uR.x + 0.035) shift = -1;
     if (!useB && vL.y < uR.x + 0.03 && ax > uR.y) { shift = 0; idx = 4; forced = true; }
   } else if (uPat == 15) {            // glowing screen on a forearm
-    if (vL.x * uQ.z > uP.x && vL.y > uP.y && vL.y < uP.z && abs(vL.z) < uP.w) { useB = true; idx = 4; forced = true; }
+    if (vL.x * uQ.z > uP.x && vL.y > uP.y && vL.y < uP.z && abs(vL.z) < uP.w) { useB = true; idx = 4; forced = true; glow = true; gcol = uRampB[4]; }
     else if (h3(floor(vL * 26.0)) > 0.9) shift = -1;
   } else if (uPat == 16) {            // round vent on the back of the pack
     if (vL.z < uP.x) {
@@ -265,6 +302,7 @@ void main(){
     else if (ty < 0.56) { if (abs(vL.x) > 0.6) { useB = true; idx = fract(vL.x * 7.0) < 0.5 ? 2 : 3; } }
     else if (ty < 0.68) { useB = true; idx = fract(vL.y * 12.0) < 0.5 ? 3 : 2; }
     else if (ty < 0.76) { if (vL.y > 0.35 && abs(vL.x + 0.3) < 0.18) { useB = true; idx = 4; } }
+    if (windowLit(uWin.x)) { lit = true; vec3 rl = roomLight(vL.y); lcol = useB ? uRampB[4] * mix(vec3(1.0), rl, 0.6) * (idx < 3 ? 0.82 : 1.0) : rl; }
   } else if (uPat == 50) {            // machine armour in part-local space, so it travels with the part: plate seams, rivets along them, chipped paint, rust runs, mud
     float hs = uP.x > 0.0 ? abs(fract(vL.y * uP.x + 0.5) - 0.5) / uP.x : 9.0;
     float vs = uP.y > 0.0 ? abs(fract((vL.x + vL.z) * uP.y + 0.5) - 0.5) / uP.y : 9.0;
@@ -339,6 +377,7 @@ void main(){
       idx = st < 0.08 ? 4 : (st < 0.13 ? 3 : 1);
       if (vSeed > 0.6 && st >= 0.13 && vL.y > -uP.w * 0.2) idx = 2;
       if (fy < fw * 2.4 && vL.y > 0.0) idx = 0;
+      if (windowLit(uWin.x * 1.15)) { lit = true; lcol = roomLight(vL.y / max(uP.w, 0.01)) * (fy < fw * 2.4 && vL.y > 0.0 ? 0.8 : 1.0); }
     }
   } else if (uPat == 44) {            // panel with diagonal slots
     if (ax < uP.y && abs(vL.y) < uP.z && fract((vL.x * uP.w + vL.y) * uP.x) < 0.34) { idx = 0; forced = true; }
@@ -373,6 +412,16 @@ void main(){
     c = useB ? uRampB[clamp(idx + shift, 0, 4)] : uRampA[clamp(idx + shift, 0, 4)];
     if (!forced && !useB && sp > 0.42) c = mix(uRampA[4], vec3(1.0), 0.28 * uS.x);
   }
+  if (glow) c = gcol;
+  else {
+    // the hour: sunlit and shaded parts take their tints, lamps nearby add their light to the colour of the thing itself
+    vec3 base = isDecal ? decal : (useB ? uRampB[3] : uRampA[3]);
+    vec3 tint = mix(uShadeTint, uSunTint, sv);
+    if (abs(uId.x * 255.0 - 1.0) < 0.5) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) stays readable at night
+    c = mix(vec3(dot(c, vec3(0.3, 0.59, 0.11))), c, uSat) * tint;
+    if (uNL > 0) c += base * lampsAt(vS, n) * 0.9;
+    if (lit) c = mix(c, lcol, clamp(0.35 + uWin.z * 0.8, 0.0, 1.0));     // a lit window: faint by day, bright at night
+  }
   o = vec4(c, 1.0);
   oId = vec4(uId, 0.0, 1.0);
 }`;
@@ -404,7 +453,52 @@ uniform vec3 uShadeMul;                // ground colour in the shade
 uniform vec4 uTarget;                  // walk target: x, z, radius, on
 uniform int uGrid;
 uniform vec2 uMapWH;
+uniform vec3 uSunTint;
+uniform vec3 uShadeTint;
+uniform float uShadowK;
+uniform float uSat;
+uniform int uNL;
+uniform vec4 uLP[12];
+uniform vec4 uLC[12];
+uniform vec4 uLD[12];
+uniform vec4 uMist;                    // x: how thick, y: time in seconds, z: metres per target px, w: on
+uniform vec3 uMistCol;
+uniform vec3 uRV3;
+uniform vec3 uUV3;
+uniform vec3 uFV3;
+uniform float uDZ;
 out vec4 o;
+const float BY4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+float bayer(){ ivec2 q = ivec2(gl_FragCoord.xy) & 3; return (BY4[q.y * 4 + q.x] + 0.5) / 16.0; }
+vec3 lampsAt(vec3 p, vec3 n){
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 12; i++) {
+    if (i >= uNL) break;
+    vec3 d = uLP[i].xyz - p; float dist = length(d), r = uLP[i].w;
+    if (dist >= r) continue;
+    vec3 l = d / max(dist, 1e-4);
+    float att = 1.0 - dist / r; att *= att;
+    float lam = clamp(dot(n, l) * 0.7 + 0.3, 0.0, 1.0);
+    float cone = uLD[i].w < -1.5 ? 1.0 : smoothstep(uLD[i].w, uLD[i].w + 0.1, dot(-l, uLD[i].xyz));
+    acc += uLC[i].rgb * (uLC[i].w * att * lam * cone);
+  }
+  float m = max(acc.r, max(acc.g, acc.b));
+  if (m <= 0.002) return vec3(0.0);
+  return acc * (floor(m * 3.0 + bayer()) / 3.0 / m);
+}
+float hh2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hh2(i), hh2(i + vec2(1.0, 0.0)), f.x), mix(hh2(i + vec2(0.0, 1.0)), hh2(i + vec2(1.0, 1.0)), f.x), f.y); }
+// the world point under this pixel at a depth (window range), and on the ground
+vec3 worldAt(float d){ vec2 fp = vec2(gl_FragCoord.x, uView2.w - gl_FragCoord.y); return uRV3 * ((fp.x - uView2.x) * uMist.z) + uUV3 * ((uView2.y - fp.y) * uMist.z) + uFV3 * ((2.0 * d - 1.0) * uDZ); }
+vec3 groundPt(){ vec2 fp = vec2(gl_FragCoord.x, uView2.w - gl_FragCoord.y); vec2 wp = (fp - uView2.xy) * uView2.z; float a = wp.x / 54.0, b = wp.y / 27.0; return vec3((a + b) * 0.5, 0.0, (b - a) * 0.5); }
+// low mist that lies in hollows and thins out upwards, drifting slowly; dithered in four steps
+vec4 misty(vec4 col, vec3 P){
+  if (uMist.w < 0.5 || col.a < 0.5) return col;
+  float n = vn2(P.xz * 0.23 + vec2(uMist.y * 0.045, uMist.y * 0.017)) * 0.6 + vn2(P.xz * 0.61 - vec2(uMist.y * 0.03, 0.0)) * 0.4;
+  float m = uMist.x * exp(-max(P.y, 0.0) / 0.85) * smoothstep(0.22, 0.72, n);
+  float q = floor(m * 4.0 + bayer()) / 4.0;
+  return vec4(mix(col.rgb, uMistCol, q * 0.62), col.a);
+}
 const ivec2 OFF[4] = ivec2[4](ivec2(1,0), ivec2(-1,0), ivec2(0,1), ivec2(0,-1));
 int idOf(vec4 t){ return int(t.r * 255.0 + 0.5); }
 int flOf(vec4 t){ return int(t.g * 255.0 + 0.5); }
@@ -426,13 +520,15 @@ vec4 groundHere(){
   }
   float a = wp.x / 54.0, b = wp.y / 27.0;
   vec2 xz = vec2(a + b, b - a) * 0.5;
-  vec3 c = gc.rgb;
+  vec3 c = mix(vec3(dot(gc.rgb, vec3(0.3, 0.59, 0.11))), gc.rgb, uSat);
   if (uSunOn == 1) {
     vec4 lp = uLVP * vec4(xz.x, 0.0, xz.y, 1.0);
     vec3 sc = lp.xyz * 0.5 + 0.5;
     float lit = (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0) ? 1.0 : texture(uShadowTex, vec3(sc.xy, sc.z - uBias));
-    c = mix(c * uShadeMul, c, lit);
-  }
+    lit = mix(1.0, lit, uShadowK);
+    c = c * mix(uShadeMul * uShadeTint, uSunTint, lit);
+  } else c *= uSunTint;
+  if (uNL > 0) c += gc.rgb * lampsAt(vec3(xz.x, 0.0, xz.y), vec3(0.0, 1.0, 0.0)) * 0.9;
   float pw = 0.0105 * uView2.z;
   if (uGrid == 1 && xz.x >= -pw && xz.y >= -pw && xz.x <= uMapWH.x + pw && xz.y <= uMapWH.y + pw) {
     vec2 d = abs(xz - floor(xz + 0.5));
@@ -445,7 +541,7 @@ void main(){
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 c = texelFetch(uCol, p, 0);
   bool obj = c.a > 0.5, sh = !obj && c.a > 0.1;
-  if (uRaw == 1) { o = obj ? vec4(c.rgb, 1.0) : (uGroundOn > 0 ? groundHere() : (sh ? uShadowCol : vec4(0.0))); return; }
+  if (uRaw == 1) { o = obj ? misty(vec4(c.rgb, 1.0), worldAt(texelFetch(uDep, p, 0).r)) : misty(uGroundOn > 0 ? groundHere() : (sh ? uShadowCol : vec4(0.0)), groundPt()); return; }
   vec4 it = texelFetch(uIdT, p, 0);
   int myId = idOf(it), myFl = flOf(it);
   float d = texelFetch(uDep, p, 0).r;
@@ -473,8 +569,8 @@ void main(){
   }
   if (acc) { o = vec4(uAccent, 1.0); return; }
   if (!obj) {
-    if (line) { o = vec4(nsoft > 0 ? mix(uLine, soft / float(nsoft) * 0.32, 0.55) : uLine, 1.0); return; }
-    if (uGroundOn > 0) { o = groundHere(); return; }
+    if (line) { o = misty(vec4(nsoft > 0 ? mix(uLine, soft / float(nsoft) * 0.32, 0.55) : uLine, 1.0), groundPt()); return; }
+    if (uGroundOn > 0) { o = misty(groundHere(), groundPt()); return; }
     o = sh ? uShadowCol : vec4(0.0); return;
   }
   int occ = 0;
@@ -489,7 +585,7 @@ void main(){
   }
   vec3 rgb = c.rgb;
   if (occ >= 6) rgb *= 0.8;
-  o = vec4((edge && !(inFade && (myFl & 8) != 0)) ? mix(rgb, uLine, 0.5) : rgb, 1.0);
+  o = misty(vec4((edge && !(inFade && (myFl & 8) != 0)) ? mix(rgb, uLine, 0.5) : rgb, 1.0), worldAt(d));
 }`;
   function compile(type, src) {
     const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -504,8 +600,16 @@ void main(){
     const u = {}; for (const n of names) u[n] = gl.getUniformLocation(p, n);
     return { p, u };
   }
-  const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil', 'uWind', 'uTime', 'uShadowOn', 'uLVP', 'uShadowTex', 'uSun', 'uAmb', 'uPU', 'uPV', 'uLeaf']);
-  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid', 'uMapWH']);
+  const TOD_U = ['uSunTint', 'uShadeTint', 'uShadowK', 'uSat', 'uNL', 'uLP', 'uLC', 'uLD'];
+  const P3 = program(VS, FS, ['uVP', 'uModel', 'uShadow', 'uLight', 'uView', 'uRampA', 'uRampB', 'uPat', 'uP', 'uQ', 'uR', 'uS', 'uRaw', 'uMode', 'uRV', 'uSc', 'uDecal', 'uId', 'uGround', 'uFade', 'uFadeOn', 'uSil', 'uWind', 'uTime', 'uShadowOn', 'uLVP', 'uShadowTex', 'uSun', 'uAmb', 'uPU', 'uPV', 'uLeaf', 'uWin', ...TOD_U]);
+  const PP = program(PVS, PFS, ['uCol', 'uIdT', 'uDep', 'uSize', 'uLine', 'uEps', 'uAO', 'uRaw', 'uHover', 'uAccent', 'uShadowCol', 'uFade', 'uGroundOn', 'uGroundTex', 'uGMap', 'uView2', 'uSunOn', 'uLVP', 'uShadowTex', 'uBias', 'uShadeMul', 'uTarget', 'uGrid', 'uMapWH', 'uMist', 'uMistCol', 'uRV3', 'uUV3', 'uFV3', 'uDZ', ...TOD_U]);
+  // the light of the hour for one program (see daytime.js); without it everything looks as at noon (catalog cards, the portrait)
+  const TOD_NONE = { sunTint: [1, 1, 1], shadeTint: [1, 1, 1], shadowK: 1, sat: 1, win: [0, 0, 0, 0], nl: 0, LP: new Float32Array(48), LC: new Float32Array(48), LD: new Float32Array(48), mist: 0, mistCol: [0.86, 0.88, 0.9], time: 0 };
+  function setTod(u, t) {
+    gl.uniform3fv(u.uSunTint, t.sunTint); gl.uniform3fv(u.uShadeTint, t.shadeTint); gl.uniform1f(u.uShadowK, t.shadowK); gl.uniform1f(u.uSat, t.sat ?? 1);
+    gl.uniform1i(u.uNL, t.nl);
+    if (t.nl > 0) { gl.uniform4fv(u.uLP, t.LP); gl.uniform4fv(u.uLC, t.LC); gl.uniform4fv(u.uLD, t.LD); }
+  }
   const fsVAO = gl.createVertexArray();
   // the light that picks each face's tone: from the upper left of the screen and a little from the viewer;
   // a location may mirror it to come from the upper right (see setSun) — then leaf highlights move to the right too
@@ -614,7 +718,8 @@ void main(){
   function setSun(dir, light) {
     SUN = nrm(dir); LZ = scl(SUN, -1); LX = nrm(cross([0, 1, 0], LZ)); LY = cross(LZ, LX);
     LIGHT = light === 'right' ? LIGHT_RIGHT : Array.isArray(light) ? nrm(light) : LIGHT_LEFT;
-    LEAF_PU = dot(LIGHT, RV) > 0 ? scl(RV, -1) : RV;
+    const side = dot(LIGHT, RV);
+    if (Math.abs(side) > 0.12 || !LEAF_PU) LEAF_PU = side > 0 ? scl(RV, -1) : RV;
   }
   const SHADOW = { res: Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE)), fbo: null, tex: null, vp: new Float32Array(16), bias: 0.0005, texel: 0.02 };
   {
@@ -642,7 +747,7 @@ void main(){
     }
     const size = Math.ceil(Math.max(u1 - u0, w1 - w0) + 2), tx = size / SHADOW.res;
     const U0 = Math.floor(((u0 + u1) / 2 - size / 2) / tx) * tx, W0 = Math.floor(((w0 + w1) / 2 - size / 2) / tx) * tx;
-    const D0 = e0 - 40, D1 = e1 + 2, kx = 2 / size, kz = 2 / (D1 - D0), m = SHADOW.vp;
+    const D0 = e0 - Math.max(40, 22 / Math.max(SUN[1], 0.12)), D1 = e1 + 2, kx = 2 / size, kz = 2 / (D1 - D0), m = SHADOW.vp;
     m[0] = LX[0] * kx; m[4] = LX[1] * kx; m[8] = LX[2] * kx; m[12] = -U0 * kx - 1;
     m[1] = LY[0] * kx; m[5] = LY[1] * kx; m[9] = LY[2] * kx; m[13] = -W0 * kx - 1;
     m[2] = LZ[0] * kz; m[6] = LZ[1] * kz; m[10] = LZ[2] * kz; m[14] = -D0 * kz - 1;
@@ -746,6 +851,8 @@ void main(){
     gl.uniformMatrix4fv(u.uLVP, false, SHADOW.vp);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(u.uShadowTex, 4);
     gl.uniform3fv(u.uSun, SUN); gl.uniform3f(u.uAmb, 0.36, 0.14, SHADOW.bias);
+    const tod = o.tod || TOD_NONE;
+    setTod(u, tod); gl.uniform4fv(u.uWin, tod.win);
     gl.uniform3fv(u.uPU, LEAF_PU); gl.uniform3fv(u.uPV, UV);
     gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex); gl.uniform1i(u.uLeaf, 6);
     if (!sunOn && L.shadow && L.shadow.length) {
@@ -793,6 +900,9 @@ void main(){
     gl.uniform4f(PP.u.uTarget, tg ? tg[0] : 0, tg ? tg[1] : 0, 0.32, tg ? 1 : 0);
     gl.uniform1i(PP.u.uGrid, o.grid ? 1 : 0);
     gl.uniform2f(PP.u.uMapWH, GW, GH);
+    setTod(PP.u, tod);
+    gl.uniform4f(PP.u.uMist, tod.mist, tod.time, 1 / v.s, tod.mist > 0.01 && !(o.ground && o.ground.mode === 2) ? 1 : 0); gl.uniform3fv(PP.u.uMistCol, tod.mistCol);
+    gl.uniform3fv(PP.u.uRV3, RV); gl.uniform3fv(PP.u.uUV3, UV); gl.uniform3fv(PP.u.uFV3, FV); gl.uniform1f(PP.u.uDZ, DZ);
     gl.bindVertexArray(fsVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.SCISSOR_TEST);
     gl.bindVertexArray(null);

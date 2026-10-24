@@ -60,7 +60,7 @@
   const PLAN = { cs: 12.6, m: 26 };
   let planBase = null, planTimer = 0, planKey = '';
   const GCOL = { '.': '#9cc160', ',': '#7c9a44', ':': '#c6a878', '#': '#8f9295', '_': '#c4c1b9' };
-  const TCOL = { garage: '#d9d7cf', substation: '#f0eee8', towers: '#c4463a', swing: '#6f9a63', pullbar: '#d9b23b', slide: '#9a6646', platform: '#8c8982', hoop: '#4b6e8d', bench: '#3f6a58', urn: '#7b776f', pole: '#8d8a83', entrance: '#b9b5ab', metalgarage: '#7c3a2c', car: '#5d6670', ibk3: '#5f6b47', tires: '#d9d6cf' };
+  const TCOL = { garage: '#d9d7cf', substation: '#f0eee8', towers: '#c4463a', swing: '#6f9a63', pullbar: '#d9b23b', slide: '#9a6646', platform: '#8c8982', hoop: '#4b6e8d', bench: '#3f6a58', urn: '#7b776f', pole: '#8d8a83', entrance: '#b9b5ab', metalgarage: '#7c3a2c', car: '#5d6670', ibk3: '#5f6b47', b32: '#7b8186', tires: '#d9d6cf' };
   function planPt(x, z) { const k = PLAN.cs / SQ2; return [PLAN.w / 2 + (x - z) * k, PLAN.m + (x + z) * k]; }
   function planSize() { PLAN.w = Math.round(GW * PLAN.cs * SQ2 + PLAN.m * 2); PLAN.h = PLAN.w; }
   function drawPlanBase() {

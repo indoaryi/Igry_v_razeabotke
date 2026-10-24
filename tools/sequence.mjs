@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Покадровая проверка анимации: часы игры останавливаются, тест сам шагает время и снимает сцену после каждого шага.
-//   node tools/sequence.mjs <папка> --setup="код" [--each="код"] [--dt=0.25] [--n=24] [--view=near] [--w=1000 --h=720] [--cols=6] [--loc=yard2]
+//   node tools/sequence.mjs <папка> --setup="код" [--each="код"] [--dt=0.25] [--n=24] [--view=near] [--w=1000 --h=720] [--cols=6] [--loc=yard2] [--kind=b32]
 // Код выполняется внутри игры (видит её имена). Пишет кадры frame-NN.png и лист sheet.png.
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,7 @@ await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 await page.goto(`http://127.0.0.1:${server.address().port}/pyatietazhki/index.html`);
 await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 });
 const frames = (n) => page.evaluate((n) => new Promise((res) => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
-await page.evaluate(({ loc, view, setup }) => {
+await page.evaluate(({ loc, view, setup, kind }) => {
   const Y = window.__yard;
   Y.noIntro = true; Y.paused = true;
   if (Y.MAP.id !== loc) Y.enterLocation(loc, 'start');
@@ -41,14 +41,15 @@ await page.evaluate(({ loc, view, setup }) => {
   if (setup) Y.ev(setup);
   Y.step(0.05);
   document.getElementById('stageBox').scrollIntoView({ block: 'start' });
-}, { loc: opt.loc || 'yard2', view: opt.view || 'near', setup: opt.setup || '' });
+  window.__seqKind = kind;
+}, { loc: opt.loc || 'yard2', view: opt.view || 'near', setup: opt.setup || '', kind: opt.kind || '' });
 const n = +(opt.n || 24), dt = +(opt.dt || 0.25), shots = [];
 for (let i = 0; i < n; i++) {
   if (i > 0) await page.evaluate(({ dt, each }) => { const Y = window.__yard; Y.step(dt); if (each) Y.ev(each); }, { dt, each: opt.each || '' });
   await frames(2);
   const r = await page.evaluate(() => {
     const Y = window.__yard, st = document.getElementById('stage');
-    const info = Y.ev(`(() => { const m = MACHINES.find((q) => q.inst); return [hero.act ? hero.act.kind + ':' + (hero.act.stage || '') + ':' + (hero.act.st || 0).toFixed(2) : '-', m ? m.mode + ' door ' + m.door.toFixed(2) + ' crouch ' + m.crouch.toFixed(2) : '', 'hero ' + hero.x.toFixed(2) + ',' + hero.z.toFixed(2) + (hero.inside ? ' inside' : '')].join(' | '); })()`);
+    const info = Y.ev(`(() => { const m = (hero.act && hero.act.inst && hero.act.inst.machine) || (hero.vehicle && hero.vehicle.machine) || MACHINES.find((q) => q.inst && (!window.__seqKind || q.kind === window.__seqKind)); return [hero.act ? hero.act.kind + ':' + (hero.act.stage || '') + ':' + (hero.act.st || 0).toFixed(2) : '-', m ? m.mode + ' door ' + m.door.toFixed(2) + ' crouch ' + m.crouch.toFixed(2) : '', 'hero ' + hero.x.toFixed(2) + ',' + hero.z.toFixed(2) + (hero.inside ? ' inside' : '')].join(' | '); })()`);
     return { url: st.toDataURL('image/png'), info };
   });
   const file = path.join(outDir, `frame-${String(i).padStart(2, '0')}.png`);

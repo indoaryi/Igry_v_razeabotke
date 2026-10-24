@@ -13,7 +13,7 @@
   }
   // what survives a page update for someone who has the yard open: where the hero stood, his gear and supplies, the view
   function hotData() {
-    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), counts: ITEMS.filter((i) => i.use).map((i) => [i.id, i.count]), view: viewMode, machines: machinesHot() };
+    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), counts: ITEMS.filter((i) => i.use).map((i) => [i.id, i.count]), view: viewMode, machines: machinesHot(), hour: DAY.goal ?? DAY.t, clock: DAY.run };
   }
   function applyHot(d) {
     if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return false;
@@ -21,6 +21,8 @@
     if (Array.isArray(d.counts)) for (const [id, n] of d.counts) { const it = itemById(id); if (it && Number.isFinite(n)) it.count = Math.max(0, n | 0); }
     if (Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) { hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z); }
     if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
+    if (Number.isFinite(d.hour)) daySet(d.hour);
+    if (d.clock) { DAY.run = true; $('clockChk').checked = true; }
     return true;
   }
   function boot(hot) {
@@ -35,6 +37,8 @@
     for (const it of ITEMS) icons[it.id] = iconCanvas(it.id);
     renderItems(); mark('ui');
     fitStage();
+    dayReadStage();
+    if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', dayReadStage); }
     window.__yard.times = T;
     if ('ResizeObserver' in window) new ResizeObserver(() => fitStage()).observe(stageEl); else window.addEventListener('resize', fitStage);
     buildLegend();
@@ -68,6 +72,7 @@
       return cv.toDataURL();
     },
     get pigeons() { return PIGEONS; },
+    setHour: (h) => { daySet(h); lastKey = ''; }, day: () => ({ t: DAY.t, run: DAY.run, goal: DAY.goal, look: Object.assign({}, DAYP) }),
     ev: (src) => eval(src),     // debugging: run code inside the game's scope
     renderCards: () => renderCards(), cardCanvases: () => CARDS.map((c) => c.cv), plan: planEl, ground: () => ground, noIntro: false
   };
@@ -78,7 +83,7 @@
       if (!window.__yard.paused) update(dt, viewRect());     // tests stop the clock and step it themselves
       if (stageVisible) drawStage(dt, hero.t);
       if (portraitVisible) drawPortrait(now / 1000);
-      updateHud(); updateContext(dt); updateHover(dt); drawPlan(dt);
+      updateHud(); updateClock(); updateContext(dt); updateHover(dt); drawPlan(dt);
     } catch (err) { console.error(err); }
     requestAnimationFrame(frame);
   }

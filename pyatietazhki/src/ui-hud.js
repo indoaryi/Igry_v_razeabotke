@@ -106,6 +106,24 @@
   }
   LOC_HOOKS.enter.push(buildLocSeg);
   $('rawChk').addEventListener('change', (e) => { raw = e.target.checked; lastKey = ''; });
+  // time of day: a preset hurries the clock forward to its hour; the box lets the clock run by itself (a day in ten minutes)
+  const todSeg = $('todSeg'), clockChk = $('clockChk'), hudClock = $('hudClock');
+  for (const P of DAY_PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = P.name; b.dataset.p = P.id;
+    b.addEventListener('click', () => dayGoto(P.h));
+    todSeg.append(b);
+  }
+  clockChk.addEventListener('change', (e) => { DAY.run = e.target.checked; });
+  let clockKey = '';
+  function updateClock() {
+    const k = fmtHour(DAY.t) + dayPeriod(DAY.goal ?? DAY.t);
+    if (k === clockKey) return;
+    clockKey = k;
+    hudClock.textContent = fmtHour(DAY.t);
+    const want = dayPeriod(DAY.goal ?? DAY.t);
+    for (const b of todSeg.children) b.setAttribute('aria-pressed', String(b.dataset.p === want));
+  }
 
   // ---------- stage input ----------
   let hoverPt = null, hoverT = 0;

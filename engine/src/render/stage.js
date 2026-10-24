@@ -72,6 +72,8 @@
     const hp = byType('hoop')[0], ball = hp && hp.dyn.ball;
     if (ball && (hero.thr.on || ball.state === 'fly')) fs = lerpV([...hs, 0], [...wpx(localPt(hp, hp.built.rim)), 0], 0.5);
     else if ((hero.shoot.on || hero.shoot.w > 0) && hero.aimAt) fs = lerpV([...hs, 0], [...wpx(hero.aimAt.pos), 0], 0.45);
+    // and towards the hull of a machine he is climbing into or out of, so its raised hatch stays in view
+    else if (hero.act && hero.act.kind === 'board' && hero.act.inst && hero.act.inst.machine) { const m = hero.act.inst.machine, B = m.bones || machineBones(m, m); fs = lerpV([...hs, 0], [...wpx(xf(B.torso, [0, 1.1, 0.3])), 0], 0.5); }
     const over = viewMode === 'all';
     let v, rect, ox, oy, sc;
     if (!over) {
@@ -88,9 +90,10 @@
       rect = [ox, oy, ox + W / sc, oy + H / sc];
       v = { w: W, h: H, ax: -ox * sc, ay: -oy * sc, s: S * sc };
     }
+    const tod = dayFrame(rect, tickNow / FPS);
     const c = rig.c;
     const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
-    const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid].join('|');
+    const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid, dayKey()].join('|');
     if (key !== lastKey) {
       lastKey = key;
       const L = buildLists(rect, rig);
@@ -104,7 +107,7 @@
       const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
       drawCalls = 0;
       render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
-        xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 },
+        xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 }, tod,
         ground: { x0: G.x0, y0: G.y0, w: G.w, h: G.h, mode: over ? 2 : 1 }, target: hero.target, grid: showGrid
       });
       lastView = { v, ox, oy, sc, over, raw };
@@ -140,7 +143,8 @@
     } else { last.muzzle = null; last.port = null; }
     last.glows = [];
     const glow = (bone, pt, nLocal) => { const n = nrm(xfDir(bone, nLocal)); if (dot(n, TOCAM) > 0.25) last.glows.push(wpx(xf(bone, pt))); };
-    if (!HERO.helmet) glow(B.head, [HC[0] - 0.036, HC[1] + 0.012, HC[2] + 0.13], [0, 0, 1]);
+    if (heroHidden()) { /* shut inside a machine: the eye's glow must not show through the armour */ }
+    else if (!HERO.helmet) glow(B.head, [HC[0] - 0.036, HC[1] + 0.012, HC[2] + 0.13], [0, 0, 1]);
     else for (const sg of [1, -1]) glow(B.head, [HC[0] + sg * 0.168, HC[1] + 0.03, HC[2] + 0.076], [sg * 0.6, 0, 0.8]);
     last.hit = pose.st.punch ? (pose.st.punch.hitL ? last.fistL : pose.st.punch.hitR ? last.fistR : null) : null;
     last.root = wpx(rig.root);
@@ -161,6 +165,7 @@
     }
     if (!raw) {
       scx.clearRect(0, 0, VW, VH);
+      drawStars(scx, ox, oy, VW, VH);
       scx.drawImage(layer, 0, 0);
       drawFx(scx, 1, ox, oy);
       if (last.hit) {

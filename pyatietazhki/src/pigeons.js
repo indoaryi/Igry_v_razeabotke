@@ -14,10 +14,11 @@
   }
   function takeOff(b, to, dur) { b.state = 'fly'; b.from = b.p.slice(); b.to = to; b.t = 0; b.dur = dur; b.yaw = Math.atan2(to[0] - b.p[0], to[2] - b.p[2]); }
   function updatePigeons(dt) {
+    const dark = DAYP.night > 0.55;     // after dusk they go up to the roofs and sleep till morning
     for (const b of PIGEONS) {
       b.t += dt;
       const dh = Math.hypot(hero.x - b.p[0], hero.z - b.p[2]);
-      if ((b.state === 'walk' || b.state === 'peck') && (dh < 1.7 || (dh < 3.2 && hero.run) || hero.shoot.on || (hero.vehicle && dh < 6) || b.scare)) {
+      if ((b.state === 'walk' || b.state === 'peck') && (dh < 1.7 || (dh < 3.2 && hero.run) || hero.shoot.on || (hero.vehicle && dh < 6) || b.scare || (dark && Math.random() < dt * 0.6))) {
         b.scare = false;
         const free = PERCHES.filter((q) => !PIGEONS.some((o) => o !== b && o.perch === q));
         const q = free[(pigR() * free.length) | 0] || PERCHES[0];
@@ -43,7 +44,8 @@
       } else if (b.state === 'perched') {
         b.timer -= dt;
         const home = [(PIG_HOME.x0 + PIG_HOME.x1) / 2, (PIG_HOME.z0 + PIG_HOME.z1) / 2];
-        if (b.timer <= 0 && Math.hypot(hero.x - home[0], hero.z - home[1]) > 4.5) {
+        if (dark) b.timer = Math.max(b.timer, 1);
+        else if (b.timer <= 0 && Math.hypot(hero.x - home[0], hero.z - home[1]) > 4.5) {
           const [x, z] = pigTarget(); b.perch = null; takeOff(b, [x, 0, z], 1.3 + pigR() * 0.5);
         } else if (b.timer <= 0) b.timer = 2 + pigR() * 3;
       }

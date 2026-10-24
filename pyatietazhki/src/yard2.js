@@ -21,7 +21,8 @@
     ground: null,
     sun: [0.78, 0.55, -0.2],                        // a low autumn sun from the right: the main facade in light, long shadows across the lawn
     light: 'right',                                 // faces take their tone from the upper right, as in the photo
-    arrival: 'У гаража стоит боевой костюм.',
+    sunAt: 16.3,                                    // that is the sun of about 16:20; the time of day moves it from there
+    arrival: 'Во дворе стоят два боевых костюма.',
     paths: [
       [[26.7, 10.6], [24.6, 10.4], [21.6, 11.6], [19.6, 12.6], [14.2, 14.1], [8.8, 14.7]],
       [[19.6, 12.6], [17.0, 17.4], [14.6, 22.6], [12.6, 29.6]]
@@ -51,12 +52,12 @@
       { n: 12, type: 'urn', at: [3.05, 21.95], rot: 0 },
       { n: 13, type: 'tree', kind: 'bare', at: [6.0, 0.9], h: 12, seed: 631 },
       { n: 13, type: 'tree', kind: 'bare', at: [8.2, 29.3], h: 10, seed: 632 },
-      { n: 14, type: 'pole', at: [26.1, 6.2], rot: 0 },
+      { n: 14, type: 'pole', at: [26.1, 6.2], rot: 0, flicker: true },
       { n: 16, type: 'grass', at: [17.6, 21.7], rx: 1.4, rz: 0.9, seed: 641, dry: 0.6, col: '#5f6a33', dryCol: '#c2ae66' },
       { n: 16, type: 'grass', at: [10.6, 21.4], rx: 1.0, rz: 1.3, seed: 642, dry: 0.65, col: '#5f6a33', dryCol: '#c2ae66' },
       { n: 16, type: 'grass', at: [24.9, 7.6], rx: 0.8, rz: 1.2, seed: 643, dry: 0.55, col: '#5f6a33', dryCol: '#c2ae66' }
     ],
-    machines: [{ n: 1, kind: 'ibk3', at: [23.4, 9.0], yaw: -Math.PI / 2 }],
+    machines: [{ n: 1, kind: 'ibk3', at: [23.4, 9.0], yaw: -Math.PI / 2 }, { n: 17, kind: 'b32', at: [14.0, 10.0], yaw: Math.PI / 4 + 0.5 }],
     spawns: {
       start: { at: [27.6, 7.2], yaw: 0 },
       fromYard1: { at: [28.4, 0.9], yaw: 0, walk: [27.9, 6.6] }
@@ -95,11 +96,13 @@
       { n: 13, name: 'Голые тополя', note: 'Уже облетели.', decor: true },
       { n: 14, name: 'Столб и провода', note: 'Провода тянутся к дальнему дому.', decor: true },
       { n: 15, name: 'Листопад', note: 'Листья на газоне, тропинке и асфальте; гуще всего под берёзами и у бордюра.', decor: true },
-      { n: 16, name: 'Бурьян', act: 'обыскать', note: 'За гаражом, у машин и у столба.' }
+      { n: 16, name: 'Бурьян', act: 'обыскать', note: 'За гаражом, у машин и у столба.' },
+      { n: 17, name: 'Бронекостюм «32»', act: 'забраться внутрь и пойти', note: 'Твой эскиз: короб брони на коротких ногах, спереди выпуклая капсула. Капсула откидывается вверх, герой сворачивается внутри, мачта с когтем раскрывает датчики.', added: true }
     ],
     pins: [[2, 86, 64], [3, 45, 58.7], [4, 21.5, 34.7], [5, 45, 74.7], [6, 15, 84], [7, 59, 37], [8, 84, 42.7], [9, 53, 50.7], [10, 43, 55.3], [11, 50.5, 54], [13, 73, 37.3], [14, 55, 28.7], [15, 65, 92]],
     cards: [
       { title: 'Боевой костюм ИБК-3', pick: () => byType('ibk3'), tag: 'залезть', type: 'ibk3', act: true },
+      { title: 'Бронекостюм «32»', pick: () => byType('b32'), tag: 'залезть', type: 'b32', act: true },
       { title: 'Железный гараж', pick: () => byType('metalgarage'), tag: 'объявления, замок', type: 'metalgarage', act: true },
       { title: 'Машины', multi: () => ['sedan', 'hatch', 'boxy', 'suv'].map((kd) => [INST.find((i) => i.type === 'car' && i.def.kind === kd)]), tag: 'осмотреть, колесо', type: 'car', act: true },
       { title: 'Дом с «домиком»', pick: () => [INST.find((i) => i.n === 7)], tag: 'декор', type: 'block5' },
@@ -117,7 +120,7 @@
           let c = '.';
           if (cz < 1.8 || cx > 25.6) c = ',';
           for (const o of map.objects) if (o.type === 'grass' && inE(cx, cz, o.at[0], o.at[1], o.rx + 0.6, o.rz + 0.6)) c = ',';
-          for (const [ex, ez, rx, rz] of [[23.6, 9.0, 1.9, 1.5], [22.0, 21.2, 1.4, 0.7], [24.6, 18.5, 0.6, 1.4]]) if (inE(cx, cz, ex, ez, rx, rz)) c = ':';
+          for (const [ex, ez, rx, rz] of [[23.6, 9.0, 1.9, 1.5], [14.3, 10.1, 1.8, 1.3], [22.0, 21.2, 1.4, 0.7], [24.6, 18.5, 0.6, 1.4]]) if (inE(cx, cz, ex, ez, rx, rz)) c = ':';
           if (cx < 3.9) c = '_';
           else if (cx < 8.6) c = '#';
           else if (cx > 26.75) c = '#';

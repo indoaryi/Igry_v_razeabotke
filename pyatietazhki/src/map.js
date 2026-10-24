@@ -6,6 +6,7 @@
     id: 'yard1', name: 'Двор у пятиэтажек', short: 'У пятиэтажек', photo: 'yard1',
     photoAlt: 'Исходная фотография: заросший двор, качели, горка, гараж с граффити, подстанция, игровой комплекс с красными крышами и пятиэтажки за деревьями',
     size: [30, 30],
+    sunAt: 14.5,    // the sun of the approved look stands here at half past two; mornings come from the open right side, evenings from behind the left house
     ground: null,   // filled by makeGround() the first time the yard is built
     paths: [
       [[29.6, 27.2], [24.5, 23.4], [19.2, 21.4], [14.6, 20.6], [10.8, 20.1], [6.4, 19.3], [4.0, 19.1]],

@@ -125,6 +125,8 @@
       update(a, dt) {
         a.st += dt;
         const T = 1.9;
+        if (a.leave && !a.fired && a.st < T + 0.35) { a.fired = true; a.st = T + 0.35 + Math.max(0, 0.35 - a.st); }     // called away: gets up at once, finds nothing
+
         a.w = Math.min(smooth(a.st / 0.35), 1 - smooth((a.st - (T + 0.35)) / 0.35));
         if (!a.fired && a.st > T) { a.fired = true; if (a.cb) a.cb(); }
         if (a.st >= T + 0.7) a.done = true;
@@ -134,7 +136,7 @@
       state: () => 'ищет в траве'
     },
     look: {
-      update(a, dt) { a.st += dt; if (!a.fired && a.st > (a.dur || 1.5) * 0.6) { a.fired = true; if (a.cb) a.cb(); } if (a.st >= (a.dur || 1.5)) a.done = true; },
+      update(a, dt) { a.st += dt; if (a.leave) { a.done = true; return; } if (!a.fired && a.st > (a.dur || 1.5) * 0.6) { a.fired = true; if (a.cb) a.cb(); } if (a.st >= (a.dur || 1.5)) a.done = true; },
       ctx: () => null, base: () => null, state: () => 'смотрит'
     }
   };
@@ -146,7 +148,16 @@
   const busyAct = () => hero.act && !onTower();
 
   // ---------- commands ----------
-  function clearPlans() { if (hero.path.length > 1) hero.path.length = 1; hero.queue = []; hero.target = null; }
+  // a new order replaces the old one at once: the hero drops the rest of his way, even mid-step, and heads off from where he stands
+  function clearPlans() {
+    hero.path.length = 0; hero.queue = []; hero.target = null;
+    const th = hero.thr;
+    if (th.on && !th.released && th.inst) {     // a throw cut short: the ball drops at his feet instead of vanishing
+      const b = th.inst.dyn.ball;
+      b.pos = [hero.x + Math.sin(hero.yaw) * 0.3, 0.12, hero.z + Math.cos(hero.yaw) * 0.3]; b.v = [Math.sin(hero.yaw) * 0.6, 0, Math.cos(hero.yaw) * 0.6]; b.state = 'roll';
+      th.released = true;
+    }
+  }
   function leaveCmds() {
     const out = [];
     if (hero.act) out.push({ type: 'leave' });

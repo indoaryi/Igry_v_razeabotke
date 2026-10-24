@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Лист «со всех сторон» для шагающей машины: восемь сторон стоя, стоянка на колене, открытый люк, герой для масштаба.
-//   node tools/machine-sheet.mjs <файл.png> [--loc=yard2] [--scale=3] [--views=stand,park,open]
+//   node tools/machine-sheet.mjs <файл.png> [--loc=yard2] [--kind=b32] [--scale=3] [--views=stand,park,open]
 // Рисует тем же движком, что и игра, без двора вокруг.
 import fs from 'fs';
 import path from 'path';
@@ -30,18 +30,19 @@ await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 await page.goto(`http://127.0.0.1:${server.address().port}/pyatietazhki/index.html`);
 await page.waitForFunction(() => window.__yard && window.__yard.bootMs >= 0, null, { timeout: 120000 });
 const views = String(opt.views || 'stand,park,open').split(',');
-const url = await page.evaluate(({ loc, k, views }) => {
+const url = await page.evaluate(({ loc, k, views, kind }) => {
   const Y = window.__yard;
   Y.noIntro = true;
   if (Y.MAP.id !== loc) Y.enterLocation(loc, 'start');
   return Y.ev(`(() => {
-    const m = MACHINES.find((q) => q.inst), K = ${k}, W = 260, H = 330;
-    const keep = JSON.parse(JSON.stringify({ x: m.x, z: m.z, yaw: m.yaw, crouch: m.crouch, door: m.door, dogs: m.dogs, wheel: m.wheel, shutter: m.shutter, lamps: m.lamps, glow: m.glow, lean: m.lean }));
+    const m = MACHINES.find((q) => q.inst && (!${JSON.stringify(kind)} || q.kind === ${JSON.stringify(kind)})), K = ${k}, W = 260, H = 330;
+    const keep = JSON.parse(JSON.stringify({ x: m.x, z: m.z, yaw: m.yaw, crouch: m.crouch, door: m.door, dogs: m.dogs, wheel: m.wheel, shutter: m.shutter, lamps: m.lamps, glow: m.glow, lean: m.lean, arms: m.arms }));
     const feetKeep = m.feet;
     const shots = [];
     const pose = (c) => {
       m.yaw = c.yaw; m.x = 15; m.z = 15;
       m.crouch = c.park ? 1 : 0; m.lean = c.park ? m.K.D.leanPark : m.K.D.leanStand;
+      m.arms = [0, 1].map((i) => Object.assign({}, c.park ? armPark(m.K.D, i) : armRest(m.K.D, i)));
       m.door = c.door || 0; m.dogs = c.door ? 1 : 0; m.wheel = c.door ? -2.6 : 0;
       m.shutter = c.park ? 0 : 1; m.lamps = c.park ? 0 : 1; m.glow = c.park ? 0.3 : 1;
       m.feet = [0, 1].map((i) => footPose(m, i, c.park ? 1 : 0));
@@ -50,15 +51,16 @@ const url = await page.evaluate(({ loc, k, views }) => {
     };
     const views = ${JSON.stringify(views)};
     const list = [];
-    if (views.includes('stand')) for (let i = 0; i < 8; i++) list.push({ yaw: Math.PI / 4 + i * Math.PI / 4, label: ['спереди', 'спереди-слева', 'слева', 'сзади-слева', 'сзади', 'сзади-справа', 'справа', 'спереди-справа'][i] });
-    if (views.includes('park')) { list.push({ yaw: Math.PI / 4 - Math.PI / 2, park: true, label: 'на колене, справа' }); list.push({ yaw: Math.PI * 5 / 4 - 0.6, park: true, label: 'на колене, сзади' }); }
-    if (views.includes('open')) { list.push({ yaw: Math.PI * 5 / 4 + 0.5, park: true, door: 1, hero: true, label: 'люк открыт, рядом герой' }); list.push({ yaw: Math.PI / 4 + 1.0, hero: true, label: 'рост героя для сравнения' }); }
+    const front = (m.K.D.board.style || 'rear') === 'front', parked = m.K.D.parkStyle === 'squat' ? 'на корточках' : 'на колене';
+    if (views.includes('stand')) for (let i = 0; i < 8; i++) list.push({ yaw: Math.PI / 4 + i * Math.PI / 4, label: ['спереди', 'спереди-справа', 'справа', 'сзади-справа', 'сзади', 'сзади-слева', 'слева', 'спереди-слева'][i] });
+    if (views.includes('park')) { list.push({ yaw: Math.PI / 4 + Math.PI / 2, park: true, label: parked + ', справа' }); list.push({ yaw: front ? Math.PI / 4 + 0.6 : Math.PI * 5 / 4 - 0.6, park: true, label: parked + (front ? ', спереди' : ', сзади') }); }
+    if (views.includes('open')) { list.push({ yaw: front ? Math.PI / 4 + 0.75 : Math.PI * 5 / 4 + 0.5, park: true, door: 1, hero: true, label: 'люк открыт, рядом герой' }); list.push({ yaw: Math.PI / 4 + 1.0, hero: true, label: 'рост героя для сравнения' }); }
     for (const c of list) {
       pose(c);
       const items = machineItems(m), main = items.slice(), shadow = items.filter((it) => it.shadow);
       if (c.hero) {
-        const sp = c.door ? mLocal(m, 0.75, -1.15) : mLocal(m, 1.05, 0.25);
-        const yawH = c.door ? m.yaw + 0.6 : m.yaw;
+        const sp = c.door ? (front ? mLocal(m, -0.55, 1.45) : mLocal(m, 0.75, -1.15)) : mLocal(m, 1.05, 0.25);
+        const yawH = c.door ? (front ? m.yaw + Math.PI - 0.5 : m.yaw + 0.6) : m.yaw;
         const p = buildPose({ t: 0, phase: 0, walkW: 0, runW: 0, sitW: 0, smokeW: 0, smokeT: 0, drinkW: 0, drinkT: 0, punchW: 0, punchT: 0, shootW: 0, shootT: 0, throwW: 0, throwT: 0, reachW: 0, reachT: 0 }, HERO.D, equip.hands === 'rifle');
         const B = evalBones(p.p, [sp[0], 0, sp[1]], yawH, HERO.D);
         for (const it of heroList(B, p)) { main.push(it); shadow.push(it); }
@@ -82,7 +84,7 @@ const url = await page.evaluate(({ loc, k, views }) => {
     });
     return sheet.toDataURL('image/png');
   })()`);
-}, { loc: opt.loc || 'yard2', k: +(opt.scale || 3), views });
+}, { loc: opt.loc || 'yard2', k: +(opt.scale || 3), views, kind: opt.kind || '' });
 fs.writeFileSync(out, Buffer.from(url.split(',')[1], 'base64'));
 console.log('wrote', out, errors.length ? 'ERRORS: ' + errors.join(' | ') : '');
 await browser.close();

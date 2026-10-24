@@ -51,7 +51,20 @@
         lamps: [['torso', [0.3, 0.592, 0.556], [0, -0.1, 1]], ['torso', [-0.3, 0.592, 0.556], [0, -0.1, 1]], ['lLo', [0.22, -0.2, 0.13], [0, 0, 1]]],
         glows: [['slit', [0, 0, 0.02], [0, 0, 1]]],
         hiss: [['lShin', [0.14, -0.04, -0.12]], ['rShin', [-0.14, -0.04, -0.12]]],
-        board: { x: 0.02, zWheel: -1.02, zDoor: -1.38, step: ['rShin', [0, -0.3, -0.2]], sill: [0, 0.13, -0.47], seat: [0, 0.17, -0.05], grip: -0.7, handle: [0.4, 0.5, -0.53], top: [0.22, 0.87, -0.48] }
+        parkStyle: 'kneel',
+        board: { style: 'rear', x: 0.02, zWheel: -1.02, zDoor: -1.38, step: ['rShin', [0, -0.3, -0.2]], sill: [0, 0.13, -0.47], seat: [0, 0.17, -0.05], grip: -0.7, handle: [0.4, 0.5, -0.53], top: [0.22, 0.87, -0.48], knock: [0, 0.4, -0.5] }
+      },
+      // the kind's own bones: the cupola turns, the hatch swings up on its top hinge, the wheel and the dogs on it, the slit shutter, exhaust flaps, the whip antenna
+      bones(B, s, D) {
+        B.cupola = M(B.torso, tr(...D.cupolaAt), ry(s.cupola));
+        B.door = M(B.torso, tr(...D.hinge), rx(s.door * D.doorMax));
+        B.wheel = M(B.door, tr(...D.wheelAt), rz(s.wheel));
+        B.dogL = M(B.door, tr(0.03 * (1 - s.dogs), 0, 0));
+        B.dogR = M(B.door, tr(-0.03 * (1 - s.dogs), 0, 0));
+        B.slit = M(B.torso, tr(...D.slit.at), rx(D.slit.tilt));
+        B.shutter = M(B.slit, tr(0, -D.slit.travel * s.shutter, 0));
+        for (let i = 0; i < 2; i++) B['flap' + i] = M(B.torso, tr(...D.exhausts[i].hinge), rx(-s.flaps[i]));
+        B.antenna = M(B.torso, tr(...D.antenna), rx(s.ant[0]), rz(s.ant[1]));
       },
       pistons: [
         ...['l', 'r'].map((s) => ({ a: [s + 'Thigh', [0, -0.12, -0.175]], b: [s + 'Shin', [0, -0.1, -0.17]], rb: 0.04, lb: 0.33, rr: 0.022, lr: 0.32, mb: MM.barrel, mr: MM.rod })),

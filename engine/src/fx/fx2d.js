@@ -4,7 +4,7 @@
   let shakeT = 0, shakeA = 0;
   function shake(a, t) { shakeA = Math.max(shakeA, a); shakeT = Math.max(shakeT, t); }
   function shakeNow(axis = 0) { if (shakeT <= 0 || reduceMotion) return 0; return (hash2(Math.floor(performance.now() / 45), axis, 7) - 0.5) * 2 * shakeA; }
-  let wispT = 0, puffT = 0, leafT = 0, stepPh = 0;
+  let wispT = 0, puffT = 0, leafT = 0, stepPh = 0, breathT = 2;
   // smoke and dust are pixel puffs that grow, drift with the wind and thin out by dithering
   const PUFF = {
     blue: ['#cdd5de', '#aab5c1', '#8c97a4'],      // from the cigarette tip
@@ -88,7 +88,14 @@
       }
       stepPh = ph;
     }
-    updateButterflies(dt);
+    if (DAYP.cold < 0.3 && DAYP.night < 0.1) updateButterflies(dt);
+    // a cold morning or night: the breath shows, a little cloud every few seconds
+    breathT -= dt;
+    if (breathT <= 0) {
+      breathT = 2.9 + Math.random() * 1.2;
+      if (DAYP.cold > 0.5 && last.mouth && !heroHidden() && !(sm.on && sm.w > 0.2) && !reduceMotion)
+        for (let i = 0; i < 2; i++) puff({ x: last.mouth[0] + last.face[0] * 2, y: last.mouth[1] + 1, vx: last.face[0] * (9 + Math.random() * 5), vy: last.face[1] * 4 - 3 - Math.random() * 2, life: 0.8 + Math.random() * 0.4, r0: 0.6, r1: 2 + Math.random(), a: 0.5 * DAYP.cold, drag: 0.35, rise: -3, tone: 'white' });
+    }
     if (shakeT > 0) { shakeT -= dt; if (shakeT <= 0) shakeA = 0; }
     const dr = hero.drink;
     if (dr.on && dr.t > 0.42 && dr.t - dt <= 0.42 && last.canTop) for (let i = 0; i < 6; i++) fx.push({ k: 'drop', x: last.canTop[0], y: last.canTop[1], vx: (Math.random() - 0.5) * 30, vy: -25 - Math.random() * 20, g: 140, life: 0.35 });
@@ -147,13 +154,77 @@
       px(ctx, X(gx), Y(gy), k, 'rgba(20,30,10,0.35)');
     }
   }
+  // a lit lamp seen from the yard: a dithered halo round the bulb, moths circling the street lamps
+  function drawLampGlow(ctx, k, X, Y) {
+    const t = performance.now() / 1000;
+    for (const L of dayLamps) {
+      const q = wpx(L.p), x = Math.round(X(q[0])), y = Math.round(Y(q[1]) + 1), big = L.kind === 'street', r = big ? 6 : 4;
+      if (L.k < 0.05) continue;
+      for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+        const d = Math.hypot(i, j * 1.25); if (d > r) continue;
+        if (BAYER[((j + 8) & 3) * 4 + ((i + 8) & 3)] >= (1 - d / r) * 9 * L.k) continue;
+        px(ctx, x + i, y + j, k, d < r * 0.4 ? 'rgba(255,236,190,0.75)' : 'rgba(255,196,120,0.38)');
+      }
+      for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0]]) px(ctx, x + dx, y + dy, k, 'rgba(255,250,230,0.95)');
+      if (big && DAYP.night > 0.5 && !reduceMotion) for (let m = 0; m < 3; m++) {
+        const a = t * (2.1 + m * 0.7) + m * 2.1, rr = 6 + m * 2.5 + Math.sin(t * 3.3 + m) * 2;
+        px(ctx, x + Math.cos(a) * rr, y + 3 + Math.sin(a * 1.3) * rr * 0.6, k, (Math.floor(t * 9 + m) & 1) ? '#efe9d8' : '#c9c2ae');
+      }
+    }
+  }
+  // evening midges in clouds over the bushes, bats over the yard at dusk and before dawn
+  function drawCritters(ctx, k, X, Y) {
+    if (reduceMotion) return;
+    const h = DAYP.h, t = performance.now() / 1000;
+    if (h > 16.4 && h < 19.7 && INST.length) {
+      if (!drawCritters.swarms || drawCritters.map !== MAP.id) {
+        drawCritters.map = MAP.id;
+        const R = rng(616), bushes = INST.filter((i) => i.type === 'bush');
+        drawCritters.swarms = bushes.filter(() => R() < 0.5).slice(0, 5).map((b) => ({ x: b.center[0] + (R() - 0.5), z: b.center[1] + (R() - 0.5), y: 1.6 + R() * 0.8, s: R() * 50 }));
+      }
+      const fade = Math.min(1, (h - 16.4) / 0.4, (19.7 - h) / 0.4);
+      for (const w of drawCritters.swarms) {
+        const c = wpx([w.x, w.y, w.z]);
+        for (let i = 0; i < 9; i++) {
+          if (hash2(i, Math.floor(w.s), 3) > fade) continue;
+          const a = t * (1.7 + i * 0.37) + i * 2.4 + w.s, r = 2 + (i % 4) * 1.6;
+          px(ctx, X(c[0] + Math.cos(a) * r + Math.sin(t * 5.1 + i) * 1.2), Y(c[1] + Math.sin(a * 1.3) * r * 0.7), k, (i & 1) ? 'rgba(40,36,30,0.8)' : 'rgba(236,214,150,0.85)');
+        }
+      }
+    }
+    const bats = (h > 19.3 && h < 22.5) || (h > 3.8 && h < 5.7);
+    if (bats) for (let b = 0; b < 2; b++) {
+      const u = t * (0.21 + b * 0.05) + b * 3.1, P = [GW * (0.5 + 0.38 * Math.sin(u * 1.7 + b)), 6.5 + 1.5 * Math.sin(u * 2.3), GH * (0.5 + 0.38 * Math.sin(u * 1.1 + 2 * b))];
+      const q = wpx(P), x = X(q[0] + Math.sin(t * 7 + b) * 3), y = Y(q[1] + Math.cos(t * 9.3 + b) * 2), up = (Math.floor(t * 12 + b * 5) & 1) === 0;
+      const col = 'rgba(24,22,30,0.95)';
+      px(ctx, x, y, k, col);
+      px(ctx, x - 1, y + (up ? -1 : 0), k, col); px(ctx, x + 1, y + (up ? -1 : 0), k, col);
+      px(ctx, x - 2, y + (up ? -2 : 1), k, col); px(ctx, x + 2, y + (up ? -2 : 1), k, col);
+    }
+  }
+  // stars over the dark air round the map (they stay put in the world and twinkle)
+  let STARS = null;
+  function drawStars(ctx, ox, oy, w, h) {
+    if (DAYP.night < 0.35) return;
+    if (!STARS) { const R = rng(1977); STARS = []; for (let i = 0; i < 160; i++) STARS.push([R() * 4400 - 2200, R() * 1500 - 900, R(), R()]); }
+    const t = performance.now() / 1000, a = clamp((DAYP.night - 0.35) / 0.4, 0, 1);
+    for (const [sx, sy, b, ph] of STARS) {
+      const x = Math.round(sx - ox), y = Math.round(sy - oy);
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      const tw = Math.sin(t * (0.7 + ph * 1.6) + ph * 40) > 0.6 - b * 0.5 ? 1 : 0.45;
+      ctx.fillStyle = `rgba(${b > 0.85 ? '255,236,200' : '214,226,255'},${(0.35 + 0.6 * b) * tw * a})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
   function px(ctx, x, y, k, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k))); }
   // draw effects; X/Y map world art px to the target canvas, k is the size of one art pixel there
   function drawFx(ctx, k, ox, oy) {
     const X = (x) => x - ox, Y = (y) => y - oy;
     for (const [x, y] of hits) px(ctx, X(x), Y(y), k, 'rgba(40,28,22,0.85)');
     for (const l of leavesP) { px(ctx, X(l.x), Y(l.y), k, l.col); if (Math.sin(l.ph) > 0) px(ctx, X(l.x + 1), Y(l.y), k, l.col); }
-    drawButterflies(ctx, k, X, Y);
+    if (DAYP.cold < 0.3 && DAYP.night < 0.1) drawButterflies(ctx, k, X, Y);
+    drawCritters(ctx, k, X, Y);
+    drawLampGlow(ctx, k, X, Y);
     for (const p of smokeP) {
       const t = p.age / p.life, r = Math.round(p.r0 + (p.r1 - p.r0) * (1 - (1 - t) * (1 - t)));
       const lv = Math.round(p.a * Math.pow(1 - t, 1.2) * 4);

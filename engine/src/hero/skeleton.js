@@ -167,9 +167,20 @@
     p.spine = [lean - 0.06, 0, 0]; p.lHand = [0.19, -0.08, 0.36]; p.rHand = [-0.19, -0.08, 0.36];
     return p;
   }
-  // from → to by k: stand (at the hatch), climb, sill, seat; back: a step backwards while lifting the hatch
+  // curled up in a pod (a suit with a front hatch): a low seat, knees drawn up, hands on the grips beside the knees
+  function posePod(t, D, lean) {
+    const p = poseSit(t, D);
+    p.hips = [0, 0, 0]; p.spine = [lean - 0.1, 0, 0]; p.chest = [0.06, 0, 0]; p.neck = [0.1, 0, 0];
+    p.lThigh = [-1.95, 0, 0.17]; p.rThigh = [-1.95, 0, -0.17];
+    p.lShin = [2.08, 0, 0]; p.rShin = [2.08, 0, 0];
+    p.lFoot = [0.02, 0, -0.08]; p.rFoot = [0.02, 0, 0.08];
+    p.lHand = [0.22 + (D.armor ? 0.04 : 0), -0.16, 0.3]; p.rHand = [-0.22 - (D.armor ? 0.04 : 0), -0.16, 0.3];
+    p.lPole = [0.8, -0.3, -0.4]; p.rPole = [-0.8, -0.3, -0.4];
+    return p;
+  }
+  // from → to by k: stand (at the hatch), climb, sill, seat or pod; back: a step backwards while lifting the hatch
   function poseBoard(a, D, t) {
-    const get = (k) => k === 'climb' ? poseClimb(a.ph || 0, D) : k === 'sill' ? poseSill(a.lean || 0, D) : k === 'seat' ? posePilot(t, D, a.lean || 0) : poseIdle(t, D);
+    const get = (k) => k === 'climb' ? poseClimb(a.ph || 0, D) : k === 'sill' ? poseSill(a.lean || 0, D) : k === 'seat' ? posePilot(t, D, a.lean || 0) : k === 'pod' ? posePod(t, D, a.lean || 0) : poseIdle(t, D);
     let p = get(a.from);
     if (a.to && a.k > 0) p = lerpPose(p, get(a.to), a.k);
     if (a.back > 0) p = lerpPose(p, poseWalk(a.bph || 0, D), a.back);
