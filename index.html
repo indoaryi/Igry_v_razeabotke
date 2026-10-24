@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Игры в разработке</title>
+<meta name="description" content="Игры, которые indoaryi делает вместе с Claude: изометрический движок с пиксель-артом и ранние сцены.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* the front page of the site: a list of everything that can be played in the browser (same colours and type as the game pages) */
+:root {
+  --bg: #ECEEEC;
+  --surface: #F8F9F7;
+  --ink: #1B1F22;
+  --muted: #586067;
+  --line: #C6CCC9;
+  --accent: #B8691C;
+  --accent-soft: #F2E4D3;
+  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --body: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121518; --surface: #1A1E22; --ink: #E6E9EA; --muted: #98A1A8;
+    --line: #2C3238; --accent: #E2A048; --accent-soft: #3A2D1D;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121518; --surface: #1A1E22; --ink: #E6E9EA; --muted: #98A1A8;
+  --line: #2C3238; --accent: #E2A048; --accent-soft: #3A2D1D;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); -webkit-text-size-adjust: 100%; }
+h1, h2, p, ul { margin: 0; }
+.wrap {
+  max-width: 1080px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: max(28px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(56px, env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 44px;
+}
+.intro { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.eyebrow { font: 500 12px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 700 clamp(28px, 7vw, 44px)/1.08 var(--display); letter-spacing: -0.01em; text-wrap: balance; }
+.lead { color: var(--muted); max-width: 62ch; }
+.sec { display: flex; flex-direction: column; gap: 16px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; max-width: 66ch; }
+h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
+.sec-text { color: var(--muted); font-size: 15px; }
+.games { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.card {
+  height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  color: inherit; text-decoration: none; transition: border-color .15s ease, transform .15s ease;
+}
+.card:hover { border-color: var(--accent); }
+.card:active { transform: translateY(1px); }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card b { font: 500 17px/1.25 var(--display); }
+.card .what { color: var(--muted); font-size: 15px; flex: 1; }
+.tag { align-self: flex-start; font: 500 11px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 4px 7px; border-radius: 6px; }
+.go { font: 500 13px/1.3 var(--mono); color: var(--accent); }
+.foot { color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.foot a { color: inherit; }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="intro">
+    <p class="eyebrow">indoaryi · Claude</p>
+    <h1>Игры в разработке</h1>
+    <p class="lead">Всё, во что уже можно поиграть прямо в браузере, — на телефоне тоже. Делаем вместе: идеи и плейтест — indoaryi, код и графика — Claude.</p>
+  </header>
+
+  <section class="sec" aria-labelledby="engine">
+    <div class="sec-head">
+      <h2 id="engine">На нашем движке</h2>
+      <p class="sec-text">Изометрия, 3D-модели кодом, отрисовка в пиксель-арт, свет, тени и время суток.</p>
+    </div>
+    <ul class="games">
+      <li><a class="card" href="pyatietazhki/">
+        <span class="tag">Первая игра</span>
+        <b>Двор у пятиэтажек</b>
+        <span class="what">Двор по фотографии, герой со снаряжением, шагающие костюмы. Здесь испытываем новые функции движка.</span>
+        <span class="go">Играть →</span>
+      </a></li>
+      <li><a class="card" href="poligon/">
+        <span class="tag">Все возможности</span>
+        <b>Испытательный полигон</b>
+        <span class="what">Общежитие, вышка у огневого рубежа, мишени, КПП, два костюма, за воротами опушка. Внизу страницы — список возможностей движка с кнопкой «Показать».</span>
+        <span class="go">Играть →</span>
+      </a></li>
+      <li><a class="card" href="ploshchadka/">
+        <span class="tag">Только ядро</span>
+        <b>Пустая площадка</b>
+        <span class="what">Самая маленькая игра на движке: только земля, свет и герой. Доказывает, что движок живёт без двора.</span>
+        <span class="go">Открыть →</span>
+      </a></li>
+    </ul>
+  </section>
+
+  <section class="sec" aria-labelledby="early">
+    <div class="sec-head">
+      <h2 id="early">Ранние сцены</h2>
+      <p class="sec-text">С них всё начиналось.</p>
+    </div>
+    <ul class="games">
+      <li><a class="card" href="dvor/">
+        <b>Живой двор</b>
+        <span class="what">Пиксельный двор с жизнью, сменой дня и ночи и погодой.</span>
+        <span class="go">Открыть →</span>
+      </a></li>
+      <li><a class="card" href="otsek/">
+        <b>Отсек 7</b>
+        <span class="what">Сцена в духе классического Фоллаута: КПП у гермоворот.</span>
+        <span class="go">Открыть →</span>
+      </a></li>
+      <li><a class="card" href="otsek-iso/">
+        <b>Отсек 7 в изометрии</b>
+        <span class="what">Та же сцена в изометрии: персонажи и комната собраны из 3D-моделей кодом.</span>
+        <span class="go">Открыть →</span>
+      </a></li>
+      <li><a class="card" href="vn-demo/">
+        <b>Тестовая новелла</b>
+        <span class="what">Сцена «Двор под дождём».</span>
+        <span class="go">Открыть →</span>
+      </a></li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <a href="https://github.com/indoaryi/Igry_v_razeabotke">Код на GitHub</a>
+    <span>Каждое изменение — отдельный коммит, любую версию можно вернуть.</span>
+  </footer>
+</main>
+</body>
+</html>
