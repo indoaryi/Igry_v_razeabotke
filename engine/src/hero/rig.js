@@ -1,17 +1,20 @@
-  // ================= hero rig: pose context → bones → draw list =================
+  // ================= posing a body: pose context → bones; the hero's draw list =================
+  // Every body is posed the same way (bodyRig): the player's hero and the people alike. quant — in the steps of the 12 fps picture
+  // (time, gait and overlay weights rounded, the feet on a whole pixel), as everything on the stage is drawn.
   import { FPS, S, UV } from '../core/camera.js';
   import { M, add, alongMinusY, alongPlusY, frameY, groundAt, invRigid, lerpV, mul, nrm, rotOnly, rx, scl, smooth, sub, tr, wpx, xf, xfDir } from '../core/math.js';
   import { mat } from '../render/materials.js';
   import { ellipsoid } from '../render/meshes.js';
   import { getMesh } from '../render/webgl.js';
-  import { CIG_LEN, HC, HERO, PROPS, RIFLE, TIP_DIM, TIP_HOT, backZ, equip } from './model.js';
+  import { CIG_LEN, HC, PROPS, RIFLE, TIP_DIM, TIP_HOT, backZ } from './model.js';
+  import { HERO, equip } from './wardrobe.js';
   import { buildPose, evalBones } from './skeleton.js';
   import { ACT, hero } from './hero.js';
   export const q = (t) => Math.floor(t * FPS) / FPS;
   export const wq = (w) => Math.round(w * 8) / 8;
-  function heroCtx(quant) {
+  function bodyCtx(b, quant) {
     const Q = quant ? q : (t) => t, W = quant ? wq : (w) => w;
-    let a = hero.act ? ACT[hero.act.kind].ctx(hero.act) : null;
+    let a = b.act ? ACT[b.act.kind].ctx(b.act) : null;
     if (a) {
       a = Object.assign({}, a, { w: W(a.w) });
       if (quant && a.ph != null) a.ph = Math.floor(a.ph * 8) / 8;
@@ -19,26 +22,27 @@
       if (quant && a.u != null) a.u = Math.round(a.u * 6) / 6;
     }
     return {
-      t: Q(hero.t), phase: quant ? Math.floor(hero.phase * 12) / 12 : hero.phase, walkW: W(hero.walkW), runW: W(hero.runW), sitW: W(smooth(hero.sit)), seat: hero.seat,
-      smokeW: W(hero.smoke.w), smokeT: Q(hero.smoke.t), drinkW: W(hero.drink.w), drinkT: Q(hero.drink.t),
-      punchW: W(hero.punch.w), punchT: Q(hero.punch.t), shootW: W(hero.shoot.w), shootT: Q(hero.shoot.t),
-      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to,
-      talkW: W(hero.talk.w), talkT: Q(hero.talk.t), act: a
+      t: Q(b.t), phase: quant ? Math.floor(b.phase * 12) / 12 : b.phase, walkW: W(b.walkW), runW: W(b.runW), sitW: W(smooth(b.sit)), seat: b.seat,
+      smokeW: W(b.smoke.w), smokeT: Q(b.smoke.t), drinkW: W(b.drink.w), drinkT: Q(b.drink.t),
+      punchW: W(b.punch.w), punchT: Q(b.punch.t), shootW: W(b.shoot.w), shootT: Q(b.shoot.t),
+      throwW: W(b.thr.w), throwT: Q(b.thr.t), reachW: W(b.reach.w), reachT: Q(b.reach.t), reachTo: b.reach.to,
+      talkW: W(b.talk.w), talkT: Q(b.talk.t), headYaw: quant ? Math.round(b.head * 8) / 8 : b.head, act: a
     };
   }
   export const PXV = S * UV[1];   // screen px per metre of height
-  export function heroRig(quant) {
-    const c = heroCtx(quant), D = HERO.D;
-    const pose = buildPose(c, D, equip.hands === 'rifle');
-    const base = hero.act ? ACT[hero.act.kind].base(hero.act, D) : null;
-    const yaw = (hero.shoot.on || hero.shoot.w > 0) && hero.aimYaw != null ? hero.aimYaw : (hero.sit > 0 && hero.seat ? hero.seat.yaw : hero.yaw);
-    let root = [hero.x, hero.y, hero.z];
+  // a body's bones: D — his proportions, rifle — a rifle in his hands (it changes how the arms hang)
+  export function bodyRig(b, D, rifle, quant) {
+    const c = bodyCtx(b, quant);
+    const pose = buildPose(c, D, rifle);
+    const base = b.act ? ACT[b.act.kind].base(b.act, D) : null;
+    const yaw = (b.shoot.on || b.shoot.w > 0) && b.aimYaw != null ? b.aimYaw : (b.sit > 0 && b.seat ? b.seat.yaw : b.yaw);
+    let root = [b.x, b.y, b.z];
     if (quant) {
-      const s = wpx([hero.x, 0, hero.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
-      root = [g[0], Math.round(hero.y * PXV) / PXV, g[1]];
+      const s = wpx([b.x, 0, b.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
+      root = [g[0], Math.round(b.y * PXV) / PXV, g[1]];
     }
     let B = evalBones(pose.p, root, yaw, D, base);
-    const hw = hero.act && ACT[hero.act.kind].hands ? ACT[hero.act.kind].hands(hero.act) : null;
+    const hw = b.act && ACT[b.act.kind].hands ? ACT[b.act.kind].hands(b.act) : null;
     if (hw && hw.w > 0) {
       const inv = invRigid(B.chest), p = pose.p;
       p.lHand = lerpV(p.lHand, xf(inv, hw.l), hw.w); p.rHand = lerpV(p.rHand, xf(inv, hw.r), hw.w);
@@ -47,14 +51,19 @@
     }
     return { c, pose, B, base, root, yaw };
   }
-  export function rifleWorld(rifle, B, D) {
+  export const heroRig = (quant) => bodyRig(hero, HERO.D, equip.hands === 'rifle', quant);
+  // what a pose context comes to, as text: the stage and the people redraw when it changes
+  export const poseKey = (c) => [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT,
+    c.reachW, c.reachT, c.talkW, c.talkT, c.headYaw, c.act ? JSON.stringify(c.act) : ''].join(',');
+  // where the rifle is (its grip, the muzzle along +z): in the hands, slung on the back, or leaning by the seat he sits on
+  export function rifleWorld(rifle, B, D, seat) {
     if (!rifle) return null;
     if (rifle.mode === 'hands') return M(B.chest, tr(...rifle.g), frameY(rifle.u, rifle.d));
     if (rifle.mode === 'back') {
       const bz = D.armor ? -0.355 : backZ(D, 0.1, 0.024) - 0.035;
       return M(B.chest, tr(0, 0.1, bz), frameY([0, 0, -1], nrm([0.55, 0.83, 0])), tr(0, 0, -0.16));
     }
-    return hero.seat ? hero.seat.rifleM : null;
+    return seat ? seat.rifleM : null;
   }
   export const BALL_MESH = () => getMesh('ball', () => ellipsoid(0.12, 0.12, 0.12, { seg: 12, rings: 8 }));
   export const BALL_MAT = mat('#d9692b', { pat: 41, p: [0.007, 0.085, 0, 0], noise: 0.03, grain: 60 });
@@ -67,7 +76,7 @@
     }
     if (opts.noProps) return out;
     const D = HERO.D;
-    const RW = rifleWorld(pose.rifle, B, D);
+    const RW = rifleWorld(pose.rifle, B, D, hero.seat);
     if (RW) for (const r of RIFLE) out.push({ mesh: r.mesh, model: mul(RW, r.off), mat: r.mat, id: 1 });
     const sm = pose.st.smoke, dr = pose.st.drink, th = pose.st.thr;
     const hand = xf(B.rHand, [0, 0, 0]);

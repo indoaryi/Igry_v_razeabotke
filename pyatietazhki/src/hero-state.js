@@ -7,9 +7,9 @@
   import { MAP } from '../../engine/src/world/map.js';
   import { remember } from '../../engine/src/world/state.js';
   import { CATALOG, USE, byType, localPt } from '../../engine/src/world/instances.js';
-  import { armored, equip } from '../../engine/src/hero/model.js';
+  import { equip } from '../../engine/src/hero/wardrobe.js';
   import { hangHandY } from '../../engine/src/hero/skeleton.js';
-  import { ACT, hero, lerpM, standHips, yawTo } from '../../engine/src/hero/hero.js';
+  import { ACT, armored, hero, lerpM, standHips, yawTo } from '../../engine/src/hero/hero.js';
   import { beginDrink, beginSmoke, busyAct, goSit, goSpot, inMachine, noArmor, plan, spotOf, startShoot } from '../../engine/src/hero/state.js';
   import { SL, SW, TW } from './catalog.js';
   import { itemById, itemFound, itemsChanged } from './inventory.js';

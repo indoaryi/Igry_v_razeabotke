@@ -4,7 +4,8 @@
   import { frameY, mul, nrm, ry, xf } from '../../engine/src/core/math.js';
   import { GAME, hook } from '../../engine/src/core/game.js';
   import { TGT_SMALL, render3D } from '../../engine/src/render/webgl.js';
-  import { HC, HERO, PROPS, RIFLE, buildHero, equip, gearVer, setHero } from '../../engine/src/hero/model.js';
+  import { HC, PROPS, RIFLE } from '../../engine/src/hero/model.js';
+  import { HERO, buildHero, equip, gearVer, setHero } from '../../engine/src/hero/wardrobe.js';
   import { buildPose, evalBones } from '../../engine/src/hero/skeleton.js';
   import { heroList, q } from '../../engine/src/hero/rig.js';
   const portraitCtx = $('portrait').getContext('2d');

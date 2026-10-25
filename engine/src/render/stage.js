@@ -9,9 +9,10 @@
   import { INST, instById } from '../world/instances.js';
   import { G, GH, GW } from '../world/ground.js';
   import { dayFrame, dayKey } from '../world/daytime.js';
-  import { CIG_LEN, HC, HERO, RIFLE_MUZZLE, RIFLE_PORT, gearVer } from '../hero/model.js';
+  import { CIG_LEN, HC, RIFLE_MUZZLE, RIFLE_PORT } from '../hero/model.js';
+  import { HERO, gearVer } from '../hero/wardrobe.js';
   import { hero, heroHidden } from '../hero/hero.js';
-  import { heroList, heroRig, rifleWorld } from '../hero/rig.js';
+  import { poseKey, heroList, heroRig, rifleWorld } from '../hero/rig.js';
   import { stageFade } from '../hero/travel.js';
   import { drawFx, drawStars, last, shakeNow } from '../fx/fx2d.js';
   export const stageEl = $('stage');
@@ -111,8 +112,7 @@
       v = { w: W, h: H, ax: -ox * sc, ay: -oy * sc, s: S * sc };
     }
     const tod = dayFrame(rect, tickNow / FPS);
-    const c = rig.c;
-    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.talkW, c.talkT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
+    const ckey = poseKey(rig.c) + ',' + (hero.seat ? 1 : 0);
     const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid, dayKey()].join('|');
     if (key !== lastKey) {
       lastKey = key;
@@ -150,7 +150,7 @@
     last.chest = wpx(xf(B.chest, [0, 0.1, 0]));
     const fd = wpx([Math.sin(rig.yaw), 0, Math.cos(rig.yaw)]), fl = Math.hypot(fd[0], fd[1]) || 1;
     last.face = [fd[0] / fl, fd[1] / fl];
-    const RW = rifleWorld(pose.rifle, B, HERO.D);
+    const RW = rifleWorld(pose.rifle, B, HERO.D, hero.seat);
     if (RW && pose.rifle.mode === 'hands') {
       last.muzzle = wpx(xf(RW, RIFLE_MUZZLE)); last.port = wpx(xf(RW, RIFLE_PORT));
       const m2 = wpx(xf(RW, add(RIFLE_MUZZLE, [0, 0, 0.1]))); const ad = [m2[0] - last.muzzle[0], m2[1] - last.muzzle[1]]; const al = Math.hypot(...ad) || 1; last.aim2d = [ad[0] / al, ad[1] / al];
@@ -158,9 +158,8 @@
     } else { last.muzzle = null; last.port = null; }
     last.glows = [];
     const glow = (bone, pt, nLocal) => { const n = nrm(xfDir(bone, nLocal)); if (dot(n, TOCAM) > 0.25) last.glows.push(wpx(xf(bone, pt))); };
-    if (heroHidden()) { /* shut inside a machine: the eye's glow must not show through the armour */ }
-    else if (!HERO.helmet) glow(B.head, [HC[0] - 0.036, HC[1] + 0.012, HC[2] + 0.13], [0, 0, 1]);
-    else for (const sg of [1, -1]) glow(B.head, [HC[0] + sg * 0.168, HC[1] + 0.03, HC[2] + 0.076], [sg * 0.6, 0, 0.8]);
+    // what shines on him (the cyber eye, the helmet's lamps: put.glow in look.js); shut inside a machine, nothing shows through the armour
+    if (!heroHidden()) for (const g of HERO.glows) glow(B[g.bone], g.at, g.n);
     last.hit = pose.st.punch ? (pose.st.punch.hitL ? last.fistL : pose.st.punch.hitR ? last.fistR : null) : null;
     last.root = wpx(rig.root);
   }

@@ -18,7 +18,10 @@
   import '../../engine/src/world/locations.js';
   import '../../engine/src/world/daytime.js';
   import '../../engine/src/hero/model.js';
+  import '../../engine/src/hero/look.js';
+  import '../../engine/src/hero/wardrobe.js';
   import '../../engine/src/hero/skeleton.js';
+  import '../../engine/src/hero/body.js';
   import '../../engine/src/hero/hero.js';
   import '../../engine/src/hero/rig.js';
   import '../../engine/src/hero/state.js';

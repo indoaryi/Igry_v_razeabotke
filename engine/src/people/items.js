@@ -13,6 +13,7 @@
   export const MONEY = 'rub';
   export const INV = { hero: [] };
   export let invVer = 0;                 // changes whenever any inventory does: panels redraw on it
+  export function invChanged() { invVer++; }
   export function itemType(id, def) { ITEM_TYPES[id] = Object.assign({ id, stack: true, price: 0 }, def); return ITEM_TYPES[id]; }
   const invFind = (inv, t) => inv.find((s) => s.t === t);
   export const invCount = (inv, t) => { const s = invFind(inv, t); return s ? s.n : 0; };

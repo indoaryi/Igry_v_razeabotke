@@ -70,10 +70,17 @@ for (const name of names) {
 fs.writeFileSync(path.join(out, 'snap.log'), log.join('\n') + '\n');
 if (opt.against && fs.existsSync(path.resolve(opt.against, 'snap.log'))) {
   const before = fs.readFileSync(path.resolve(opt.against, 'snap.log'), 'utf8').trim().split('\n');
+  // the world is compared without the number of draw calls: that one says how fast the picture is made, not what is in it
+  const world = (l) => l.replace(/: \d+ draws /, ': '), draws = (l) => +((l.match(/: (\d+) draws /) || [])[1] || 0);
   const now = log.filter((l) => before.some((b) => b.split(':')[0] === l.split(':')[0]));
-  const changed = now.filter((l) => !before.includes(l));
+  const changed = now.filter((l) => !before.map(world).includes(world(l)));
   console.log(changed.length ? `\nМир после шагов стал другим:\n  ${changed.join('\n  ')}` : '\nМир после каждого шага тот же.');
   differ += changed.length;
+  const pairs = now.map((l) => [draws(before.find((b) => b.split(':')[0] === l.split(':')[0])), draws(l)]).filter(([a, b]) => a !== b);
+  if (pairs.length) {
+    const sum = (k) => pairs.reduce((s, p) => s + p[k], 0);
+    console.log(`Вызовов отрисовки на снимок стало иначе в ${pairs.length} из ${now.length}: в среднем было ${Math.round(sum(0) / pairs.length)}, стало ${Math.round(sum(1) / pairs.length)}.`);
+  }
 }
 if (G.errors.length) { console.log('ОШИБКИ НА СТРАНИЦЕ:\n' + G.errors.join('\n')); differ++; }
 if (opt.against) console.log(differ ? `\nОтличий: ${differ}` : '\nВсё совпадает.');

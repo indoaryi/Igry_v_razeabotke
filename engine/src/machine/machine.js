@@ -19,11 +19,12 @@
   import { G, GH, GW, ground } from '../world/ground.js';
   import { NAV, blockedAt, buildNav } from '../world/nav.js';
   import { DAYP } from '../world/daytime.js';
-  import { HERO, armored } from '../hero/model.js';
+  import { HERO } from '../hero/wardrobe.js';
   import { ik } from '../hero/skeleton.js';
-  import { ACT, driving, hero, standHips } from '../hero/hero.js';
+  import { ACT, armored, driving, hero, standHips } from '../hero/hero.js';
   import { plan, startAct } from '../hero/state.js';
   import { fx, puff, px, shake } from '../fx/fx2d.js';
+  import { worldT } from '../core/run.js';
   export const MACHINE_KINDS = {};
   const MACHINES = [];
   export const MACHINE_HOOKS = { stomp: [] };      // f(world point, machine): something nearby reacts to a footfall
@@ -122,7 +123,7 @@
   function machineSnapshot(m) {
     const q = (v, k = 100) => Math.round(v * k) / k;
     const snapG = (x, z) => { const s = wpx([x, 0, z]); return groundAt(Math.round(s[0]), Math.round(s[1])); };
-    const g = snapG(m.x, m.z), tick = Math.floor(hero.t * FPS);
+    const g = snapG(m.x, m.z), tick = Math.floor(worldT * FPS);
     const vib = m.engine > 0.5 ? ((tick & 1) ? 0.007 : 0) * (m.walking ? 0.5 : 1) : 0;
     const sh = m.shud > 0 ? (hash2(tick, 3, 9) - 0.5) * 0.03 * m.shud : 0;
     return {

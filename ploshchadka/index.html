@@ -2496,7 +2496,9 @@ void main(){
     });
   }
   function dayKey() { return DAY.t.toFixed(3) + (DAYP.lamps > 0 ? '|' + dayLamps.map((l) => l.k.toFixed(2)).join(',') : ''); }
-  // ================= hero model =================
+  // ================= the human body's shapes: head, torso, proportions; the props he holds =================
+  // The shapes every person's pieces are cut from (the hero's in wardrobe.js, other people's in people/look.js): the head and the torso
+  // profiles, the body's proportions (dims), where the mouth is; and the props carried in the hands — the rifle, a cigarette, a can.
   const HC = [0, 0.085, 0.012];   // head centre, head-bone space
   function dims(armor) {
     const D = { w: 1.06, d: 1.05, l: 1.08, belly: 0.008, sx: 0.2, shY: 0.245, hipX: 0.095, spineY: 0.06, chestY: 0.18, neckY: 0.315, headY: 0.076,
@@ -2561,149 +2563,6 @@ void main(){
     put('sight', () => box(0.006, 0.025, 0.012), tr(0, 0.12, 0.38), blk);
     return out;
   }
-  function buildHero(eq) {
-    const armor = eq.body === 'armor', helmet = eq.head === 'helmet', jacket = eq.body === 'jacket';
-    const D = dims(armor);
-    const parts = [];
-    const put = (key, fn, bone, off, m, group) => parts.push({ mesh: getMesh(key, fn), bone, off: off || I4(), mat: m, group: group || 'body' });
-    const seg = (key, bone, a, b, r, m, group) => { const L = len(sub(b, a)); put('seg' + key + L.toFixed(3), () => capsule(L, r, r, { seg: 6 }), bone, M(tr(...a), alongMinusY(sub(b, a))), m, group); };
-    const skin = mat(COL.skin, { noise: 0.05, grain: 70 });
-    const H = (x, y, z) => [HC[0] + x, HC[1] + y, HC[2] + z];
-
-    // head, face, cyber eye
-    if (!helmet) {
-      put('head', () => headMesh(0, -1), 'head', tr(...HC), mat(COL.skin, { pat: 1, p: [1, 0, 0, 0], b: COL.beard, noise: 0.05, grain: 70 }));
-      put('nose', () => ellipsoid(0.015, 0.03, 0.022, { seg: 8, rings: 5 }), 'head', M(tr(...H(0, -0.014, 0.1)), rx(-0.3)), skin);
-      const brow = mat('#5f5b56', { noise: 0.2, grain: 120 });
-      for (const sg of [1, -1]) put('brow', () => ellipsoid(0.028, 0.009, 0.014, { seg: 8, rings: 4 }), 'head', M(tr(...H(sg * 0.034, 0.036, 0.095)), rz(sg * 0.14)), brow);
-      for (const sg of [1, -1]) put('ear', () => ellipsoid(0.014, 0.028, 0.02, { seg: 8, rings: 4 }), 'head', tr(...H(sg * 0.093, 0, -0.006)), skin);
-      put('hair', () => headMesh(0.009, -0.09), 'head', tr(...H(0, 0.004, -0.002)), mat(COL.hair, { pat: 7, p: [0.032, 0.058, 0.0, -0.035], nape: -0.072, noise: 0.34, grain: 110 }));
-      const dark = mat('#2b2e32', { noise: 0.08, spec: 0.7, gloss: 18 }), cab = mat(COL.cable, { noise: 0.02, spec: 0.5, gloss: 20 });
-      put('eyeHouse', () => cyl(0.03, 0.027, 0.04, 12), 'head', M(tr(...H(-0.036, 0.012, 0.085)), alongPlusY([0, 0, 1])), dark);
-      put('eyeLens', () => ellipsoid(0.018, 0.006, 0.018, { seg: 10, rings: 4 }), 'head', M(tr(...H(-0.036, 0.012, 0.127)), alongPlusY([0, 0, 1])), mat(COL.green, { pat: 10, p: [4, 0, 0, 0] }));
-      put('eyeArm', () => box(0.03, 0.01, 0.012), 'head', tr(...H(-0.075, 0.022, 0.075)), dark);
-      put('eyeMod', () => box(0.014, 0.028, 0.034), 'head', tr(...H(-0.1, 0.03, 0.02)), dark);
-      for (const o of [0, 0.012]) {
-        seg('ch1', 'head', H(-0.104, 0.02 - o, 0.0), H(-0.108, -0.01 - o, -0.06), 0.0085, cab);
-        seg('ch2', 'head', H(-0.108, -0.01 - o, -0.06), H(-0.06 - o, -0.085, -0.09), 0.0085, cab);
-      }
-    }
-    put('neck', () => capsule(0.13, 0.044 * D.l, 0.05 * D.l), 'neck', tr(0, 0.088, -0.01), skin);
-
-    if (!armor) {
-      // torso
-      if (jacket) {
-        put('jacket', () => torsoMesh(D, 0.024, -0.215), 'chest', null, mat(COL.leather, { pat: 14, b: COL.tank, p: [0.034, 0.075, -0.18, 0], r: [-0.215, 0.17, 0, 0], noise: 0.15, grain: 70, spec: 0.7, gloss: 14 }), 'jacket');
-        put('collar', () => tube([{ a: 0.24, hu: 0.17 * D.w, hv: 0.105 * D.d, cv: -0.01 }, { a: 0.285, hu: 0.122, hv: 0.088, cv: -0.014 }, { a: 0.33, hu: 0.086, hv: 0.072, cv: -0.016 }]), 'chest', null, mat(COL.leather, { noise: 0.2, grain: 70, spec: 0.55, gloss: 14 }), 'jacket');
-        const lap = mat('#2c201b', { noise: 0.12, grain: 70, spec: 0.6, gloss: 14 });
-        for (const sg of [1, -1]) put('lapel', () => ellipsoid(0.05, 0.085, 0.014, { seg: 10, rings: 6 }), 'chest', M(tr(sg * 0.074, 0.2, frontZ(D, 0.19, 0.024) - 0.006), rz(sg * 0.42), rx(-0.2)), lap, 'jacket');
-        const sl = mat(COL.leather, { pat: 8, p: [-0.2, 0, 0, 0], noise: 0.17, grain: 70, spec: 0.7, gloss: 14 });
-        for (const s of ['l', 'r']) {
-          put('slDelt', () => ellipsoid(0.07 * D.l, 0.075, 0.068 * D.l, { seg: 12, rings: 7 }), s + 'Up', tr(0, -0.035, 0), sl, 'jacket');
-          put('slUp', () => capsule(D.upper, 0.064 * D.l, 0.052 * D.l), s + 'Up', null, sl, 'jacket');
-          put('slLo', () => capsule(0.235, 0.054 * D.l, 0.045 * D.l), s + 'Lo', null, sl, 'jacket');
-        }
-      } else {
-        put('tank', () => torsoMesh(D, 0.006, -0.32), 'chest', null, mat(COL.tank, { pat: 13, b: COL.skin, p: [0.19, 0.115, 0.215, 0.085], noise: 0.08, grain: 60 }), 'tank');
-        for (const s of ['l', 'r']) {
-          put('armDelt', () => ellipsoid(0.058 * D.l, 0.066, 0.056 * D.l, { seg: 12, rings: 7 }), s + 'Up', tr(0, -0.035, 0), skin);
-          put('armUp', () => capsule(D.upper, 0.052 * D.l, 0.042 * D.l), s + 'Up', null, skin);
-          put('armLo', () => capsule(0.235, 0.046 * D.l, 0.033 * D.l), s + 'Lo', null, skin);
-        }
-      }
-      // dog tag
-      const steel = mat(COL.metal, { noise: 0.04, spec: 1, gloss: 6 });
-      const tz = frontZ(D, 0.12, 0.006) + 0.012;
-      put('tag', () => box(0.013, 0.02, 0.003), 'chest', tr(0, 0.12, tz), steel);
-      for (const sg of [1, -1]) seg('chain', 'chest', [sg * 0.05, 0.31, 0.06], [sg * 0.008, 0.142, tz - 0.002], 0.006, steel);
-      // back cables down the jacket
-      if (!helmet) {
-        const cab = mat(COL.cable, { noise: 0.02 }), bz = backZ(D, 0.1, jacket ? 0.024 : 0.006) - 0.008;
-        for (const o of [0, 0.014]) {
-          seg('cb1', 'chest', [-0.055 - o, D.neckY + 0.02, -0.095], [-0.07 - o, 0.25, bz + 0.012], 0.0085, cab);
-          seg('cb2', 'chest', [-0.07 - o, 0.25, bz + 0.012], [-0.085 - o, 0.06, bz], 0.0085, cab);
-          seg('cb3', 'chest', [-0.085 - o, 0.06, bz], [-0.07 - o, -0.13, bz + 0.006], 0.0085, cab);
-        }
-      }
-      for (const s of ['l', 'r']) {
-        put('palm', () => ellipsoid(0.026, 0.052, 0.044, { seg: 10, rings: 6, exp: 2.4 }), s + 'Hand', tr(0, -0.008, 0.004), skin);
-        put('thumb', () => capsule(0.035, 0.013, 0.011, { seg: 6 }), s + 'Hand', M(tr(0, 0.018, 0.034), rx(-0.9)), skin);
-      }
-      // trousers, belt, holster
-      const cargo = mat(COL.cargo, { noise: 0.12, grain: 70 });
-      put('pelvis', () => loft([
-        { a: -0.13, hu: 0.11 * D.w, hv: 0.075 * D.d }, { a: -0.09, hu: 0.155 * D.w + 0.014, hv: 0.105 * D.d + 0.014 },
-        { a: -0.02, hu: 0.168 * D.w + 0.014, hv: 0.115 * D.d + 0.014, cv: 0.004 }, { a: 0.06, hu: 0.165 * D.w + 0.014, hv: 0.118 * D.d + 0.014, cv: 0.008 },
-        { a: 0.12, hu: 0.16 * D.w + 0.014, hv: 0.115 * D.d + 0.014, cv: 0.008 }], { seg: 14, exp: 2.4, capAAt: -0.15, capBAt: 0.13 }), 'hips', null, cargo);
-      put('belt', () => tube([{ a: 0.055, hu: 0.175 * D.w + 0.02, hv: 0.122 * D.d + 0.02, cv: 0.008 }, { a: 0.1, hu: 0.172 * D.w + 0.02, hv: 0.12 * D.d + 0.02, cv: 0.008 }]), 'hips', null, mat(COL.belt, { noise: 0.05 }));
-      put('buckle', () => box(0.03, 0.022, 0.008), 'hips', tr(0, 0.078, 0.122 * D.d + 0.032), mat(COL.metal, { noise: 0.04, spec: 1, gloss: 6 }));
-      for (const [s, sg] of [['l', 1], ['r', -1]]) {
-        put('thigh', () => capsule(D.thigh, 0.092 * D.l, 0.07 * D.l), s + 'Thigh', null, cargo);
-        put('shin', () => capsule(0.24, 0.07 * D.l, 0.074 * D.l), s + 'Shin', null, mat(COL.cargo, { pat: 24, p: [-0.02, 0, 0, 0], noise: 0.12, grain: 70 }));
-        put('pocket', () => box(0.022, 0.06, 0.052), s + 'Thigh', tr(sg * 0.1 * D.l, -0.2, 0.004), mat(COL.cargo, { pat: 24, p: [0.035, 0, 0, 0], noise: 0.12, grain: 70 }));
-        // boots: foot + shaft
-        put('boot', () => loft([
-          { a: -0.08, hu: 0.046, hv: 0.04, cv: -0.048 }, { a: -0.066, hu: 0.058, hv: 0.062, cv: -0.026 },
-          { a: -0.01, hu: 0.062, hv: 0.08, cv: -0.008 }, { a: 0.07, hu: 0.062, hv: 0.058, cv: -0.03 },
-          { a: 0.15, hu: 0.059, hv: 0.045, cv: -0.043 }, { a: 0.205, hu: 0.048, hv: 0.035, cv: -0.053 }], { axis: 'z', seg: 12, exp: 2.6, capAAt: -0.087, capBAt: 0.218 }),
-          s + 'Foot', null, mat(COL.boot, { pat: 19, b: COL.lace, p: [0.02, 0.022, -0.035, 55], noise: 0.08, spec: 0.6, gloss: 16 }));
-        put('soleBand', () => loft([{ a: -0.085, hu: 0.05, hv: 0.016, cv: -0.074 }, { a: -0.06, hu: 0.064, hv: 0.016, cv: -0.074 }, { a: 0.15, hu: 0.064, hv: 0.016, cv: -0.074 }, { a: 0.215, hu: 0.05, hv: 0.014, cv: -0.074 }], { axis: 'z', seg: 10, exp: 3, capAAt: -0.092, capBAt: 0.222 }),
-          s + 'Foot', null, mat('#151516', { pat: 23, p: [90, 0, 0, 0], noise: 0.05 }));
-        put('shaft', () => capsule(0.2, 0.066 * D.l, 0.064 * D.l), s + 'Shin', tr(0, -D.shin + 0.2, 0), mat(COL.boot, { pat: 19, b: COL.lace, p: [0.03, 0.02, -0.19, 50], noise: 0.08, spec: 0.6, gloss: 16 }));
-      }
-      // drop-leg holster on the right thigh
-      const hb = mat('#161618', { noise: 0.05 });
-      put('holster', () => box(0.024, 0.085, 0.045), 'rThigh', tr(-0.112 * D.l, -0.12, 0.005), hb);
-      put('pistol', () => box(0.016, 0.04, 0.022), 'rThigh', M(tr(-0.116 * D.l, -0.015, -0.012), rx(-0.35)), mat('#2c2c2f', { noise: 0.05, spec: 0.6, gloss: 18 }));
-      for (const y of [-0.08, -0.17]) put('strap' + y, () => tube([{ a: -0.012, hu: 0.098 * D.l, hv: 0.084 * D.l }, { a: 0.012, hu: 0.096 * D.l, hv: 0.082 * D.l }]), 'rThigh', tr(0, y, 0), hb);
-    } else {
-      // ---------- power armour ----------
-      const plate = mat(COL.steel, { pat: 20, b: COL.rust, p: [0, 0, 0, 0], noise: 0.1, grain: 28, spec: 0.85, gloss: 12 });
-      const plateSeam = mat(COL.steel, { pat: 20, b: COL.rust, p: [12, 0, 0, 0], noise: 0.1, grain: 28, spec: 0.85, gloss: 12 });
-      const dark = mat('#3a3d40', { pat: 20, b: COL.rust, noise: 0.12, grain: 45, spec: 0.5, gloss: 14 });
-      const rubber = mat(COL.rubber, { pat: 23, p: [32, 0, 0, 0], noise: 0.05 });
-      put('aTorso', () => loft(ARMOR_T.map((r) => ({ a: r[0], hu: r[1], hv: r[2], cv: r[3] })), { seg: 16, exp: 2.8, capAAt: -0.14, capBAt: 0.36 }), 'chest', null,
-        mat(COL.steel, { pat: 11, b: COL.yellow, p: [0.072, 0.1, 0.06, 0], noise: 0.1, grain: 28, spec: 0.85, gloss: 12 }), 'armorTop');
-      put('aBelly', () => tube([{ a: -0.29, hu: 0.19, hv: 0.14, cv: 0.01 }, { a: -0.11, hu: 0.2, hv: 0.15, cv: 0.01 }]), 'chest', null, rubber, 'armorTop');
-      put('aCollar', () => tube([{ a: 0.32, hu: 0.14, hv: 0.12 }, { a: 0.39, hu: 0.12, hv: 0.105 }]), 'chest', null, dark, 'armorTop');
-      put('aPack', () => box(0.17, 0.2, 0.085), 'chest', tr(0, 0.11, -0.255), mat(COL.steel, { pat: 16, p: [-0.06, 0.02, 0.085, 0], noise: 0.16, grain: 45, spec: 0.7, gloss: 12 }), 'armorTop');
-      for (const sg of [1, -1]) put('aPipe', () => capsule(0.24, 0.02, 0.02), 'chest', tr(sg * 0.13, 0.33, -0.3), mat('#2e3033', { pat: 23, p: [60, 0, 0, 0], noise: 0.05 }), 'armorTop');
-      put('aPelvis', () => loft([{ a: -0.15, hu: 0.13, hv: 0.09 }, { a: -0.08, hu: 0.2, hv: 0.15 }, { a: 0.05, hu: 0.21, hv: 0.16, cv: 0.01 }, { a: 0.13, hu: 0.2, hv: 0.155, cv: 0.01 }], { seg: 14, exp: 2.6, capAAt: -0.17, capBAt: 0.14 }), 'hips', null, plate);
-      put('aBelt', () => tube([{ a: 0.045, hu: 0.222, hv: 0.17, cv: 0.01 }, { a: 0.095, hu: 0.22, hv: 0.168, cv: 0.01 }]), 'hips', null, mat(COL.olive, { noise: 0.08 }));
-      for (const th of [0.75, -0.75, 1.65, -1.65]) put('aPouch', () => box(0.035, 0.04, 0.03), 'hips', M(tr(Math.sin(th) * 0.24, 0.06, Math.cos(th) * 0.185 + 0.01), ry(th)), mat(COL.olive, { pat: 24, p: [0.02, 0, 0, 0], noise: 0.1 }));
-      for (const [s, sg] of [['l', 1], ['r', -1]]) {
-        put('aPaul', () => ellipsoid(0.15, 0.09, 0.15, { half: true, seg: 14, rings: 5 }), s + 'Up', tr(sg * 0.028, 0.0, 0), plateSeam, 'armorTop');
-        put('aUp', () => capsule(D.upper, 0.078, 0.07), s + 'Up', null, plate, 'armorTop');
-        put('aElbow', () => ellipsoid(0.062, 0.062, 0.062, { seg: 10, rings: 6 }), s + 'Lo', null, dark);
-        put('aFore', () => loft([{ a: -0.27, hu: 0.066, hv: 0.066 }, { a: -0.05, hu: 0.074, hv: 0.074 }, { a: -0.015, hu: 0.07, hv: 0.07 }], { seg: 12, exp: 3, capAAt: -0.275, capBAt: -0.008 }), s + 'Lo', null,
-          s === 'l' ? mat(COL.steel, { pat: 15, b: COL.green, p: [0.045, -0.2, -0.1, 0.035], side: 1, noise: 0.1, grain: 28, spec: 0.85, gloss: 12 }) : plate);
-        put('aFist', () => ellipsoid(0.058, 0.064, 0.06, { seg: 10, rings: 6 }), s + 'Hand', null, mat('#33363a', { noise: 0.08 }));
-        put('aThigh', () => capsule(D.thigh, 0.11, 0.09), s + 'Thigh', null, plateSeam);
-        put('aKnee', () => ellipsoid(0.072, 0.078, 0.05, { seg: 10, rings: 6 }), s + 'Shin', tr(0, -0.01, 0.078), mat('#5a5e62', { noise: 0.12, grain: 45, spec: 0.85, gloss: 12 }));
-        put('aShin', () => loft([{ a: -D.shin + 0.03, hu: 0.084, hv: 0.084 }, { a: -0.2, hu: 0.09, hv: 0.092 }, { a: -0.03, hu: 0.086, hv: 0.088 }], { seg: 12, exp: 3, capAAt: -D.shin + 0.02, capBAt: -0.02 }), s + 'Shin', null, plateSeam);
-        put('aBoot', () => loft([
-          { a: -0.1, hu: 0.06, hv: 0.05, cv: -0.08 }, { a: -0.08, hu: 0.08, hv: 0.08, cv: -0.05 }, { a: 0.0, hu: 0.085, hv: 0.1, cv: -0.03 },
-          { a: 0.12, hu: 0.083, hv: 0.07, cv: -0.06 }, { a: 0.23, hu: 0.07, hv: 0.05, cv: -0.08 }], { axis: 'z', seg: 12, exp: 3, capAAt: -0.11, capBAt: 0.245 }),
-          s + 'Foot', null, mat('#45484c', { pat: 5, b: '#1c1c1e', p: [-0.1, 0, 0, 0], noise: 0.12, grain: 45, spec: 0.6, gloss: 14 }));
-      }
-    }
-
-    // helmet
-    if (helmet) {
-      const hm = mat(COL.steel, { pat: 17, b: COL.yellow, p: [0.022, -0.03, 0.115, 0], r: [-0.018, 0.026, 0.1, 0], noise: 0.1, grain: 28, spec: 0.9, gloss: 14 });
-      const hd = mat('#34373b', { noise: 0.08 });
-      put('hDome', () => ellipsoid(0.148, 0.152, 0.158, { exp: 2.3, seg: 18, rings: 10 }), 'head', tr(...H(0, 0.015, -0.005)), hm, 'helmet');
-      put('hResp', () => ellipsoid(0.075, 0.056, 0.05, { seg: 12, rings: 6 }), 'head', tr(...H(0, -0.078, 0.128)), mat('#3a3d41', { pat: 12, p: [0.01, 55, 0, 0], noise: 0.08 }), 'helmet');
-      for (const sg of [1, -1]) {
-        put('hFilter', () => cyl(0.03, 0.03, 0.06, 10), 'head', M(tr(...H(sg * 0.085, -0.095, 0.105)), alongPlusY([sg * 0.5, -0.35, 0.8])), mat('#2b2d30', { pat: 23, p: [80, 0, 0, 0], noise: 0.06 }), 'helmet');
-        put('hLamp', () => cyl(0.022, 0.022, 0.04, 10), 'head', M(tr(...H(sg * 0.14, 0.03, 0.04)), alongPlusY([sg * 0.6, 0, 0.8])), hd, 'helmet');
-        put('hLens', () => ellipsoid(0.018, 0.006, 0.018, { seg: 10, rings: 4 }), 'head', M(tr(...H(sg * 0.165, 0.03, 0.073)), alongPlusY([sg * 0.6, 0, 0.8])), mat(COL.green, { pat: 10, p: [4, 0, 0, 0] }), 'helmet');
-        put('hAnt', () => capsule(0.15, 0.0075, 0.006, { seg: 6 }), 'head', M(tr(...H(sg * 0.07, 0.11, -0.09)), alongMinusY([0, 1, -0.25])), mat('#202224', { noise: 0 }), 'helmet');
-      }
-      put('hSeal', () => tube([{ a: -0.13, hu: 0.115, hv: 0.12 }, { a: -0.09, hu: 0.13, hv: 0.135 }]), 'head', tr(...HC), hd, 'helmet');
-    }
-    return { parts, D, armor, helmet, jacket };
-  }
   // props
   const RIFLE = rifleParts();
   const CIG_LEN = 0.085;
@@ -2715,15 +2574,288 @@ void main(){
   };
   const TIP_DIM = mat('#c4471f', { pat: 10, p: [1, 0, 0, 0] });
   const TIP_HOT = mat('#e8742c', { pat: 10, p: [4, 0, 0, 0] });
+  // ================= how people look: a body on the common skeleton, dressed in pieces =================
+  // Everyone stands on the same skeleton (skeleton.js): the same bones, poses, walk and gestures. How someone looks is a look:
+  //   { id, dims: { … } (changes to the proportions, see dims() in model.js), armor: true (bulky kit: the arms hang off the body),
+  //     pieces: [names from PERSON_PIECES], colors: { … } (the pieces read what they need), seed }
+  // A piece is a function (put, D, C, look) that puts parts on bones: put(bone, key, () => mesh, offset in bone space, material, group).
+  // The key names the mesh (it is cached by it), so it has to change whenever the shape does. Parts that share a bone, a material and
+  // a group are merged into one mesh: the fully kitted soldier is ~7500 triangles in about fifty draws. Groups let an icon show one piece alone.
+  // put.glow(bone, at, n) marks a point that shines in the dark (a lens, a lamp): at — in the bone's space, n — which way it faces;
+  // the stage draws the glows of whoever the player steers.
+  //
+  // Things that are worn are WEAR entries: { slot: 'body' | 'head' | 'hands' | …, pieces: [what it puts on], covers: [regions of the
+  // body it hides], armor: true (it makes the wearer bulky), held: 'rifle' (it is carried in the hands, not put on) }.
+  // A piece of a look may name the region it belongs to (PIECE_REGION); dress(look, worn) leaves out the pieces the worn things cover
+  // and adds the things' own. So any thing fits anyone whose look is made of pieces, and a new thing is one more WEAR entry.
+  const PERSON_PIECES = {};
+  const PIECE_REGION = {};       // piece name → the region of the body it belongs to ('head', 'torso', 'arms', 'feet'…)
+  const WEAR = {};
+  const PERSON_MODELS = new Map();
+  function buildPerson(look) {
+    let model = PERSON_MODELS.get(look.id);
+    if (model) return model;
+    const D = Object.assign(dims(!!look.armor), look.dims || {}, { armor: !!look.armor });
+    const C = look.colors || {};
+    const raw = [], glows = [];
+    const put = (bone, key, fn, off, m, group) => raw.push({ bone, mesh: rawMesh('person:' + key, fn), off: off || ID4, mat: m, group: group || 'body' });
+    put.glow = (bone, at, n) => glows.push({ bone, at, n });
+    for (const name of look.pieces) PERSON_PIECES[name](put, D, C, look);
+    const groups = new Map();
+    for (const p of raw) {
+      const key = p.bone + '|' + p.mat.key + '|' + p.group + '|' + (p.mesh.lines ? 1 : 0);
+      let g = groups.get(key);
+      if (!g) { g = { bone: p.bone, mat: p.mat, group: p.group, parts: [] }; groups.set(key, g); }
+      g.parts.push(p);
+    }
+    const R = rng(look.seed || 4711);
+    model = {
+      look, D, glows,
+      parts: [...groups.values()].map((g) => ({ bone: g.bone, mat: g.mat, group: g.group, off: ID4, noShadow: !!g.mat.noShadow || !!g.parts[0].mesh.lines, mesh: upload(mergeRaw(g.parts, R)) }))
+    };
+    PERSON_MODELS.set(look.id, model);
+    return model;
+  }
+  // a look with things put on: the pieces they cover are left out, their own pieces are added; worn — ids of WEAR entries
+  // (things carried in the hands change no pieces). The id says what is worn, so each set of clothes is built once.
+  function dress(look, worn) {
+    const things = worn.filter((id) => id && WEAR[id] && WEAR[id].pieces);
+    const hidden = new Set(things.flatMap((id) => WEAR[id].covers || []));
+    const pieces = look.pieces.filter((p) => !hidden.has(PIECE_REGION[p]));
+    for (const id of things) pieces.push(...WEAR[id].pieces);
+    return Object.assign({}, look, { id: look.id + (things.length ? '|' + things.join('+') : ''), pieces, armor: !!look.armor || things.some((id) => WEAR[id].armor), worn: things });
+  }
+  // a rod (capsule) from a to b in a bone's space, and a plain cylinder
+  function personRod(put, bone, key, a, b, r, m, group) {
+    const L = len(sub(b, a));
+    put(bone, key + ':' + L.toFixed(3) + ',' + r, () => capsule(L, r, r, { seg: 6 }), M(tr(...a), alongMinusY(sub(b, a))), m, group);
+  }
+  function personCyl(put, bone, key, a, b, r, m, group, seg = 10) {
+    const L = len(sub(b, a));
+    put(bone, key + ':' + L.toFixed(3) + ',' + r, () => cyl(r, r, L, seg), M(tr(...a), alongPlusY(sub(b, a))), m, group);
+  }
+  // ================= the hero's look and the things of the engine's wardrobe, as pieces =================
+  // The hero is a look like anyone's (look.js): his own parts — a bearded head, grey hair, the cyber eye with its cables, bare arms
+  // and hands — and his everyday clothes: a tank top, cargo trousers with a belt, boots, a dog tag, a holster on the right thigh.
+  // Each piece names the region of the body it belongs to, so a worn thing can hide it: the leather jacket covers the torso and the
+  // arms, the power armour almost everything below the neck, the helmet the head, the hair and the implant with its cables.
+  // Regions so far: head, hair, implant, cables, torso, arms, hands, chest, back, legs, feet, thigh, pads, belt.
+  // The wardrobe (WEAR): jacket and armour for the body, the helmet for the head, the rifle carried in the hands.
 
-  // what the hero wears and holds: body 'tank' (default) | 'jacket' | 'armor', head null | 'helmet', hands null | 'rifle'.
+  // the hero's parts put as he was always built: put(key, mesh, bone, offset, material, group); the key carries the body's sizes,
+  // so a thing worn by someone of other proportions gets its own meshes
+  function heroPut(put, D) {
+    const dk = [D.w, D.d, D.l, D.belly, D.upper, D.fore, D.thigh, D.shin, D.neckY].map((v) => v.toFixed(3)).join(',');
+    const P = (key, fn, bone, off, m, group) => put(bone, 'hero:' + key + '|' + dk, fn, off || ID4, m, group);
+    const S = (key, bone, a, b, r, m, group) => { const L = len(sub(b, a)); P('seg' + key + L.toFixed(3), () => capsule(L, r, r, { seg: 6 }), bone, M(tr(...a), alongMinusY(sub(b, a))), m, group); };
+    return { P, S };
+  }
+  const H = (x, y, z) => [HC[0] + x, HC[1] + y, HC[2] + z];
+  const skinMat = () => mat(COL.skin, { noise: 0.05, grain: 70 });
+  const SIDES2 = [['l', 1], ['r', -1]];
+
+  // ---------- his own parts ----------
+  PERSON_PIECES.heroHead = (put, D) => {
+    const { P } = heroPut(put, D), skin = skinMat();
+    P('head', () => headMesh(0, -1), 'head', tr(...HC), mat(COL.skin, { pat: 1, p: [1, 0, 0, 0], b: COL.beard, noise: 0.05, grain: 70 }));
+    P('nose', () => ellipsoid(0.015, 0.03, 0.022, { seg: 8, rings: 5 }), 'head', M(tr(...H(0, -0.014, 0.1)), rx(-0.3)), skin);
+    const brow = mat('#5f5b56', { noise: 0.2, grain: 120 });
+    for (const sg of [1, -1]) P('brow', () => ellipsoid(0.028, 0.009, 0.014, { seg: 8, rings: 4 }), 'head', M(tr(...H(sg * 0.034, 0.036, 0.095)), rz(sg * 0.14)), brow);
+    for (const sg of [1, -1]) P('ear', () => ellipsoid(0.014, 0.028, 0.02, { seg: 8, rings: 4 }), 'head', tr(...H(sg * 0.093, 0, -0.006)), skin);
+  };
+  PIECE_REGION.heroHead = 'head';
+  PERSON_PIECES.heroHair = (put, D) => {
+    const { P } = heroPut(put, D);
+    P('hair', () => headMesh(0.009, -0.09), 'head', tr(...H(0, 0.004, -0.002)), mat(COL.hair, { pat: 7, p: [0.032, 0.058, 0.0, -0.035], nape: -0.072, noise: 0.34, grain: 110 }));
+  };
+  PIECE_REGION.heroHair = 'hair';
+  // the cyber eye: housing, a glowing green lens, the arm and the module, two cables going back
+  PERSON_PIECES.heroImplant = (put, D) => {
+    const { P, S } = heroPut(put, D);
+    const dark = mat('#2b2e32', { noise: 0.08, spec: 0.7, gloss: 18 }), cab = mat(COL.cable, { noise: 0.02, spec: 0.5, gloss: 20 });
+    P('eyeHouse', () => cyl(0.03, 0.027, 0.04, 12), 'head', M(tr(...H(-0.036, 0.012, 0.085)), alongPlusY([0, 0, 1])), dark);
+    P('eyeLens', () => ellipsoid(0.018, 0.006, 0.018, { seg: 10, rings: 4 }), 'head', M(tr(...H(-0.036, 0.012, 0.127)), alongPlusY([0, 0, 1])), mat(COL.green, { pat: 10, p: [4, 0, 0, 0] }));
+    P('eyeArm', () => box(0.03, 0.01, 0.012), 'head', tr(...H(-0.075, 0.022, 0.075)), dark);
+    P('eyeMod', () => box(0.014, 0.028, 0.034), 'head', tr(...H(-0.1, 0.03, 0.02)), dark);
+    for (const o of [0, 0.012]) {
+      S('ch1', 'head', H(-0.104, 0.02 - o, 0.0), H(-0.108, -0.01 - o, -0.06), 0.0085, cab);
+      S('ch2', 'head', H(-0.108, -0.01 - o, -0.06), H(-0.06 - o, -0.085, -0.09), 0.0085, cab);
+    }
+    put.glow('head', H(-0.036, 0.012, 0.13), [0, 0, 1]);
+  };
+  PIECE_REGION.heroImplant = 'implant';
+  PERSON_PIECES.heroNeck = (put, D) => {
+    const { P } = heroPut(put, D);
+    P('neck', () => capsule(0.13, 0.044 * D.l, 0.05 * D.l), 'neck', tr(0, 0.088, -0.01), skinMat());
+  };
+  PERSON_PIECES.heroArms = (put, D) => {
+    const { P } = heroPut(put, D), skin = skinMat();
+    for (const s of ['l', 'r']) {
+      P('armDelt', () => ellipsoid(0.058 * D.l, 0.066, 0.056 * D.l, { seg: 12, rings: 7 }), s + 'Up', tr(0, -0.035, 0), skin);
+      P('armUp', () => capsule(D.upper, 0.052 * D.l, 0.042 * D.l), s + 'Up', null, skin);
+      P('armLo', () => capsule(0.235, 0.046 * D.l, 0.033 * D.l), s + 'Lo', null, skin);
+    }
+  };
+  PIECE_REGION.heroArms = 'arms';
+  PERSON_PIECES.heroHands = (put, D) => {
+    const { P } = heroPut(put, D), skin = skinMat();
+    for (const s of ['l', 'r']) {
+      P('palm', () => ellipsoid(0.026, 0.052, 0.044, { seg: 10, rings: 6, exp: 2.4 }), s + 'Hand', tr(0, -0.008, 0.004), skin);
+      P('thumb', () => capsule(0.035, 0.013, 0.011, { seg: 6 }), s + 'Hand', M(tr(0, 0.018, 0.034), rx(-0.9)), skin);
+    }
+  };
+  PIECE_REGION.heroHands = 'hands';
+  // the implant's cables down his back, over the jacket when he wears one
+  PERSON_PIECES.heroBackCables = (put, D, C, look) => {
+    const { S } = heroPut(put, D), jacket = !!(look.worn && look.worn.includes('jacket'));
+    const cab = mat(COL.cable, { noise: 0.02 }), bz = backZ(D, 0.1, jacket ? 0.024 : 0.006) - 0.008;
+    for (const o of [0, 0.014]) {
+      S('cb1', 'chest', [-0.055 - o, D.neckY + 0.02, -0.095], [-0.07 - o, 0.25, bz + 0.012], 0.0085, cab);
+      S('cb2', 'chest', [-0.07 - o, 0.25, bz + 0.012], [-0.085 - o, 0.06, bz], 0.0085, cab);
+      S('cb3', 'chest', [-0.085 - o, 0.06, bz], [-0.07 - o, -0.13, bz + 0.006], 0.0085, cab);
+    }
+  };
+  PIECE_REGION.heroBackCables = 'cables';
+
+  // ---------- his everyday clothes ----------
+  PERSON_PIECES.tankTop = (put, D) => {
+    const { P } = heroPut(put, D);
+    P('tank', () => torsoMesh(D, 0.006, -0.32), 'chest', null, mat(COL.tank, { pat: 13, b: COL.skin, p: [0.19, 0.115, 0.215, 0.085], noise: 0.08, grain: 60 }), 'tank');
+  };
+  PIECE_REGION.tankTop = 'torso';
+  PERSON_PIECES.dogTag = (put, D) => {
+    const { P, S } = heroPut(put, D);
+    const steel = mat(COL.metal, { noise: 0.04, spec: 1, gloss: 6 });
+    const tz = frontZ(D, 0.12, 0.006) + 0.012;
+    P('tag', () => box(0.013, 0.02, 0.003), 'chest', tr(0, 0.12, tz), steel);
+    for (const sg of [1, -1]) S('chain', 'chest', [sg * 0.05, 0.31, 0.06], [sg * 0.008, 0.142, tz - 0.002], 0.006, steel);
+  };
+  PIECE_REGION.dogTag = 'chest';
+  PERSON_PIECES.cargoTrousers = (put, D) => {
+    const { P } = heroPut(put, D);
+    const cargo = mat(COL.cargo, { noise: 0.12, grain: 70 });
+    P('pelvis', () => loft([
+      { a: -0.13, hu: 0.11 * D.w, hv: 0.075 * D.d }, { a: -0.09, hu: 0.155 * D.w + 0.014, hv: 0.105 * D.d + 0.014 },
+      { a: -0.02, hu: 0.168 * D.w + 0.014, hv: 0.115 * D.d + 0.014, cv: 0.004 }, { a: 0.06, hu: 0.165 * D.w + 0.014, hv: 0.118 * D.d + 0.014, cv: 0.008 },
+      { a: 0.12, hu: 0.16 * D.w + 0.014, hv: 0.115 * D.d + 0.014, cv: 0.008 }], { seg: 14, exp: 2.4, capAAt: -0.15, capBAt: 0.13 }), 'hips', null, cargo);
+    P('belt', () => tube([{ a: 0.055, hu: 0.175 * D.w + 0.02, hv: 0.122 * D.d + 0.02, cv: 0.008 }, { a: 0.1, hu: 0.172 * D.w + 0.02, hv: 0.12 * D.d + 0.02, cv: 0.008 }]), 'hips', null, mat(COL.belt, { noise: 0.05 }));
+    P('buckle', () => box(0.03, 0.022, 0.008), 'hips', tr(0, 0.078, 0.122 * D.d + 0.032), mat(COL.metal, { noise: 0.04, spec: 1, gloss: 6 }));
+    for (const [s, sg] of SIDES2) {
+      P('thigh', () => capsule(D.thigh, 0.092 * D.l, 0.07 * D.l), s + 'Thigh', null, cargo);
+      P('shin', () => capsule(0.24, 0.07 * D.l, 0.074 * D.l), s + 'Shin', null, mat(COL.cargo, { pat: 24, p: [-0.02, 0, 0, 0], noise: 0.12, grain: 70 }));
+      P('pocket', () => box(0.022, 0.06, 0.052), s + 'Thigh', tr(sg * 0.1 * D.l, -0.2, 0.004), mat(COL.cargo, { pat: 24, p: [0.035, 0, 0, 0], noise: 0.12, grain: 70 }));
+    }
+  };
+  PIECE_REGION.cargoTrousers = 'legs';
+  PERSON_PIECES.boots = (put, D) => {
+    const { P } = heroPut(put, D);
+    for (const s of ['l', 'r']) {
+      P('boot', () => loft([
+        { a: -0.08, hu: 0.046, hv: 0.04, cv: -0.048 }, { a: -0.066, hu: 0.058, hv: 0.062, cv: -0.026 },
+        { a: -0.01, hu: 0.062, hv: 0.08, cv: -0.008 }, { a: 0.07, hu: 0.062, hv: 0.058, cv: -0.03 },
+        { a: 0.15, hu: 0.059, hv: 0.045, cv: -0.043 }, { a: 0.205, hu: 0.048, hv: 0.035, cv: -0.053 }], { axis: 'z', seg: 12, exp: 2.6, capAAt: -0.087, capBAt: 0.218 }),
+        s + 'Foot', null, mat(COL.boot, { pat: 19, b: COL.lace, p: [0.02, 0.022, -0.035, 55], noise: 0.08, spec: 0.6, gloss: 16 }));
+      P('soleBand', () => loft([{ a: -0.085, hu: 0.05, hv: 0.016, cv: -0.074 }, { a: -0.06, hu: 0.064, hv: 0.016, cv: -0.074 }, { a: 0.15, hu: 0.064, hv: 0.016, cv: -0.074 }, { a: 0.215, hu: 0.05, hv: 0.014, cv: -0.074 }], { axis: 'z', seg: 10, exp: 3, capAAt: -0.092, capBAt: 0.222 }),
+        s + 'Foot', null, mat('#151516', { pat: 23, p: [90, 0, 0, 0], noise: 0.05 }));
+      P('shaft', () => capsule(0.2, 0.066 * D.l, 0.064 * D.l), s + 'Shin', tr(0, -D.shin + 0.2, 0), mat(COL.boot, { pat: 19, b: COL.lace, p: [0.03, 0.02, -0.19, 50], noise: 0.08, spec: 0.6, gloss: 16 }));
+    }
+  };
+  PIECE_REGION.boots = 'feet';
+  // a drop-leg holster with a pistol on the right thigh
+  PERSON_PIECES.holster = (put, D) => {
+    const { P } = heroPut(put, D);
+    const hb = mat('#161618', { noise: 0.05 });
+    P('holster', () => box(0.024, 0.085, 0.045), 'rThigh', tr(-0.112 * D.l, -0.12, 0.005), hb);
+    P('pistol', () => box(0.016, 0.04, 0.022), 'rThigh', M(tr(-0.116 * D.l, -0.015, -0.012), rx(-0.35)), mat('#2c2c2f', { noise: 0.05, spec: 0.6, gloss: 18 }));
+    for (const y of [-0.08, -0.17]) P('strap' + y, () => tube([{ a: -0.012, hu: 0.098 * D.l, hv: 0.084 * D.l }, { a: 0.012, hu: 0.096 * D.l, hv: 0.082 * D.l }]), 'rThigh', tr(0, y, 0), hb);
+  };
+  PIECE_REGION.holster = 'thigh';
+
+  // ---------- the wardrobe ----------
+  // the leather jacket: open at the front over the tank top, a collar, lapels, sleeves
+  PERSON_PIECES.leatherJacket = (put, D) => {
+    const { P } = heroPut(put, D);
+    P('jacket', () => torsoMesh(D, 0.024, -0.215), 'chest', null, mat(COL.leather, { pat: 14, b: COL.tank, p: [0.034, 0.075, -0.18, 0], r: [-0.215, 0.17, 0, 0], noise: 0.15, grain: 70, spec: 0.7, gloss: 14 }), 'jacket');
+    P('collar', () => tube([{ a: 0.24, hu: 0.17 * D.w, hv: 0.105 * D.d, cv: -0.01 }, { a: 0.285, hu: 0.122, hv: 0.088, cv: -0.014 }, { a: 0.33, hu: 0.086, hv: 0.072, cv: -0.016 }]), 'chest', null, mat(COL.leather, { noise: 0.2, grain: 70, spec: 0.55, gloss: 14 }), 'jacket');
+    const lap = mat('#2c201b', { noise: 0.12, grain: 70, spec: 0.6, gloss: 14 });
+    for (const sg of [1, -1]) P('lapel', () => ellipsoid(0.05, 0.085, 0.014, { seg: 10, rings: 6 }), 'chest', M(tr(sg * 0.074, 0.2, frontZ(D, 0.19, 0.024) - 0.006), rz(sg * 0.42), rx(-0.2)), lap, 'jacket');
+    const sl = mat(COL.leather, { pat: 8, p: [-0.2, 0, 0, 0], noise: 0.17, grain: 70, spec: 0.7, gloss: 14 });
+    for (const s of ['l', 'r']) {
+      P('slDelt', () => ellipsoid(0.07 * D.l, 0.075, 0.068 * D.l, { seg: 12, rings: 7 }), s + 'Up', tr(0, -0.035, 0), sl, 'jacket');
+      P('slUp', () => capsule(D.upper, 0.064 * D.l, 0.052 * D.l), s + 'Up', null, sl, 'jacket');
+      P('slLo', () => capsule(0.235, 0.054 * D.l, 0.045 * D.l), s + 'Lo', null, sl, 'jacket');
+    }
+  };
+  // power armour: plates with the radiation trefoil on the chest, a pack, pauldrons, armoured arms and legs, a screen on the left forearm
+  PERSON_PIECES.powerArmor = (put, D) => {
+    const { P } = heroPut(put, D);
+    const plate = mat(COL.steel, { pat: 20, b: COL.rust, p: [0, 0, 0, 0], noise: 0.1, grain: 28, spec: 0.85, gloss: 12 });
+    const plateSeam = mat(COL.steel, { pat: 20, b: COL.rust, p: [12, 0, 0, 0], noise: 0.1, grain: 28, spec: 0.85, gloss: 12 });
+    const dark = mat('#3a3d40', { pat: 20, b: COL.rust, noise: 0.12, grain: 45, spec: 0.5, gloss: 14 });
+    const rubber = mat(COL.rubber, { pat: 23, p: [32, 0, 0, 0], noise: 0.05 });
+    P('aTorso', () => loft(ARMOR_T.map((r) => ({ a: r[0], hu: r[1], hv: r[2], cv: r[3] })), { seg: 16, exp: 2.8, capAAt: -0.14, capBAt: 0.36 }), 'chest', null,
+      mat(COL.steel, { pat: 11, b: COL.yellow, p: [0.072, 0.1, 0.06, 0], noise: 0.1, grain: 28, spec: 0.85, gloss: 12 }), 'armorTop');
+    P('aBelly', () => tube([{ a: -0.29, hu: 0.19, hv: 0.14, cv: 0.01 }, { a: -0.11, hu: 0.2, hv: 0.15, cv: 0.01 }]), 'chest', null, rubber, 'armorTop');
+    P('aCollar', () => tube([{ a: 0.32, hu: 0.14, hv: 0.12 }, { a: 0.39, hu: 0.12, hv: 0.105 }]), 'chest', null, dark, 'armorTop');
+    P('aPack', () => box(0.17, 0.2, 0.085), 'chest', tr(0, 0.11, -0.255), mat(COL.steel, { pat: 16, p: [-0.06, 0.02, 0.085, 0], noise: 0.16, grain: 45, spec: 0.7, gloss: 12 }), 'armorTop');
+    for (const sg of [1, -1]) P('aPipe', () => capsule(0.24, 0.02, 0.02), 'chest', tr(sg * 0.13, 0.33, -0.3), mat('#2e3033', { pat: 23, p: [60, 0, 0, 0], noise: 0.05 }), 'armorTop');
+    P('aPelvis', () => loft([{ a: -0.15, hu: 0.13, hv: 0.09 }, { a: -0.08, hu: 0.2, hv: 0.15 }, { a: 0.05, hu: 0.21, hv: 0.16, cv: 0.01 }, { a: 0.13, hu: 0.2, hv: 0.155, cv: 0.01 }], { seg: 14, exp: 2.6, capAAt: -0.17, capBAt: 0.14 }), 'hips', null, plate);
+    P('aBelt', () => tube([{ a: 0.045, hu: 0.222, hv: 0.17, cv: 0.01 }, { a: 0.095, hu: 0.22, hv: 0.168, cv: 0.01 }]), 'hips', null, mat(COL.olive, { noise: 0.08 }));
+    for (const th of [0.75, -0.75, 1.65, -1.65]) P('aPouch', () => box(0.035, 0.04, 0.03), 'hips', M(tr(Math.sin(th) * 0.24, 0.06, Math.cos(th) * 0.185 + 0.01), ry(th)), mat(COL.olive, { pat: 24, p: [0.02, 0, 0, 0], noise: 0.1 }));
+    for (const [s, sg] of SIDES2) {
+      P('aPaul', () => ellipsoid(0.15, 0.09, 0.15, { half: true, seg: 14, rings: 5 }), s + 'Up', tr(sg * 0.028, 0.0, 0), plateSeam, 'armorTop');
+      P('aUp', () => capsule(D.upper, 0.078, 0.07), s + 'Up', null, plate, 'armorTop');
+      P('aElbow', () => ellipsoid(0.062, 0.062, 0.062, { seg: 10, rings: 6 }), s + 'Lo', null, dark);
+      P('aFore', () => loft([{ a: -0.27, hu: 0.066, hv: 0.066 }, { a: -0.05, hu: 0.074, hv: 0.074 }, { a: -0.015, hu: 0.07, hv: 0.07 }], { seg: 12, exp: 3, capAAt: -0.275, capBAt: -0.008 }), s + 'Lo', null,
+        s === 'l' ? mat(COL.steel, { pat: 15, b: COL.green, p: [0.045, -0.2, -0.1, 0.035], side: 1, noise: 0.1, grain: 28, spec: 0.85, gloss: 12 }) : plate);
+      P('aFist', () => ellipsoid(0.058, 0.064, 0.06, { seg: 10, rings: 6 }), s + 'Hand', null, mat('#33363a', { noise: 0.08 }));
+      P('aThigh', () => capsule(D.thigh, 0.11, 0.09), s + 'Thigh', null, plateSeam);
+      P('aKnee', () => ellipsoid(0.072, 0.078, 0.05, { seg: 10, rings: 6 }), s + 'Shin', tr(0, -0.01, 0.078), mat('#5a5e62', { noise: 0.12, grain: 45, spec: 0.85, gloss: 12 }));
+      P('aShin', () => loft([{ a: -D.shin + 0.03, hu: 0.084, hv: 0.084 }, { a: -0.2, hu: 0.09, hv: 0.092 }, { a: -0.03, hu: 0.086, hv: 0.088 }], { seg: 12, exp: 3, capAAt: -D.shin + 0.02, capBAt: -0.02 }), s + 'Shin', null, plateSeam);
+      P('aBoot', () => loft([
+        { a: -0.1, hu: 0.06, hv: 0.05, cv: -0.08 }, { a: -0.08, hu: 0.08, hv: 0.08, cv: -0.05 }, { a: 0.0, hu: 0.085, hv: 0.1, cv: -0.03 },
+        { a: 0.12, hu: 0.083, hv: 0.07, cv: -0.06 }, { a: 0.23, hu: 0.07, hv: 0.05, cv: -0.08 }], { axis: 'z', seg: 12, exp: 3, capAAt: -0.11, capBAt: 0.245 }),
+        s + 'Foot', null, mat('#45484c', { pat: 5, b: '#1c1c1e', p: [-0.1, 0, 0, 0], noise: 0.12, grain: 45, spec: 0.6, gloss: 14 }));
+    }
+  };
+  // the armour's helmet: a dome with a stripe and a visor, a respirator with two filters, lamps with green lenses, two antennas
+  PERSON_PIECES.armorHelmet = (put, D) => {
+    const { P } = heroPut(put, D);
+    const hm = mat(COL.steel, { pat: 17, b: COL.yellow, p: [0.022, -0.03, 0.115, 0], r: [-0.018, 0.026, 0.1, 0], noise: 0.1, grain: 28, spec: 0.9, gloss: 14 });
+    const hd = mat('#34373b', { noise: 0.08 });
+    P('hDome', () => ellipsoid(0.148, 0.152, 0.158, { exp: 2.3, seg: 18, rings: 10 }), 'head', tr(...H(0, 0.015, -0.005)), hm, 'helmet');
+    P('hResp', () => ellipsoid(0.075, 0.056, 0.05, { seg: 12, rings: 6 }), 'head', tr(...H(0, -0.078, 0.128)), mat('#3a3d41', { pat: 12, p: [0.01, 55, 0, 0], noise: 0.08 }), 'helmet');
+    for (const sg of [1, -1]) {
+      P('hFilter', () => cyl(0.03, 0.03, 0.06, 10), 'head', M(tr(...H(sg * 0.085, -0.095, 0.105)), alongPlusY([sg * 0.5, -0.35, 0.8])), mat('#2b2d30', { pat: 23, p: [80, 0, 0, 0], noise: 0.06 }), 'helmet');
+      P('hLamp', () => cyl(0.022, 0.022, 0.04, 10), 'head', M(tr(...H(sg * 0.14, 0.03, 0.04)), alongPlusY([sg * 0.6, 0, 0.8])), hd, 'helmet');
+      P('hLens', () => ellipsoid(0.018, 0.006, 0.018, { seg: 10, rings: 4 }), 'head', M(tr(...H(sg * 0.165, 0.03, 0.073)), alongPlusY([sg * 0.6, 0, 0.8])), mat(COL.green, { pat: 10, p: [4, 0, 0, 0] }), 'helmet');
+      P('hAnt', () => capsule(0.15, 0.0075, 0.006, { seg: 6 }), 'head', M(tr(...H(sg * 0.07, 0.11, -0.09)), alongMinusY([0, 1, -0.25])), mat('#202224', { noise: 0 }), 'helmet');
+    }
+    P('hSeal', () => tube([{ a: -0.13, hu: 0.115, hv: 0.12 }, { a: -0.09, hu: 0.13, hv: 0.135 }]), 'head', tr(...HC), hd, 'helmet');
+    for (const sg of [1, -1]) put.glow('head', H(sg * 0.168, 0.03, 0.076), [sg * 0.6, 0, 0.8]);
+  };
+  Object.assign(WEAR, {
+    jacket: { slot: 'body', pieces: ['leatherJacket'], covers: ['torso', 'arms'] },
+    armor: { slot: 'body', pieces: ['powerArmor'], covers: ['torso', 'arms', 'hands', 'chest', 'back', 'cables', 'legs', 'feet', 'thigh', 'pads', 'belt'], armor: true },
+    helmet: { slot: 'head', pieces: ['armorHelmet'], covers: ['head', 'hair', 'implant', 'cables'] },
+    rifle: { slot: 'hands', held: 'rifle' }
+  });
+
+  // ---------- the hero, and whoever the player steers ----------
+  const HERO_LOOK = { id: 'hero', seed: 1, pieces: ['heroHead', 'heroHair', 'heroImplant', 'heroNeck', 'tankTop', 'heroArms', 'dogTag', 'heroBackCables', 'heroHands', 'cargoTrousers', 'boots', 'holster'] };
+  // the player's look: the hero's, until control passes to another person (steerLook)
+  let playerLook = HERO_LOOK;
+  // the player's model in this gear (eq: { body, head, hands }): the portrait and the icons ask for other gear than he wears
+  const buildHero = (eq) => buildPerson(dress(playerLook, [eq.body, eq.head, eq.hands]));
+  // what the player wears and holds: body 'tank' (default) | 'jacket' | 'armor', head null | 'helmet', hands null | 'rifle'.
   // The game sets it and calls rebuildHero() when it changes (gearVer++ makes the stage redraw); setHero(model) puts a model in place
-  // as it is (at boot, or for a moment to draw the portrait in other gear).
-  const equip = { body: null, head: null, hands: null };
+  // as it is (at boot, or for a moment to draw the portrait in other gear). It is the gear of the body he steers (hero.gear).
+  let equip = { body: null, head: null, hands: null };
   let HERO = null, gearVer = 0;
-  const armored = () => equip.body === 'armor';
   function setHero(model) { HERO = model; }
   function rebuildHero() { HERO = buildHero(equip); gearVer++; }
+  // control passes to another body: his look and what he wears become the player's (people.js: takeControl)
+  function steerLook(look, gear) { playerLook = look; equip = gear; rebuildHero(); }
   // ================= skeleton & poses =================
   function ik(S0, Tg, a, b, pole) {
     const d = sub(Tg, S0); let dist = len(d);
@@ -3082,25 +3214,94 @@ void main(){
     return { p, rifle, st };
   }
 
-  // ================= the hero: who he is — where he stands, what his hands are doing, the activities he can be busy with =================
-  // His orders and his step are in state.js, how he is drawn in rig.js; this record is what both read.
+  // ================= a body: what every person in the world is made of — the hero and everybody else alike =================
+  // Where he stands and which way he looks, his way (path) and the orders still to do (queue), his gait, sitting, the head turned
+  // off the body's line, what his hands are busy with (overlays), the activity that owns him for a while, his look and what he wears.
+  // The player steers one body (hero.js: hero, stepped by state.js); the people module gives the others their minds (people.js).
+  // Both step a body with the same pieces below and pose it the same way (rig.js: bodyRig), so any body can be either:
+  // control can pass from one to another, and a thing anyone wears is put on the same way.
+  // overlays are things he does with his hands while standing, walking or sitting: on — wanted, w — how far the pose has blended in,
+  // t — time since it began; each blends in at its own pace
+  const BLEND = { smoke: 4, drink: 4, punch: 4, shoot: 8, thr: 6, reach: 6, talk: 4 };
+  const OVERLAYS = Object.keys(BLEND);
+  // how fast he walks and runs, m/s, lightly dressed and in heavy kit (people's own; the hero has his, hero.js)
+  const PACE = { walk: 1.38, run: 3.2, walkHeavy: 1.3, runHeavy: 3.2 };
+  // a new body; o — what is his own: where he stands, his look, what he wears (gear: { body, head, hands }), his pace,
+  // turn (how fast he turns on the spot), speedK (a factor on his pace)
+  function newBody(o) {
+    return Object.assign({
+      x: 0, z: 0, y: 0, yaw: 0, tyaw: 0, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
+      sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null, head: 0, headTo: 0,
+      smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
+      thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
+      talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
+      vehicle: null, inside: false, arrived: false,     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
+      look: null, gear: { body: null, head: null, hands: null }, model: null, pace: PACE, turn: 7, speedK: 1
+    }, o);
+  }
+  // his look with what he wears put on: built once per set of clothes (look.js)
+  const dressedModel = (b) => buildPerson(dress(b.look, [b.gear.body, b.gear.head, b.gear.hands]));
+  // heavy kit slows him down: a look heavy by itself (the КЗУ) or a worn thing that is (the power armour)
+  const heavy = (b) => !!(b.look && b.look.armor) || ['body', 'head', 'hands'].some((s) => { const w = WEAR[b.gear[s]]; return !!(w && w.armor); });
+  const speedOf = (b) => (b.run ? (heavy(b) ? b.pace.runHeavy : b.pace.run) : (heavy(b) ? b.pace.walkHeavy : b.pace.walk)) * b.speedK;
+  const cycleOf = (b) => b.run ? 2.3 : (heavy(b) ? 1.45 : 1.38);       // metres per full stride cycle
+
+  // ---------- his step, in pieces: each mind (the player's orders, a person's own) calls them in its own order ----------
+  // walk `budget` metres along his way; he faces where he goes unless the point says back (stepping back onto a seat)
+  function walkAlong(b, budget, cycle) {
+    while (budget > 0 && b.path.length) {
+      const wp = b.path[0], dx = wp.x - b.x, dz = wp.z - b.z, d = Math.hypot(dx, dz);
+      if (d > 1e-4 && !wp.back) b.tyaw = Math.atan2(dx, dz);
+      if (d <= budget) { b.x = wp.x; b.z = wp.z; budget -= d; b.phase += d / cycle; b.path.shift(); }
+      else { b.x += dx / d * budget; b.z += dz / d * budget; b.phase += budget / cycle; budget = 0; }
+    }
+  }
+  // the gait blends towards walking / running, sitting towards the seat; off an activity his feet find the ground
+  function settle(b, dt, walking, running) {
+    b.walkW = approach(b.walkW, walking ? 1 : 0, dt * 7);
+    b.runW = approach(b.runW, running ? 1 : 0, dt * 4);
+    b.sit = approach(b.sit, b.sitTarget, dt / 0.5);
+    if (!b.act) b.y = approach(b.y, groundY(b.x, b.z), dt * 1.6);
+  }
+  function blendOverlays(b, dt) {
+    for (const k in BLEND) {
+      const a = b[k];
+      a.w = approach(a.w, a.on ? 1 : 0, dt * BLEND[k]);
+      if (a.on || a.w > 0) a.t += dt; else a.t = 0;
+    }
+  }
+  // overlays that have run their course end; shotT — the shooting overlay's time before this step's blend.
+  // o: { busy() — an activity keeps his hands (he stops talking), shot(b) — a round leaves the muzzle, rig() — his pose, for what he throws }
+  function endOverlays(b, shotT, o) {
+    if (b.talk.on && (b.talk.t > b.talk.dur || b.path.length || (o.busy && o.busy()))) b.talk.on = false;
+    const sh = b.shoot;
+    if (sh.on && o.shot) for (const s of SHOTS) if (shotT < s && sh.t >= s) o.shot(b);
+    if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; b.aimYaw = null; }
+    if (b.punch.on && b.punch.t > 1.25) b.punch.on = false;
+    if (b.smoke.on && b.smoke.t > SMOKE_INTRO + SMOKE_PERIOD * SMOKE_PUFFS + 0.4) b.smoke.on = false;
+    if (b.drink.on && b.drink.t > DRINK_INTRO + DRINK_PERIOD * DRINK_SIPS) b.drink.on = false;
+    const th = b.thr;
+    if (th.on && !th.released && th.t >= THROW_REL) { th.released = true; if (th.release && o.rig) th.release(o.rig()); }
+    if (th.on && th.t > THROW_LEN) th.on = false;
+    const re = b.reach;
+    if (re.on && !re.fired && re.t > 0.7) { re.fired = true; if (re.cb) re.cb(); }
+    if (re.on && re.t > 1.7) re.on = false;
+  }
+  // ================= the hero: the body the player steers, and the activities a body can be busy with =================
+  // He is a body like anyone's (body.js) — his look and gear are the hero's own (wardrobe.js). His orders and his step are in
+  // state.js, how he is drawn in rig.js. `hero` is whoever the player steers: when control passes to another person
+  // (people.js: takeControl), every module that says hero means the new one.
   const DIR8 = [
     { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
     { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
   ];
   const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
-  // overlays (smoke, drink, punch, shoot, thr, reach) are things he does with his hands while standing, walking or sitting:
-  // on — wanted, w — how far the pose has blended in, t — time since it began
-  const hero = {
-    x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
-    sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
-    smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
-    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
-    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
-    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
-  };
-  const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
-  const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
+  // the body the player steers — at first the hero himself (id 'hero'); his pace: he runs faster than most, and his power armour
+  // is heavier than anyone's kit
+  let hero = newBody({ id: 'hero', x: 14.2, z: 20.4, yaw: -1.9, tyaw: -1.9, look: HERO_LOOK, gear: equip, pace: { walk: 1.38, run: 3.4, walkHeavy: 1.15, runHeavy: 2.7 }, turn: 8 });
+  function setHeroBody(b) { hero = b; }
+  // in heavy kit (the power armour, or a look heavy by itself): slower, and some things are out of reach
+  const armored = () => heavy(hero);
   const standHips = (D) => plantY(poseIdle(0, D), D);
   const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
   const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
@@ -3136,12 +3337,14 @@ void main(){
       ctx: () => null, base: () => null, state: (a) => a.text || 'смотрит', quiet: true
     }
   };
-  // ================= hero rig: pose context → bones → draw list =================
+  // ================= posing a body: pose context → bones; the hero's draw list =================
+  // Every body is posed the same way (bodyRig): the player's hero and the people alike. quant — in the steps of the 12 fps picture
+  // (time, gait and overlay weights rounded, the feet on a whole pixel), as everything on the stage is drawn.
   const q = (t) => Math.floor(t * FPS) / FPS;
   const wq = (w) => Math.round(w * 8) / 8;
-  function heroCtx(quant) {
+  function bodyCtx(b, quant) {
     const Q = quant ? q : (t) => t, W = quant ? wq : (w) => w;
-    let a = hero.act ? ACT[hero.act.kind].ctx(hero.act) : null;
+    let a = b.act ? ACT[b.act.kind].ctx(b.act) : null;
     if (a) {
       a = Object.assign({}, a, { w: W(a.w) });
       if (quant && a.ph != null) a.ph = Math.floor(a.ph * 8) / 8;
@@ -3149,26 +3352,27 @@ void main(){
       if (quant && a.u != null) a.u = Math.round(a.u * 6) / 6;
     }
     return {
-      t: Q(hero.t), phase: quant ? Math.floor(hero.phase * 12) / 12 : hero.phase, walkW: W(hero.walkW), runW: W(hero.runW), sitW: W(smooth(hero.sit)), seat: hero.seat,
-      smokeW: W(hero.smoke.w), smokeT: Q(hero.smoke.t), drinkW: W(hero.drink.w), drinkT: Q(hero.drink.t),
-      punchW: W(hero.punch.w), punchT: Q(hero.punch.t), shootW: W(hero.shoot.w), shootT: Q(hero.shoot.t),
-      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to,
-      talkW: W(hero.talk.w), talkT: Q(hero.talk.t), act: a
+      t: Q(b.t), phase: quant ? Math.floor(b.phase * 12) / 12 : b.phase, walkW: W(b.walkW), runW: W(b.runW), sitW: W(smooth(b.sit)), seat: b.seat,
+      smokeW: W(b.smoke.w), smokeT: Q(b.smoke.t), drinkW: W(b.drink.w), drinkT: Q(b.drink.t),
+      punchW: W(b.punch.w), punchT: Q(b.punch.t), shootW: W(b.shoot.w), shootT: Q(b.shoot.t),
+      throwW: W(b.thr.w), throwT: Q(b.thr.t), reachW: W(b.reach.w), reachT: Q(b.reach.t), reachTo: b.reach.to,
+      talkW: W(b.talk.w), talkT: Q(b.talk.t), headYaw: quant ? Math.round(b.head * 8) / 8 : b.head, act: a
     };
   }
   const PXV = S * UV[1];   // screen px per metre of height
-  function heroRig(quant) {
-    const c = heroCtx(quant), D = HERO.D;
-    const pose = buildPose(c, D, equip.hands === 'rifle');
-    const base = hero.act ? ACT[hero.act.kind].base(hero.act, D) : null;
-    const yaw = (hero.shoot.on || hero.shoot.w > 0) && hero.aimYaw != null ? hero.aimYaw : (hero.sit > 0 && hero.seat ? hero.seat.yaw : hero.yaw);
-    let root = [hero.x, hero.y, hero.z];
+  // a body's bones: D — his proportions, rifle — a rifle in his hands (it changes how the arms hang)
+  function bodyRig(b, D, rifle, quant) {
+    const c = bodyCtx(b, quant);
+    const pose = buildPose(c, D, rifle);
+    const base = b.act ? ACT[b.act.kind].base(b.act, D) : null;
+    const yaw = (b.shoot.on || b.shoot.w > 0) && b.aimYaw != null ? b.aimYaw : (b.sit > 0 && b.seat ? b.seat.yaw : b.yaw);
+    let root = [b.x, b.y, b.z];
     if (quant) {
-      const s = wpx([hero.x, 0, hero.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
-      root = [g[0], Math.round(hero.y * PXV) / PXV, g[1]];
+      const s = wpx([b.x, 0, b.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
+      root = [g[0], Math.round(b.y * PXV) / PXV, g[1]];
     }
     let B = evalBones(pose.p, root, yaw, D, base);
-    const hw = hero.act && ACT[hero.act.kind].hands ? ACT[hero.act.kind].hands(hero.act) : null;
+    const hw = b.act && ACT[b.act.kind].hands ? ACT[b.act.kind].hands(b.act) : null;
     if (hw && hw.w > 0) {
       const inv = invRigid(B.chest), p = pose.p;
       p.lHand = lerpV(p.lHand, xf(inv, hw.l), hw.w); p.rHand = lerpV(p.rHand, xf(inv, hw.r), hw.w);
@@ -3177,14 +3381,19 @@ void main(){
     }
     return { c, pose, B, base, root, yaw };
   }
-  function rifleWorld(rifle, B, D) {
+  const heroRig = (quant) => bodyRig(hero, HERO.D, equip.hands === 'rifle', quant);
+  // what a pose context comes to, as text: the stage and the people redraw when it changes
+  const poseKey = (c) => [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT,
+    c.reachW, c.reachT, c.talkW, c.talkT, c.headYaw, c.act ? JSON.stringify(c.act) : ''].join(',');
+  // where the rifle is (its grip, the muzzle along +z): in the hands, slung on the back, or leaning by the seat he sits on
+  function rifleWorld(rifle, B, D, seat) {
     if (!rifle) return null;
     if (rifle.mode === 'hands') return M(B.chest, tr(...rifle.g), frameY(rifle.u, rifle.d));
     if (rifle.mode === 'back') {
       const bz = D.armor ? -0.355 : backZ(D, 0.1, 0.024) - 0.035;
       return M(B.chest, tr(0, 0.1, bz), frameY([0, 0, -1], nrm([0.55, 0.83, 0])), tr(0, 0, -0.16));
     }
-    return hero.seat ? hero.seat.rifleM : null;
+    return seat ? seat.rifleM : null;
   }
   const BALL_MESH = () => getMesh('ball', () => ellipsoid(0.12, 0.12, 0.12, { seg: 12, rings: 8 }));
   const BALL_MAT = mat('#d9692b', { pat: 41, p: [0.007, 0.085, 0, 0], noise: 0.03, grain: 60 });
@@ -3197,7 +3406,7 @@ void main(){
     }
     if (opts.noProps) return out;
     const D = HERO.D;
-    const RW = rifleWorld(pose.rifle, B, D);
+    const RW = rifleWorld(pose.rifle, B, D, hero.seat);
     if (RW) for (const r of RIFLE) out.push({ mesh: r.mesh, model: mul(RW, r.off), mat: r.mat, id: 1 });
     const sm = pose.st.smoke, dr = pose.st.drink, th = pose.st.thr;
     const hand = xf(B.rHand, [0, 0, 0]);
@@ -3349,6 +3558,8 @@ void main(){
   }
 
   // ================= the hero's step (core/run.js calls it first in the world's step) =================
+  // what ends his overlays needs from the rest of him: an activity that keeps his hands, the shot event, his pose for a throw
+  const HERO_ENDS = { busy: () => busyAct(), shot: () => { for (const f of HERO_EVENTS.shot) f(); }, rig: () => heroRig(false) };
   function heroStep(dt) {
     hero.t += dt;
     if (!hero.path.length && !hero.act) runQueue();     // a fresh order starts this very frame
@@ -3356,41 +3567,16 @@ void main(){
       if (hero.queue.length && hero.queue[0].type === 'leave') hero.act.leave = true;
       ACT[hero.act.kind].update(hero.act, dt);
       if (hero.act.done) { const a = hero.act; hero.act = null; hero.y = groundY(hero.x, hero.z); if (a.after) a.after(); }
-    } else if (hero.path.length && !driving()) {
-      let budget = speed() * dt;
-      while (budget > 0 && hero.path.length) {
-        const wp = hero.path[0], dx = wp.x - hero.x, dz = wp.z - hero.z, d = Math.hypot(dx, dz);
-        if (d > 1e-4 && !wp.back) hero.tyaw = Math.atan2(dx, dz);
-        if (d <= budget) { hero.x = wp.x; hero.z = wp.z; budget -= d; hero.phase += d / cycleLen(); hero.path.shift(); }
-        else { hero.x += dx / d * budget; hero.z += dz / d * budget; hero.phase += budget / cycleLen(); budget = 0; }
-      }
-    }
-    hero.yaw = approachAngle(hero.yaw, hero.tyaw, dt * (hero.path.length ? 15 : 8));
+    } else if (hero.path.length && !driving()) walkAlong(hero, speedOf(hero) * dt, cycleOf(hero));
+    hero.yaw = approachAngle(hero.yaw, hero.tyaw, dt * (hero.path.length ? 15 : hero.turn));
+    hero.head = approach(hero.head, hero.headTo, dt * 3);       // a head turned aside (a person control has just passed to) comes back to the front
     if (!hero.path.length && !hero.act) runQueue();
     if (!hero.path.length && hero.target && Math.hypot(hero.target[0] - hero.x, hero.target[1] - hero.z) < 0.35) hero.target = null;
     const moving = hero.path.length > 0 && !hero.act && !driving();
-    hero.walkW = approach(hero.walkW, moving ? 1 : 0, dt * 7);
-    hero.runW = approach(hero.runW, moving && hero.run ? 1 : 0, dt * 4);
-    hero.sit = approach(hero.sit, hero.sitTarget, dt / 0.5);
-    if (!hero.act) hero.y = approach(hero.y, groundY(hero.x, hero.z), dt * 1.6);
-    const sh = hero.shoot, prevT = sh.t;
-    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach', 'talk']) {
-      const a = hero[k];
-      a.w = approach(a.w, a.on ? 1 : 0, dt * (k === 'shoot' ? 8 : k === 'thr' || k === 'reach' ? 6 : 4));
-      if (a.on || a.w > 0) a.t += dt; else a.t = 0;
-    }
-    if (hero.talk.on && (hero.talk.t > hero.talk.dur || hero.path.length || busyAct())) hero.talk.on = false;
-    if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) for (const f of HERO_EVENTS.shot) f();
-    if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; hero.aimYaw = null; }
-    if (hero.punch.on && hero.punch.t > 1.25) hero.punch.on = false;
-    if (hero.smoke.on && hero.smoke.t > SMOKE_INTRO + SMOKE_PERIOD * SMOKE_PUFFS + 0.4) hero.smoke.on = false;
-    if (hero.drink.on && hero.drink.t > DRINK_INTRO + DRINK_PERIOD * DRINK_SIPS) hero.drink.on = false;
-    const th = hero.thr;
-    if (th.on && !th.released && th.t >= THROW_REL) { th.released = true; if (th.release) th.release(heroRig(false)); }
-    if (th.on && th.t > THROW_LEN) th.on = false;
-    const re = hero.reach;
-    if (re.on && !re.fired && re.t > 0.7) { re.fired = true; if (re.cb) re.cb(); }
-    if (re.on && re.t > 1.7) re.on = false;
+    settle(hero, dt, moving, moving && hero.run);
+    const shotT = hero.shoot.t;
+    blendOverlays(hero, dt);
+    endOverlays(hero, shotT, HERO_ENDS);
   }
 
   // ================= arriving in a location: the hero takes his place at the spawn (before anyone else settles in) =================
@@ -3812,8 +3998,7 @@ void main(){
       v = { w: W, h: H, ax: -ox * sc, ay: -oy * sc, s: S * sc };
     }
     const tod = dayFrame(rect, tickNow / FPS);
-    const c = rig.c;
-    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.talkW, c.talkT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
+    const ckey = poseKey(rig.c) + ',' + (hero.seat ? 1 : 0);
     const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid, dayKey()].join('|');
     if (key !== lastKey) {
       lastKey = key;
@@ -3851,7 +4036,7 @@ void main(){
     last.chest = wpx(xf(B.chest, [0, 0.1, 0]));
     const fd = wpx([Math.sin(rig.yaw), 0, Math.cos(rig.yaw)]), fl = Math.hypot(fd[0], fd[1]) || 1;
     last.face = [fd[0] / fl, fd[1] / fl];
-    const RW = rifleWorld(pose.rifle, B, HERO.D);
+    const RW = rifleWorld(pose.rifle, B, HERO.D, hero.seat);
     if (RW && pose.rifle.mode === 'hands') {
       last.muzzle = wpx(xf(RW, RIFLE_MUZZLE)); last.port = wpx(xf(RW, RIFLE_PORT));
       const m2 = wpx(xf(RW, add(RIFLE_MUZZLE, [0, 0, 0.1]))); const ad = [m2[0] - last.muzzle[0], m2[1] - last.muzzle[1]]; const al = Math.hypot(...ad) || 1; last.aim2d = [ad[0] / al, ad[1] / al];
@@ -3859,9 +4044,8 @@ void main(){
     } else { last.muzzle = null; last.port = null; }
     last.glows = [];
     const glow = (bone, pt, nLocal) => { const n = nrm(xfDir(bone, nLocal)); if (dot(n, TOCAM) > 0.25) last.glows.push(wpx(xf(bone, pt))); };
-    if (heroHidden()) { /* shut inside a machine: the eye's glow must not show through the armour */ }
-    else if (!HERO.helmet) glow(B.head, [HC[0] - 0.036, HC[1] + 0.012, HC[2] + 0.13], [0, 0, 1]);
-    else for (const sg of [1, -1]) glow(B.head, [HC[0] + sg * 0.168, HC[1] + 0.03, HC[2] + 0.076], [sg * 0.6, 0, 0.8]);
+    // what shines on him (the cyber eye, the helmet's lamps: put.glow in look.js); shut inside a machine, nothing shows through the armour
+    if (!heroHidden()) for (const g of HERO.glows) glow(B[g.bone], g.at, g.n);
     last.hit = pose.st.punch ? (pose.st.punch.hitL ? last.fistL : pose.st.punch.hitR ? last.fistR : null) : null;
     last.root = wpx(rig.root);
   }
@@ -4168,7 +4352,11 @@ void main(){
     if ('ResizeObserver' in window) new ResizeObserver(() => fitStage()).observe(stageEl); else window.addEventListener('resize', fitStage);
   }
   // ================= the world's step: the hero, the clock, the game's and the modules' own steps, effects, travel =================
+  // worldT — seconds the world has run since the page opened: the stage's twelve ticks a second follow it (not any one person's clock,
+  // so nothing jumps when control passes to another body)
+  let worldT = 0;
   function update(dt, view) {
+    worldT += dt;
     heroStep(dt);
     dayUpdate(dt);
     for (const f of GAME.update) f(dt, view);
@@ -4177,7 +4365,7 @@ void main(){
     updateToast(dt);
   }
   const GAME_API = window.__game = {
-    hero, equip, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
+    get hero() { return hero; }, get equip() { return equip; }, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
     travel: () => travelState, walkTo, doDefault, goSit, standUp, turn, ACT, viewToWorld, pickFrac, findPath, stage: stageEl, scene, layer,
     setView: (m) => setView(m),
     dbg: () => ({ drawCalls, VW, VH, kDev, view: lastView && { ox: lastView.ox, oy: lastView.oy, sc: lastView.sc } }),
@@ -4193,7 +4381,7 @@ void main(){
     const dt = Math.min(0.05, (now - framePrev) / 1000); framePrev = now;
     try {
       if (!GAME_API.paused) update(dt, viewRect());
-      if (stageVisible) drawStage(dt, hero.t);
+      if (stageVisible) drawStage(dt, worldT);
       updateHud(); updateClock(); updateContext(dt); updateHover(dt);
       for (const f of GAME.frame) f(dt, now);
     } catch (err) { console.error(err); }

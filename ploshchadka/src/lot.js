@@ -7,7 +7,7 @@
   import { LOCATIONS } from '../../engine/src/world/map.js';
   import { loadSaved, startSaving, whenReady } from '../../engine/src/world/state.js';
   import { enterLocation } from '../../engine/src/world/locations.js';
-  import { buildHero, equip, setHero } from '../../engine/src/hero/model.js';
+  import { buildHero, equip, setHero } from '../../engine/src/hero/wardrobe.js';
   import { hero } from '../../engine/src/hero/hero.js';
   import { beginDrink, beginSmoke, busyAct, doPunch } from '../../engine/src/hero/state.js';
   import { GAME_API, prepareStage, runFrames } from '../../engine/src/core/run.js';

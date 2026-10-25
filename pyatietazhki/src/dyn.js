@@ -4,8 +4,7 @@
   import { toast } from '../../engine/src/core/toast.js';
   import { LOC_HOOKS } from '../../engine/src/world/map.js';
   import { byType, localPt } from '../../engine/src/world/instances.js';
-  import { armored } from '../../engine/src/hero/model.js';
-  import { hero } from '../../engine/src/hero/hero.js';
+  import { armored, hero } from '../../engine/src/hero/hero.js';
   import { fx } from '../../engine/src/fx/fx2d.js';
   import { SWING_W } from './catalog.js';
   function initDyn() {

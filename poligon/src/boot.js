@@ -10,15 +10,15 @@
   import { GH, GW } from '../../engine/src/world/ground.js';
   import { enterLocation } from '../../engine/src/world/locations.js';
   import { dayGoto } from '../../engine/src/world/daytime.js';
-  import { buildHero, equip, setHero } from '../../engine/src/hero/model.js';
+  import { buildHero, equip, setHero } from '../../engine/src/hero/wardrobe.js';
   import { hero, yawTo } from '../../engine/src/hero/hero.js';
   import { doDefault, doPunch, goSit, plan, walkTo } from '../../engine/src/hero/state.js';
   import { goToLocation } from '../../engine/src/hero/travel.js';
   import { redraw, setRaw } from '../../engine/src/render/stage.js';
   import { setView } from '../../engine/src/ui/hud.js';
   import { GAME_API, prepareStage, runFrames } from '../../engine/src/core/run.js';
-  import { INV, ITEM_TYPES, MONEY, fmtMoney, invCount, invGrid, invVer } from '../../engine/src/people/items.js';
-  import { PEOPLE, personFollow } from '../../engine/src/people/people.js';
+  import { INV, ITEM_TYPES, MONEY, fmtMoney, invAdd, invCount, invGrid, invTake, invVer } from '../../engine/src/people/items.js';
+  import { PEOPLE, PEOPLE_HOOKS, heroAsPerson, personById, personFollow, personWear, takeControl } from '../../engine/src/people/people.js';
   import { TALK, talkTo } from '../../engine/src/people/talk.js';
   import { goTrade, openTrade } from '../../engine/src/people/trade.js';
   import { hasThing } from './things.js';
@@ -73,9 +73,26 @@
   const firstOf = (t) => byType(t)[0];
   // the warrant officer may be in the other location: then the hero goes there first
   function somovGo(f) {
+    if (hero === SOMOV) { toast('Сейчас ты сам — прапорщик Сомов. «Управлять другим» вернёт тебя в героя.'); return; }
     if (SOMOV.loc !== MAP.id) { toast('Прапорщик Сомов сейчас не здесь — иду к нему.'); goToLocation(SOMOV.loc); return; }
     f();
   }
+  // up close to the warrant officer, facing him
+  const nearSomov = () => { setView('near'); plan({ type: 'path', to: [clamp(SOMOV.x + 0.5, 1, GW - 1), clamp(SOMOV.z + 1.9, 1, GH - 1)] }, { type: 'call', fn: () => { hero.tyaw = yawTo(SOMOV.x, SOMOV.z); } }); };
+  // control passes to a person and back; the hero, while somebody else is steered, waits as a person
+  heroAsPerson({ note: 'Это ты. Пока управляешь другим, он ждёт здесь.', barks: { follow: ['Иду.', 'За тобой.'], wait: ['Жду.'], home: ['Вернусь, где стоял.'] } });
+  function steerTo(p) { if (!takeControl(p)) toast('Сейчас не выйдет: сначала закончи, что начал, и подойди ближе.'); }
+  // the hero's helmet goes to the warrant officer — off the hero's head, out of his things into Somov's — and back again
+  function lendHelmet() {
+    const p = SOMOV, helmet = GEAR.find((g) => g.id === 'helmet');
+    if (hero === p) { toggleGear(helmet); return; }
+    if (p.gear.head === 'helmet') { personWear(p, 'head', null); invTake(p.inv, 'helmet'); invAdd(INV.hero, 'helmet'); toast('Прапорщик вернул шлем.'); return; }
+    if (!hasThing('helmet')) { toast('Шлема у тебя нет — продал или обменял.'); return; }
+    if (equip.head === 'helmet') { toggleGear(helmet); if (equip.head === 'helmet') return; }      // could not take it off just now
+    invTake(INV.hero, 'helmet'); invAdd(p.inv, 'helmet'); personWear(p, 'head', 'helmet');
+    toast('Шлем героя — на прапорщике. Его собственный шлем спрятан: вещь закрывает голову.');
+  }
+  PEOPLE_HOOKS.acts.push((p, out) => out.push({ label: 'Управлять им', run: () => steerTo(p), order: 60 }));
   const machineOf = (kind) => INST.find((i) => i.machine && i.machine.kind === kind);
   const FEATURES = [
     { t: 'Свет и тени', d: 'Солнце рисует настоящие тени на земле, стенах и герое; листва пропускает свет пятнами.', go: () => { dayGoto(14); setView('far'); } },
@@ -91,11 +108,13 @@
     { t: 'Обыскать бурьян', d: 'Герой опускается на колено и шарит в траве.', go: () => { const g = byType('grass').find((i) => !i.dyn.searched); if (g) doDefault(g); else toast('Бурьян здесь уже обыскан.'); } },
     { t: 'Ветер, листва, трава', d: 'Кроны качаются волной, травинки гнутся, жёлтые листья падают и ложатся на землю.', go: inEdge(() => { setView('near'); walkTo(4.6, 10.2); }) },
     { t: 'Переход между локациями', d: 'Дорога за ворота ведёт на опушку и обратно; каждая локация помнит, что в ней оставили.', go: () => goToLocation(MAP.id === 'range' ? 'edge' : 'range') },
-    { t: 'Второй человек', d: 'Прапорщик Сомов в защитном комплекте по эскизу игрока: замечает героя, поворачивает к нему голову, здоровается, оглядывается.', go: () => somovGo(() => { setView('near'); plan({ type: 'path', to: [clamp(SOMOV.x + 0.5, 1, GW - 1), clamp(SOMOV.z + 1.9, 1, GH - 1)] }, { type: 'call', fn: () => { hero.tyaw = yawTo(SOMOV.x, SOMOV.z); } }); }) },
+    { t: 'Второй человек', d: 'Прапорщик Сомов в защитном комплекте по эскизу игрока: замечает героя, поворачивает к нему голову, здоровается, оглядывается.', go: () => somovGo(nearSomov) },
     { t: 'Разговор', d: 'Герой подходит, оба встают лицом друг к другу; в панели — его реплики и твои ответы. Пока говорит, кивает и жестикулирует.', go: () => somovGo(() => talkTo(SOMOV)) },
     { t: 'Спутник', d: '«Идём со мной»: держится в паре шагов, отстав, догоняет бегом, садится рядом на лавочку, переходит с героем на опушку и обратно.', go: () => somovGo(() => { personFollow(SOMOV); const b = MAP.id === 'range' ? firstOf('bench') : null; if (b) goSit(b); }) },
     { t: 'Обмен и торговля', d: 'Свои вещи на его, разница — рублями. Сигареты, банки и гранаты тратятся, находки из бурьяна можно продать.', go: () => somovGo(() => goTrade(SOMOV)) },
     { t: 'Снаряжение', d: 'Куртка, броня, шлем, винтовка — модель героя собирается заново. В броне медленнее. Проданное снимается.', go: () => toggleGear(GEAR[1]) },
+    { t: 'Вещи на любом', d: 'Герой отдаёт прапорщику свой шлем: вещь собрана из тех же деталей, что и люди, садится на любого и прячет то, что закрывает (его шлем). Ещё раз — шлем возвращается.', go: () => { if (hero === SOMOV) lendHelmet(); else somovGo(() => { lendHelmet(); nearSomov(); }); } },
+    { t: 'Управлять другим', d: 'Управление переходит к прапорщику: он идёт, куда скажешь, при нём его вещи, а герой ждёт, где стоял. Ещё раз — обратно в героя. То же — «Управлять им» в панели человека.', go: () => { if (hero === SOMOV) { const h = personById('hero'); if (!h || h.loc !== MAP.id) toast('Герой остался в другом месте — дойди до него.'); else steerTo(h); return; } somovGo(() => steerTo(SOMOV)); } },
     { t: 'Вся локация сверху', d: 'Обзор целиком: видно, как собраны земля, дома и деревья.', go: () => setView('all') },
     { t: '3D без пикселей', d: 'Та же сцена до перевода в пиксель-арт: плавный свет и настоящая геометрия.', go: () => { const c = $('rawChk'); c.checked = !c.checked; setRaw(c.checked); redraw(); } }
   ];
@@ -123,7 +142,7 @@
     setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
-    Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });
+    Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, personWear, takeControl, personById, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });
     GAME_API.bootMs = Math.round(performance.now() - t0);
     startSaving();
     runFrames();

@@ -1,25 +1,22 @@
-  // ================= the hero: who he is — where he stands, what his hands are doing, the activities he can be busy with =================
-  // His orders and his step are in state.js, how he is drawn in rig.js; this record is what both read.
+  // ================= the hero: the body the player steers, and the activities a body can be busy with =================
+  // He is a body like anyone's (body.js) — his look and gear are the hero's own (wardrobe.js). His orders and his step are in
+  // state.js, how he is drawn in rig.js. `hero` is whoever the player steers: when control passes to another person
+  // (people.js: takeControl), every module that says hero means the new one.
   import { smooth } from '../core/math.js';
-  import { armored } from './model.js';
+  import { HERO_LOOK, equip } from './wardrobe.js';
   import { plantY, poseIdle } from './skeleton.js';
+  import { heavy, newBody } from './body.js';
   const DIR8 = [
     { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
     { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
   ];
   export const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
-  // overlays (smoke, drink, punch, shoot, thr, reach) are things he does with his hands while standing, walking or sitting:
-  // on — wanted, w — how far the pose has blended in, t — time since it began
-  export const hero = {
-    x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
-    sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
-    smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
-    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
-    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
-    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
-  };
-  export const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
-  export const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
+  // the body the player steers — at first the hero himself (id 'hero'); his pace: he runs faster than most, and his power armour
+  // is heavier than anyone's kit
+  export let hero = newBody({ id: 'hero', x: 14.2, z: 20.4, yaw: -1.9, tyaw: -1.9, look: HERO_LOOK, gear: equip, pace: { walk: 1.38, run: 3.4, walkHeavy: 1.15, runHeavy: 2.7 }, turn: 8 });
+  export function setHeroBody(b) { hero = b; }
+  // in heavy kit (the power armour, or a look heavy by itself): slower, and some things are out of reach
+  export const armored = () => heavy(hero);
   export const standHips = (D) => plantY(poseIdle(0, D), D);
   export const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
   export const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);

@@ -6,7 +6,8 @@
   import { box, cyl, ellipsoid, torus } from '../../engine/src/render/meshes.js';
   import { getMesh } from '../../engine/src/render/webgl.js';
   import { decal } from '../../engine/src/render/decals.js';
-  import { HC, PROPS, RIFLE, buildHero, equip, rebuildHero } from '../../engine/src/hero/model.js';
+  import { HC, PROPS, RIFLE } from '../../engine/src/hero/model.js';
+  import { buildHero, equip, rebuildHero } from '../../engine/src/hero/wardrobe.js';
   import { hero } from '../../engine/src/hero/hero.js';
   import { redraw } from '../../engine/src/render/stage.js';
   import { INV, MONEY, figureIcon, invCount, itemType, propIcon } from '../../engine/src/people/items.js';

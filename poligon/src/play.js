@@ -10,7 +10,7 @@
   import { remember } from '../../engine/src/world/state.js';
   import { USE, byType, localPt } from '../../engine/src/world/instances.js';
   import { GH, GW } from '../../engine/src/world/ground.js';
-  import { equip, rebuildHero } from '../../engine/src/hero/model.js';
+  import { equip, rebuildHero } from '../../engine/src/hero/wardrobe.js';
   import { ACT, hero, yawTo } from '../../engine/src/hero/hero.js';
   import { beginDrink, beginSmoke, busyAct, goSit, goSpot, inMachine, plan, spotOf, walkTo } from '../../engine/src/hero/state.js';
   import { fx, puff, shake, sparkleAround } from '../../engine/src/fx/fx2d.js';

@@ -1,8 +1,11 @@
   // ================= people: other characters in the world — where they are, what they do, how they are drawn =================
   // A game adds people with addPerson(def):
-  //   { id, name, short (the chip «рядом: …»), note(p) (a line for the context panel), look (look.js), loc, at: [x, z], yaw,
-  //     mode: 'post' (default), inv: [{ t, n }] (items.js), trade: { … } (trade.js), dialog: id (talk.js), speed: 1,
+  //   { id, name, short (the chip «рядом: …»), note(p) (a line for the context panel), look (hero/look.js), loc, at: [x, z], yaw,
+  //     gear: { body, head, hands } (things he wears: hero/look.js WEAR; personWear() changes them), pace (hero/body.js PACE), speed: 1,
+  //     mode: 'post' (default), inv: [{ t, n }] (items.js), trade: { … } (trade.js), dialog: id (talk.js),
   //     barks: { hello, follow, wait, home, sit, arrive(location), idle, … } (a line, a list to pick from or (p, …) → line) }
+  // A person is a body like the hero's (hero/body.js) with a mind of his own; control can pass to him (takeControl): then the player
+  // steers him, and the hero becomes a person himself.
   // What a person has in mind is his mode:
   //   post — stands at his place, turns his head to the hero, looks round now and then, goes back to his place if he had to step aside;
   //   follow — keeps a step or two from the hero, runs when left behind, sits beside him on a bench, goes through exits with him;
@@ -10,37 +13,45 @@
   //   talk — faces the hero while they talk (talk.js).
   // Every person in the current location has an INST entry: it can be tapped, it shows in the panel «рядом», and the person is drawn
   // from his bones twelve times a second with everything else (GAME.tick → snapshot, GAME.items, GAME.key).
-  import { ID4, approach, approachAngle, clamp, groundAt, smooth, wpx, wrapA, xf } from '../core/math.js';
+  import { ID4, approach, approachAngle, clamp, mul, wpx, wrapA, xf } from '../core/math.js';
   import { GAME, hook } from '../core/game.js';
   import { LOCATIONS, LOC_HOOKS, MAP } from '../world/map.js';
   import { savePart } from '../world/state.js';
   import { INST, groundY, instById, newId } from '../world/instances.js';
   import { GH, GW } from '../world/ground.js';
   import { NAV, blockedAt, findPath, nearestFree } from '../world/nav.js';
-  import { buildPose, evalBones } from '../hero/skeleton.js';
-  import { driving, hero, heroHidden } from '../hero/hero.js';
-  import { PXV, q, wq } from '../hero/rig.js';
+  import { exitAt } from '../world/locations.js';
+  import { RIFLE } from '../hero/model.js';
+  import { rebuildHero, steerLook } from '../hero/wardrobe.js';
+  import { OVERLAYS, PACE, blendOverlays, cycleOf, dressedModel, endOverlays, newBody, settle, speedOf, walkAlong } from '../hero/body.js';
+  import { driving, hero, heroHidden, setHeroBody } from '../hero/hero.js';
+  import { bodyRig, poseKey, rifleWorld } from '../hero/rig.js';
   import { seatsOf } from '../hero/state.js';
   import { travelState } from '../hero/travel.js';
-  import { VH, VW, lastView, stageEl } from '../render/stage.js';
-  import { invClean } from './items.js';
-  import { buildPerson } from './look.js';
+  import { VH, VW, lastView, redraw, stageEl } from '../render/stage.js';
+  import { INV, invChanged, invClean } from './items.js';
   export const PEOPLE = [];
-  export const PEOPLE_HOOKS = { acts: [] };         // f(p, list): more actions for a person's panel, { label, run, order } (talk and trade add theirs)
+  // acts: f(p, list) — more actions for a person's panel, { label, run, order } (talk and trade add theirs);
+  // busy: f() → true while control must not pass to another person (a deal is on the table)
+  export const PEOPLE_HOOKS = { acts: [], busy: [] };
   export const personHere = (p) => !!p.inst && p.loc === MAP.id;
   export const personById = (id) => PEOPLE.find((p) => p.id === id);
+  // a person is a body (hero/body.js) with a mind: what he has in mind (mode), his place, his words, his things
   export function addPerson(def) {
-    const p = {
-      def, id: def.id, name: def.name, loc: def.loc, x: def.at[0], z: def.at[1], y: 0, yaw: def.yaw || 0, tyaw: def.yaw || 0,
-      home: { loc: def.loc, at: def.at.slice(), yaw: def.yaw || 0 }, mode: def.mode || 'post', prevMode: null,
-      path: [], queue: [], run: false, phase: 0, walkW: 0, runW: 0, t: 3 + Math.random() * 10, sit: 0, sitTarget: 0, seat: null,
-      head: 0, headTo: 0, attend: 0, talk: { on: false, w: 0, t: 0, dur: 0 }, reach: { on: false, w: 0, t: 0, to: null },
-      idleT: 3 + Math.random() * 4, replanT: 0, homeT: 0, delay: 0, metT: -1e9, chatT: 30 + Math.random() * 30, bark: null, barkEl: null, arriveT: 0,
-      travel: false, inst: null, model: null, bones: null, items: [], snapKey: '',
-      inv: (def.inv || []).map((s) => ({ t: s.t, n: s.n }))
-    };
+    const p = Object.assign(newBody({
+      x: def.at[0], z: def.at[1], yaw: def.yaw || 0, tyaw: def.yaw || 0, t: 3 + Math.random() * 10,
+      look: def.look, gear: Object.assign({ body: null, head: null, hands: null }, def.gear), pace: def.pace || PACE, speedK: def.speed || 1
+    }), mindOf(def));
     PEOPLE.push(p);
     return p;
+  }
+  function mindOf(def) {
+    return {
+      def, id: def.id, name: def.name, loc: def.loc, home: { loc: def.loc, at: def.at.slice(), yaw: def.yaw || 0 }, mode: def.mode || 'post', prevMode: null,
+      attend: 0, idleT: 3 + Math.random() * 4, replanT: 0, homeT: 0, delay: 0, metT: -1e9, chatT: 30 + Math.random() * 30, bark: null, barkEl: null, arriveT: 0,
+      travel: false, inst: null, bones: null, items: [], snapKey: '',
+      inv: (def.inv || []).map((s) => ({ t: s.t, n: s.n }))
+    };
   }
   // a mode change that waits for a conversation to end, if one is going on
   function setPersonMode(p, m) { if (p.mode === 'talk') p.prevMode = m; else p.mode = m; }
@@ -69,7 +80,7 @@
     instById.delete(i.id);
     p.inst = null; p.items = [];
   }
-  hook(LOC_HOOKS.objects, () => { for (const p of PEOPLE) if (p.loc === MAP.id && !p.travel) personInst(p); }, 12);
+  hook(LOC_HOOKS.objects, () => { for (const p of PEOPLE) if (p.loc === MAP.id && !p.travel && p !== hero) personInst(p); }, 12);
   function personNote(p) {
     const own = typeof p.def.note === 'function' ? p.def.note(p) : (p.def.note || '');
     const m = { follow: 'Идёт за тобой.', wait: 'Ждёт здесь, как ты просил.', home: 'Возвращается на своё место.' }[p.mode === 'talk' ? p.prevMode : p.mode] || '';
@@ -188,7 +199,7 @@
         p.idleT = 3.5 + Math.random() * 5;
         p.headTo = Math.random() < 0.35 ? 0 : (Math.random() - 0.5) * 1.7;
         // now and then a hand goes to the kit on his chest (a radio, a pouch)
-        if (Math.random() < 0.25 && !p.path.length && !p.sitTarget) Object.assign(p.reach, { on: true, t: 0, to: [-0.07, 0.08, 0.25] });
+        if (Math.random() < 0.25 && !p.path.length && !p.sitTarget) Object.assign(p.reach, { on: true, t: 0, to: [-0.07, 0.08, 0.25], cb: null, fired: false });
       }
     }
     // stepped aside or pushed off his post: back to it when nobody is around
@@ -206,9 +217,8 @@
     }
   }
 
-  // ---------- the step ----------
-  const personSpeed = (p) => (p.run ? 3.2 : (p.def.look && p.def.look.armor ? 1.3 : 1.38)) * (p.def.speed || 1);
-  const personCycle = (p) => p.run ? 2.3 : (p.def.look && p.def.look.armor ? 1.45 : 1.38);
+  // ---------- the step: his mind first, then the body's step in the same pieces as the hero's (body.js) ----------
+  const PERSON_ENDS = {};
   function updatePerson(p, dt) {
     p.t += dt;
     if (p.delay > 0) p.delay -= dt;
@@ -228,26 +238,15 @@
     personQueue(p);
     // walking along the path
     const moving = p.path.length > 0 && p.delay <= 0;
-    if (moving) {
-      let budget = personSpeed(p) * dt * (p.mode === 'follow' && dh < 1.1 && hero.path.length ? 0.6 : 1);
-      while (budget > 0 && p.path.length) {
-        const wp = p.path[0], dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
-        if (d > 1e-4 && !wp.back) p.tyaw = Math.atan2(dx, dz);
-        if (d <= budget) { p.x = wp.x; p.z = wp.z; budget -= d; p.phase += d / personCycle(p); p.path.shift(); }
-        else { p.x += dx / d * budget; p.z += dz / d * budget; p.phase += budget / personCycle(p); budget = 0; }
-      }
-    }
+    if (moving) walkAlong(p, speedOf(p) * dt * (p.mode === 'follow' && dh < 1.1 && hero.path.length ? 0.6 : 1), cycleOf(p));
     if (p.mode === 'follow' && !p.path.length && !p.sitTarget && !p.queue.length && dh < 4) p.tyaw = approachAngle(p.tyaw, Math.atan2(hero.x - p.x, hero.z - p.z), dt * 2);
-    p.yaw = approachAngle(p.yaw, p.tyaw, dt * (p.path.length ? 15 : 7));
+    p.yaw = approachAngle(p.yaw, p.tyaw, dt * (p.path.length ? 15 : p.turn));
     if (p.path.length) p.headTo = 0;
     p.head = approach(p.head, p.headTo, dt * 3);
-    p.walkW = approach(p.walkW, p.path.length && p.delay <= 0 ? 1 : 0, dt * 7);
-    p.runW = approach(p.runW, p.path.length && p.run ? 1 : 0, dt * 4);
-    p.sit = approach(p.sit, p.sitTarget, dt / 0.5);
-    p.y = approach(p.y, groundY(p.x, p.z), dt * 1.6);
-    for (const k of ['talk', 'reach']) { const a = p[k]; a.w = approach(a.w, a.on ? 1 : 0, dt * (k === 'reach' ? 6 : 4)); if (a.on || a.w > 0) a.t += dt; else a.t = 0; }
-    if (p.talk.on && (p.talk.t > p.talk.dur || p.path.length)) p.talk.on = false;
-    if (p.reach.on && p.reach.t > 1.7) p.reach.on = false;
+    settle(p, dt, p.path.length && p.delay <= 0, p.path.length && p.run);
+    const shotT = p.shoot.t;
+    blendOverlays(p, dt);
+    endOverlays(p, shotT, PERSON_ENDS);
     p.inst.center = [p.x, p.z]; p.inst.def.at = [p.x, p.z];
     // a word now and then: about the new place, or just like that while walking about together
     if (p.bark) { p.bark.t -= dt; if (p.bark.t <= 0) p.bark = null; }
@@ -259,6 +258,7 @@
   // ---------- going through exits with the hero ----------
   LOC_HOOKS.leave.push((from) => {
     for (const p of PEOPLE) {
+      if (p === hero) continue;           // whoever the player steers goes by himself (state.js)
       if (p.loc !== from.id || !p.inst || (p.mode !== 'follow' && !(p.mode === 'talk' && p.prevMode === 'follow'))) continue;
       if (Math.hypot(p.x - hero.x, p.z - hero.z) > 16) continue;        // left far behind: he stays where he is
       dropPersonInst(p);
@@ -268,6 +268,7 @@
   });
   LOC_HOOKS.enter.push((def, spawnName) => {
     for (const p of PEOPLE) {
+      if (p === hero) { p.loc = def.id; continue; }
       // someone who came here on his own while the hero was away (went home through an exit) gets his entry now
       if (!p.travel && p.loc === def.id && !p.inst) { personInst(p); continue; }
       if (!p.travel) continue;
@@ -281,25 +282,17 @@
   });
 
   // ---------- drawing: a snapshot twelve times a second, so people move in the same steps as the hero ----------
-  function personCtx(p) {
-    return {
-      t: q(p.t), phase: Math.floor(p.phase * 12) / 12, walkW: wq(p.walkW), runW: wq(p.runW), sitW: wq(smooth(p.sit)), seat: p.seat,
-      smokeW: 0, smokeT: 0, drinkW: 0, drinkT: 0, punchW: 0, punchT: 0, shootW: 0, shootT: 0, throwW: 0, throwT: 0,
-      reachW: wq(p.reach.w), reachT: q(p.reach.t), reachTo: p.reach.to, talkW: wq(p.talk.w), talkT: q(p.talk.t), headYaw: Math.round(p.head * 8) / 8, act: null
-    };
-  }
+  // posed like the hero (rig.js: bodyRig), dressed in what he wears (his model is built again when that changes)
   function personSnapshot(p) {
-    if (!p.model) p.model = buildPerson(p.def.look);
-    const c = personCtx(p), D = p.model.D;
-    const s = wpx([p.x, 0, p.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
-    const root = [g[0], Math.round(p.y * PXV) / PXV, g[1]];
-    const yaw = p.sit > 0 && p.seat ? p.seat.yaw : p.yaw;
-    const pose = buildPose(c, D, false);
-    const B = evalBones(pose.p, root, yaw, D);
+    if (!p.model) p.model = dressedModel(p);
+    const { c, pose, B, root, yaw } = bodyRig(p, p.model.D, p.gear.hands === 'rifle', true);
     const id = p.inst ? p.inst.id : 0;
     p.bones = B;
     p.items = p.model.parts.map((pt) => ({ mesh: pt.mesh, model: B[pt.bone], mat: pt.mat, id, flags: 2 | 16, shadow: !pt.noShadow }));
-    p.snapKey = [id, root.map((v) => v.toFixed(3)).join(','), yaw.toFixed(3), c.t, c.phase, c.walkW, c.runW, c.sitW, c.reachW, c.reachT, c.talkW, c.talkT, c.headYaw].join(',') + ';';
+    // what he carries in his hands is drawn as the hero's is (the rifle: in the hands, on the back, by the seat)
+    const RW = rifleWorld(pose.rifle, B, p.model.D, p.seat);
+    if (RW) for (const r of RIFLE) p.items.push({ mesh: r.mesh, model: mul(RW, r.off), mat: r.mat, id, flags: 2 | 16, shadow: true });
+    p.snapKey = [id, p.model.look.id, root.map((v) => v.toFixed(3)).join(','), yaw.toFixed(3), poseKey(c)].join(',') + ';';
   }
   hook(GAME.update, (dt) => updatePeople(dt), 30);
   hook(GAME.tick, () => { for (const p of PEOPLE) if (personHere(p)) personSnapshot(p); });
@@ -337,20 +330,88 @@
   export const TALK_HOOKS = { who: [] };
   const TALK_NOW = () => { for (const f of TALK_HOOKS.who) { const p = f(); if (p) return p; } return null; };
 
-  // ---------- what survives a page update, and what goes into a save: where each person is, his mode, his things ----------
+  // ---------- what he wears ----------
+  // a person puts a thing on or takes it off (slot 'body' | 'head' | 'hands', id — a WEAR entry of hero/look.js, or null):
+  // the pieces it covers go, its own come, and his model is built again
+  export function personWear(p, slot, id) {
+    p.gear[slot] = id || null;
+    if (p === hero) { rebuildHero(); return; }
+    p.model = null; p.items = [];
+  }
+
+  // ---------- control passes to another person ----------
+  // takeControl(p): the player steers p from now on (p must be here). The body steered so far stays where he stood, a person
+  // waiting there: «Идём со мной» — and he follows. Everything that says hero means p now: the orders, the camera, the panels,
+  // his things (INV.hero), what he wears (equip). Not while the hero is busy: in a machine, at an activity, in a talk, on the road.
+  // The hero as a person is HERO_PERSON; a game gives him a name and words with heroAsPerson({ name, short, note, barks, … }).
+  const HERO_PERSON = { id: 'hero', name: 'Герой', short: 'герой' };
+  export function heroAsPerson(def) { Object.assign(HERO_PERSON, def); }
+  export function takeControl(p) {
+    const h = hero;
+    if (!p || p === h || !personHere(p) || h.act || h.vehicle || travelState || TALK_NOW() || PEOPLE_HOOKS.busy.some((f) => f())) return false;
+    becomePerson(h, MAP.id, [h.x, h.z], h.yaw);
+    h.mode = 'wait'; h.prevMode = null;
+    h.path.length = 0; h.queue.length = 0; h.target = null; h.focus = null; h.aimAt = null;
+    for (const k of OVERLAYS) h[k].on = false;
+    personInst(h);
+    dropPersonInst(p);
+    steer(p);
+    p.arrived = !!exitAt(p.x, p.z);
+    redraw();
+    return true;
+  }
+  // the body the player leaves becomes a person: the hero the first time gets a mind of his own (HERO_PERSON); his things go with him
+  function becomePerson(h, loc, at, yaw) {
+    if (!h.def) Object.assign(h, mindOf(Object.assign({}, HERO_PERSON, { loc, at, yaw })));
+    Object.assign(h, { loc, travel: false, inv: INV.hero, model: null, items: [] });
+    if (!PEOPLE.includes(h)) PEOPLE.push(h);
+  }
+  // the player takes p: his body, his look and gear, his things
+  function steer(p) {
+    p.path.length = 0; p.queue.length = 0; p.headTo = 0; p.bark = null; p.target = null; p.focus = null;
+    if (p.mode === 'talk') { p.mode = p.prevMode || 'post'; p.prevMode = null; }
+    INV.hero = p.inv;
+    invChanged();
+    setHeroBody(p);
+    steerLook(p.look, p.gear);
+  }
+
+  // ---------- what survives a page update, and what goes into a save: where each person is, his mode, his things, his gear ----------
+  // and who the player steers: the 'control' part comes after the people, and before the hero's part puts the player where he stood
+  // (whoever the player steers is not among them: his place, gear and things are the hero's part and the inventory)
   export function peopleHot() {
-    return PEOPLE.map((p) => ({ id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode, inv: p.inv.map((s) => ({ t: s.t, n: s.n })) }));
+    return PEOPLE.filter((p) => p !== hero).map((p) => ({
+      id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode,
+      inv: p.inv.map((s) => ({ t: s.t, n: s.n })), gear: Object.assign({}, p.gear)
+    }));
+  }
+  function personFromHot(p, d) {
+    if (!LOCATIONS[d.loc] || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return;
+    Object.assign(p, { loc: d.loc, x: d.x, z: d.z, yaw: d.yaw || 0, tyaw: d.yaw || 0, mode: ['post', 'follow', 'wait', 'home'].includes(d.mode) ? d.mode : 'post' });
+    if (Array.isArray(d.inv)) p.inv = invClean(d.inv);
+    if (d.gear) for (const k of ['body', 'head', 'hands']) if (k in d.gear && (d.gear[k] === null || typeof d.gear[k] === 'string')) p.gear[k] = d.gear[k];
+    p.model = null;
   }
   export function peopleFromHot(list) {
     if (!Array.isArray(list)) return;
-    for (const d of list) {
-      const p = d && personById(d.id);
-      if (!p || !LOCATIONS[d.loc] || !Number.isFinite(d.x) || !Number.isFinite(d.z)) continue;
-      Object.assign(p, { loc: d.loc, x: d.x, z: d.z, yaw: d.yaw || 0, tyaw: d.yaw || 0, mode: ['post', 'follow', 'wait', 'home'].includes(d.mode) ? d.mode : 'post' });
-      if (Array.isArray(d.inv)) p.inv = invClean(d.inv);
-    }
+    for (const d of list) { const p = d && personById(d.id); if (p) personFromHot(p, d); }
   }
   savePart('people', { phase: 'before', save: peopleHot, load: peopleFromHot });
+  savePart('control', {
+    phase: 'before',
+    save: () => ({ player: hero.id }),
+    load: (d, all) => {
+      const p = d && typeof d.player === 'string' && d.player !== hero.id ? personById(d.player) : null;
+      const list = all.parts.people, e = p && Array.isArray(list) ? list.find((x) => x && x.id === hero.id) : null;
+      if (!e || !LOCATIONS[e.loc]) return;
+      const h = hero;
+      becomePerson(h, e.loc, [e.x, e.z], e.yaw || 0);
+      personFromHot(h, e);
+      p.inv = INV.hero;                   // the player's things were loaded as the inventory (items.js)
+      dropPersonInst(p);
+      steer(p);
+    }
+  });
 
   // ---------- the bits of page the people module adds by itself (speech bubbles, the talk panel, the trade window) ----------
   export function peopleCss(id, css) {

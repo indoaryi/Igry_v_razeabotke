@@ -11,7 +11,7 @@
   import { findPath } from '../world/nav.js';
   import { enterLocation } from '../world/locations.js';
   import { DAY, DAYP, dayReadStage, daySet, dayUpdate } from '../world/daytime.js';
-  import { equip } from '../hero/model.js';
+  import { equip } from '../hero/wardrobe.js';
   import { ACT, hero } from '../hero/hero.js';
   import { doDefault, goSit, heroStep, standUp, turn, walkTo } from '../hero/state.js';
   import { goToLocation, travelState, updateTravel } from '../hero/travel.js';
@@ -32,7 +32,11 @@
     if ('ResizeObserver' in window) new ResizeObserver(() => fitStage()).observe(stageEl); else window.addEventListener('resize', fitStage);
   }
   // ================= the world's step: the hero, the clock, the game's and the modules' own steps, effects, travel =================
+  // worldT — seconds the world has run since the page opened: the stage's twelve ticks a second follow it (not any one person's clock,
+  // so nothing jumps when control passes to another body)
+  export let worldT = 0;
   function update(dt, view) {
+    worldT += dt;
     heroStep(dt);
     dayUpdate(dt);
     for (const f of GAME.update) f(dt, view);
@@ -41,7 +45,7 @@
     updateToast(dt);
   }
   export const GAME_API = window.__game = {
-    hero, equip, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
+    get hero() { return hero; }, get equip() { return equip; }, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
     travel: () => travelState, walkTo, doDefault, goSit, standUp, turn, ACT, viewToWorld, pickFrac, findPath, stage: stageEl, scene, layer,
     setView: (m) => setView(m),
     dbg: () => ({ drawCalls, VW, VH, kDev, view: lastView && { ox: lastView.ox, oy: lastView.oy, sc: lastView.sc } }),
@@ -57,7 +61,7 @@
     const dt = Math.min(0.05, (now - framePrev) / 1000); framePrev = now;
     try {
       if (!GAME_API.paused) update(dt, viewRect());
-      if (stageVisible) drawStage(dt, hero.t);
+      if (stageVisible) drawStage(dt, worldT);
       updateHud(); updateClock(); updateContext(dt); updateHover(dt);
       for (const f of GAME.frame) f(dt, now);
     } catch (err) { console.error(err); }

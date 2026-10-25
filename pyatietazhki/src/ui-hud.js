@@ -2,7 +2,7 @@
   // (the HUD chips, the context panel, zoom, the clock and taps on the stage are the engine's — engine/src/ui/hud.js)
   import { $ } from '../../engine/src/core/prelude.js';
   import { GAME, hook } from '../../engine/src/core/game.js';
-  import { equip } from '../../engine/src/hero/model.js';
+  import { equip } from '../../engine/src/hero/wardrobe.js';
   import { hero } from '../../engine/src/hero/hero.js';
   import { doPunch } from '../../engine/src/hero/state.js';
   import { doShoot, startDrink, startSmoke } from './hero-state.js';

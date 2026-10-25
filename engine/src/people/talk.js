@@ -14,11 +14,11 @@
   import { savePart } from '../world/state.js';
   import { NAV, nearestFree } from '../world/nav.js';
   import { buildPose, evalBones } from '../hero/skeleton.js';
+  import { dressedModel } from '../hero/body.js';
   import { hero, yawTo } from '../hero/hero.js';
   import { inMachine, plan } from '../hero/state.js';
   import { travelState } from '../hero/travel.js';
   import { stageEl } from '../render/stage.js';
-  import { buildPerson } from './look.js';
   import { PEOPLE_HOOKS, TALK_HOOKS, peopleCss, personById, personHere } from './people.js';
   export const DIALOGS = {};
   export let TALK = null;              // { p, D, id, node, line, heroLine, busy, wait, next, opts }
@@ -163,7 +163,7 @@
   }
   // a head-and-shoulders portrait drawn by the engine, three-quarters to the viewer
   function drawPersonFace(cv, p) {
-    if (!p.model) p.model = buildPerson(p.def.look);
+    if (!p.model) p.model = dressedModel(p);
     const D = p.model.D;
     const pose = buildPose({ t: 0, phase: 0, walkW: 0, runW: 0, sitW: 0, smokeW: 0, drinkW: 0, punchW: 0, shootW: 0, throwW: 0, reachW: 0, talkW: 0 }, D, false);
     const B = evalBones(pose.p, [0, 0, 0], Math.PI / 4 - 0.4, D);

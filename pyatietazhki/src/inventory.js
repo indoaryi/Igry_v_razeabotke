@@ -1,6 +1,6 @@
   // ================= inventory =================
   import { savePart } from '../../engine/src/world/state.js';
-  import { equip } from '../../engine/src/hero/model.js';
+  import { equip } from '../../engine/src/hero/wardrobe.js';
   export const ITEMS = [
     { id: 'jacket', name: 'Кожаная куртка', note: 'Броня +1', slot: 'body' },
     { id: 'armor', name: 'Силовая броня', note: 'Броня +8, скорость −15%', slot: 'body' },

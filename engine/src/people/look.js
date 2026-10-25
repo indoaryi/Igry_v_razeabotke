@@ -1,51 +1,10 @@
-  // ================= people: how they look =================
-  // A person stands on the hero's skeleton (hero/skeleton.js): the same bones, poses, walk and gestures. What a person wears is a look:
-  //   { id, dims: { … } (changes to the hero's proportions, see dims() in hero/model.js), armor: true (bulky kit: the arms hang off the body),
-  //     pieces: [names from PERSON_PIECES], colors: { … } (the pieces read what they need), seed }
-  // A piece is a function (put, D, C) that puts parts on bones: put(bone, key, () => mesh, offset in bone space, material, group).
-  // The key names the mesh (it is cached by it), so it has to change whenever the shape does. Parts that share a bone, a material and
-  // a group are merged into one mesh: the fully kitted soldier is ~7500 triangles in about fifty draws. Groups let an icon show one piece alone.
-  import { ID4, M, alongMinusY, alongPlusY, len, rng, rx, ry, rz, sub, tr } from '../core/math.js';
+  // ================= people: the looks of the engine's library (the dressing itself is in hero/look.js) =================
+  // КЗУ, the sealed protective kit of the test range's warrant officer, after the player's sketch.
+  import { M, alongPlusY, rx, ry, rz, tr } from '../core/math.js';
   import { COL, mat } from '../render/materials.js';
   import { box, capsule, cyl, ellipsoid, facets, loft, smoothPath, tube, tubeAlong } from '../render/meshes.js';
-  import { rawMesh, upload } from '../render/webgl.js';
-  import { mergeRaw } from '../render/kit.js';
-  import { HC, dims, torsoMesh } from '../hero/model.js';
-  const PERSON_PIECES = {};
-  const PERSON_MODELS = new Map();
-  export function buildPerson(look) {
-    let model = PERSON_MODELS.get(look.id);
-    if (model) return model;
-    const D = Object.assign(dims(!!look.armor), look.dims || {}, { armor: !!look.armor });
-    const C = look.colors || {};
-    const raw = [];
-    const put = (bone, key, fn, off, m, group) => raw.push({ bone, mesh: rawMesh('person:' + key, fn), off: off || ID4, mat: m, group: group || 'body' });
-    for (const name of look.pieces) PERSON_PIECES[name](put, D, C, look);
-    const groups = new Map();
-    for (const p of raw) {
-      const key = p.bone + '|' + p.mat.key + '|' + p.group + '|' + (p.mesh.lines ? 1 : 0);
-      let g = groups.get(key);
-      if (!g) { g = { bone: p.bone, mat: p.mat, group: p.group, parts: [] }; groups.set(key, g); }
-      g.parts.push(p);
-    }
-    const R = rng(look.seed || 4711);
-    model = {
-      look, D,
-      parts: [...groups.values()].map((g) => ({ bone: g.bone, mat: g.mat, group: g.group, off: ID4, noShadow: !!g.mat.noShadow || !!g.parts[0].mesh.lines, mesh: upload(mergeRaw(g.parts, R)) }))
-    };
-    PERSON_MODELS.set(look.id, model);
-    return model;
-  }
-  // a rod (capsule) from a to b in a bone's space, and a plain cylinder
-  function personRod(put, bone, key, a, b, r, m, group) {
-    const L = len(sub(b, a));
-    put(bone, key + ':' + L.toFixed(3) + ',' + r, () => capsule(L, r, r, { seg: 6 }), M(tr(...a), alongMinusY(sub(b, a))), m, group);
-  }
-  function personCyl(put, bone, key, a, b, r, m, group, seg = 10) {
-    const L = len(sub(b, a));
-    put(bone, key + ':' + L.toFixed(3) + ',' + r, () => cyl(r, r, L, seg), M(tr(...a), alongPlusY(sub(b, a))), m, group);
-  }
-
+  import { HC, torsoMesh } from '../hero/model.js';
+  import { PERSON_PIECES, PIECE_REGION, personCyl, personRod } from '../hero/look.js';
   // ---------- КЗУ: a sealed protective kit — camouflage suit, plate carrier, pads, a helmet with a smoked visor and a respirator,
   // a hose to the life-support box on the back, a radio with a whip antenna. After the player's reference (front and back views). ----------
   const KZU_COLORS = {
@@ -211,6 +170,8 @@
     const K = kzu(C);
     put('neck', 'kzu:neck', () => capsule(0.12, 0.07, 0.074), tr(0, 0.07, -0.006), K.rubber);
   };
+  // what a worn thing can cover: the helmet, the gloves, the boots, the carrier, the pads, the belt, the pack (the suit itself stays under anything)
+  Object.assign(PIECE_REGION, { kzuHelmet: 'head', kzuGloves: 'hands', kzuBoots: 'feet', kzuVest: 'chest', kzuPads: 'pads', kzuBelt: 'belt', kzuPack: 'back' });
   // the whole kit, ready to wear
   export const KZU_LOOK = {
     id: 'kzu', armor: true, seed: 4711,

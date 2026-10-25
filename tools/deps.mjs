@@ -2,7 +2,8 @@
 // Проверка модулей игры: кто у кого что берёт и всё ли честно.
 //   node tools/deps.mjs <папка игры>            — сводка; при нарушениях код выхода 1
 //   node tools/deps.mjs <папка игры> --all      — ещё и связи: какой модуль какие имена у каких модулей берёт
-//   node tools/deps.mjs <папка игры> --fix      — дописать недостающие импорты (и export у хозяина имени), убрать лишние
+//   node tools/deps.mjs <папка игры> --fix      — дописать недостающие импорты (и export у хозяина имени), убрать лишние,
+//                                                 а имя, переехавшее в другой модуль, брать у нового хозяина
 // Правила:
 //   - движок (engine/) не импортирует ничего из игр: всё игровое приходит к нему через крючки (engine/src/core/game.js);
 //   - ядро движка не импортирует необязательные части — библиотеку предметов (props), шагающие машины (machine) и людей (people):
@@ -35,9 +36,9 @@ const owner = new Map();
 for (const f of order) for (const n of mods.get(f).top.keys()) { if (owner.has(n)) P.dupes.push(`${n}: ${owner.get(n)} и ${f}`); else owner.set(n, f); }
 let nImports = 0, nExports = 0;
 const usedExports = new Set();
-const want = new Map();               // for --fix: file → { add: Map(name → owner), drop: Set(name) }; owner → names to export
+const want = new Map();               // for --fix: file → { add: Map(name → owner), drop: Set(name), move: Map(name → new owner) }; owner → names to export
 const wantExport = new Map();
-const wantOf = (f) => { if (!want.has(f)) want.set(f, { add: new Map(), drop: new Set() }); return want.get(f); };
+const wantOf = (f) => { if (!want.has(f)) want.set(f, { add: new Map(), drop: new Set(), move: new Map() }); return want.get(f); };
 const exportIn = (f, n) => { if (!wantExport.has(f)) wantExport.set(f, new Set()); wantExport.get(f).add(n); };
 for (const f of order) {
   const m = mods.get(f);
@@ -50,7 +51,12 @@ for (const f of order) {
     for (const n of im.names) {
       nImports++;
       imported.set(n, im.from);
-      if (src && !(src.top.get(n) || {}).exported) { P.notExported.push(`${f}:${im.line} ${n} — в ${im.from} нет такого экспорта`); if (src.top.has(n)) exportIn(im.from, n); }
+      if (src && !(src.top.get(n) || {}).exported) {
+        const to = !src.top.has(n) && owner.get(n);
+        P.notExported.push(`${f}:${im.line} ${n} — в ${im.from} нет такого экспорта` + (to ? `  (теперь оно в ${to})` : ''));
+        if (src.top.has(n)) exportIn(im.from, n);
+        else if (to) { wantOf(f).move.set(n, to); if (!mods.get(to).top.get(n).exported) exportIn(to, n); }
+      }
       else usedExports.add(im.from + '|' + n);
     }
   }
@@ -96,12 +102,12 @@ if (fix && (want.size || wantExport.size)) {
   for (const [f, w] of want) {
     const m = mods.get(f);
     const by = new Map();
-    for (const im of m.imports) { if (!im.names.length) continue; for (const n of im.names) if (!w.drop.has(n)) { if (!by.has(im.from)) by.set(im.from, new Set()); by.get(im.from).add(n); } }
-    for (const [n, from] of w.add) { if (!by.has(from)) by.set(from, new Set()); by.get(from).add(n); }
+    for (const im of m.imports) { if (!im.names.length) continue; for (const n of im.names) if (!w.drop.has(n) && !w.move.has(n)) { if (!by.has(im.from)) by.set(im.from, new Set()); by.get(im.from).add(n); } }
+    for (const [n, from] of [...w.add, ...[...w.move].filter(([n]) => !w.drop.has(n))]) { if (!by.has(from)) by.set(from, new Set()); by.get(from).add(n); }
     const plain = m.imports.filter((im) => !im.names.length).map((im) => ({ names: [], from: im.from }));
     const list = [...plain, ...[...by].sort((a, b) => pos(a[0]) - pos(b[0])).map(([from, names]) => ({ names: [...names], from }))];
     fs.writeFileSync(path.join(root, f), withImports(f, fs.readFileSync(path.join(root, f), 'utf8'), list));
-    changed.push(`${f}: ${[...w.add.keys()].map((n) => '+' + n).concat([...w.drop].map((n) => '−' + n)).join(' ')}`);
+    changed.push(`${f}: ${[...w.add.keys()].map((n) => '+' + n).concat([...w.drop].map((n) => '−' + n), [...w.move].map(([n, to]) => n + ' → ' + to)).join(' ')}`);
   }
   for (const [f, names] of wantExport) {
     let src = fs.readFileSync(path.join(root, f), 'utf8');

@@ -8,14 +8,15 @@
   // PEOPLE_HOOKS.traded: f(p, give, take) after a deal — the game takes off sold clothes, refreshes its panels.
   import { GAME, hook } from '../core/game.js';
   import { NAV, nearestFree } from '../world/nav.js';
-  import { equip } from '../hero/model.js';
+  import { equip } from '../hero/wardrobe.js';
   import { hero, yawTo } from '../hero/hero.js';
   import { plan } from '../hero/state.js';
   import { INV, ITEM_TYPES, MONEY, fmtMoney, invAdd, invCount, invSorted, invTake, itemIcon } from './items.js';
-  import { PEOPLE_HOOKS, peopleCss, personHere } from './people.js';
+  import { PEOPLE_HOOKS, peopleCss, personHere, personWear } from './people.js';
   import { TALK, endTalk, lineOf, personSays } from './talk.js';
   PEOPLE_HOOKS.traded = [];
   let DEAL = null;              // { p, give: Map(t → n), take: Map(t → n), note }
+  PEOPLE_HOOKS.busy.push(() => !!DEAL);
   const tradeBuy = (p, t) => ITEM_TYPES[t].money ? 1 : Math.max(1, Math.round(ITEM_TYPES[t].price * (p.def.trade.buy ?? 0.6)));
   const tradeSell = (p, t) => ITEM_TYPES[t].money ? 1 : Math.max(1, Math.round(ITEM_TYPES[t].price * (p.def.trade.sell ?? 1)));
   const tradeLine = (p, key) => { const s = p.def.trade.says || {}; return lineOf(s[key], p); };
@@ -48,6 +49,7 @@
   }
   // walk up to him first, like for a talk, then open the window
   export function goTrade(p) {
+    if (p === hero || !personHere(p)) return;
     if (TALK && TALK.p === p) { openTrade(p); return; }
     const d = Math.hypot(hero.x - p.x, hero.z - p.z), k = 1.2 / (d || 1);
     if (d < 2.4 || (hero.sit > 0 && d < 3)) { if (!(hero.sit > 0)) hero.tyaw = yawTo(p.x, p.z); openTrade(p); return; }
@@ -89,6 +91,8 @@
     for (const [t, n] of D.give) { invTake(INV.hero, t, n); invAdd(p.inv, t, n); }
     for (const [t, n] of D.take) { invTake(p.inv, t, n); invAdd(INV.hero, t, n); }
     if (c.payBack > 0) { invTake(p.inv, MONEY, c.payBack); invAdd(INV.hero, MONEY, c.payBack); }
+    // he sold a thing he was wearing: off it comes (the hero's own gear the game checks itself, PEOPLE_HOOKS.traded)
+    for (const s of ['body', 'head', 'hands']) if (p.gear[s] && D.take.has(p.gear[s]) && !invCount(p.inv, p.gear[s])) personWear(p, s, null);
     const give = new Map(D.give), take = new Map(D.take);
     for (const f of PEOPLE_HOOKS.traded) f(p, give, take);
     D.give.clear(); D.take.clear();

@@ -8,7 +8,7 @@
   import { loadSaved, startSaving, whenReady } from '../../engine/src/world/state.js';
   import { INST, byType } from '../../engine/src/world/instances.js';
   import { enterLocation } from '../../engine/src/world/locations.js';
-  import { HERO, buildHero, equip, setHero } from '../../engine/src/hero/model.js';
+  import { HERO, buildHero, equip, setHero } from '../../engine/src/hero/wardrobe.js';
   import { buildPose, evalBones } from '../../engine/src/hero/skeleton.js';
   import { hero } from '../../engine/src/hero/hero.js';
   import { heroList } from '../../engine/src/hero/rig.js';

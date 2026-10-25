@@ -1,7 +1,7 @@
   // ================= inventory UI =================
   import { $ } from '../../engine/src/core/prelude.js';
   import { toast } from '../../engine/src/core/toast.js';
-  import { equip, rebuildHero } from '../../engine/src/hero/model.js';
+  import { equip, rebuildHero } from '../../engine/src/hero/wardrobe.js';
   import { hero } from '../../engine/src/hero/hero.js';
   import { busyAct } from '../../engine/src/hero/state.js';
   import { sparkleAround } from '../../engine/src/fx/fx2d.js';
