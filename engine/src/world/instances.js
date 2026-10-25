@@ -76,4 +76,6 @@
     return CATALOG[inst.type] ? CATALOG[inst.type].name : inst.type;
   }
   function noteOf(inst) { const U = useOf(inst); return U && U.note ? (typeof U.note === 'function' ? U.note(inst) : U.note) : ''; }
+  // the name in the chip over the stage («рядом: …»): lower case, unless the thing gives its own (a person keeps his surname capitalised)
+  function chipOf(inst) { const U = useOf(inst); return U && U.short ? (typeof U.short === 'function' ? U.short(inst) : U.short) : nameOf(inst).toLowerCase(); }
   function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }

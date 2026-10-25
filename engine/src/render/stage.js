@@ -88,7 +88,7 @@
     }
     const tod = dayFrame(rect, tickNow / FPS);
     const c = rig.c;
-    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
+    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.talkW, c.talkT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
     const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid, dayKey()].join('|');
     if (key !== lastKey) {
       lastKey = key;

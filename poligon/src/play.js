@@ -1,13 +1,20 @@
   // ================= what the hero does on the range: targets, the tower, a training grenade, gear, and what each thing offers =================
   TEXTS.nothingNear = 'Подойди к чему-нибудь или нажми на предмет. Нажатие на землю — просто идти.';
 
-  // ---------- gear: everything is on the shelf, nothing runs out here ----------
+  // ---------- gear: what he has in his pack (things.js) he can put on; cigarettes, cans and grenades get used up ----------
   Object.assign(equip, { body: 'jacket', head: null, hands: 'rifle' });
   const GEAR = [
     { id: 'jacket', slot: 'body', label: 'Куртка' }, { id: 'armor', slot: 'body', label: 'Броня' },
     { id: 'helmet', slot: 'head', label: 'Шлем' }, { id: 'rifle', slot: 'hands', label: 'Винтовка' }
   ];
+  const OUT_OF = {
+    cigs: 'Сигареты кончились. У прапорщика есть: в шлеме ему всё равно не покурить.',
+    drink: 'Банок больше нет. Спроси у прапорщика Сомова.',
+    grenade: 'Учебные гранаты кончились. Ещё есть у прапорщика Сомова.'
+  };
+  const useUp = (t) => { if (invTake(INV.hero, t, 1)) return true; toast(OUT_OF[t]); return false; };
   function toggleGear(g) {
+    if (!hasThing(g.id)) { toast('Этого у тебя нет — продал или обменял.'); return; }
     if (hero.inside || (hero.act && ACT[hero.act.kind].vehicle)) { toast('В костюме не переоденешься — места нет.'); return; }
     if (g.id === 'armor' && equip.body !== 'armor' && busyAct()) { toast('Броня сюда не влезет. Сначала слезь.'); return; }
     equip[g.slot] = equip[g.slot] === g.id ? null : g.id;
@@ -20,13 +27,13 @@
     if (inMachine()) return;
     if (equip.head === 'helmet') { toast('В шлеме не покуришь. Сними шлем.'); return; }
     if (busyAct()) { toast(TEXTS.handsBusy); return; }
-    if (!hero.smoke.on) beginSmoke();
+    if (!hero.smoke.on && useUp('cigs')) beginSmoke();
   }
   function startDrink() {
     if (inMachine()) return;
     if (equip.head === 'helmet') { toast('Через шлем не попьёшь. Сними шлем.'); return; }
     if (busyAct()) { toast(TEXTS.handsBusy); return; }
-    if (!hero.drink.on) beginDrink();
+    if (!hero.drink.on && useUp('drink')) beginDrink();
   }
 
   // ---------- targets: each plate falls back when hit and is raised again by hand ----------
@@ -76,7 +83,7 @@
   function doThrow() {
     if (inMachine()) return;
     if (busyAct() || hero.sit > 0 || hero.sitTarget) { toast(TEXTS.handsBusy); return; }
-    if (hero.thr.on) return;
+    if (hero.thr.on || !useUp('grenade')) return;
     // at the nearest standing target if there is one in front, otherwise eight metres ahead
     const t = nearestTarget(standingTargets());
     const aim = t && Math.hypot(t.dyn.target.pos[0] - hero.x, t.dyn.target.pos[2] - hero.z) < 16 ? [t.dyn.target.pos[0], t.dyn.target.pos[2] + 1.2] : [hero.x + Math.sin(hero.yaw) * 8, hero.z + Math.cos(hero.yaw) * 8];
@@ -129,13 +136,19 @@
   const knock = (sp, to, text) => [...goSpot(sp), { type: 'reach', to, cb: () => toast(typeof text === 'function' ? text() : text) }, { type: 'waitReach' }];
   const GUARD = ['Из окна: «Пропуск покажи… А, это ты. Проходи».', 'Охранник не отрывается от кроссворда: «Слово из пяти букв — броня?»', 'В будке гудит чайник. Охранник кивает на костюмы: «Только не урони».'];
   let guardI = -1;
-  const FINDS_R = ['Стреляная гильза, позеленевшая.', 'Пустая обойма. Пружина ещё живая.', 'Пуговица со звездой.', 'Только репейник и сухая полынь.', 'Обрывок мишени с дыркой в «десятке».'];
+  // what turns up in the weeds goes into the pack (things.js); the warrant officer buys some of it
+  const FINDS_R = [['casing', 'Стреляная гильза, позеленевшая.'], ['mag', 'Пустой магазин. Пружина ещё живая.'], ['button', 'Пуговица со звездой.'], [null, 'Только репейник и сухая полынь.'], ['scrap', 'Обрывок мишени с дыркой в «десятке».']];
   let findI = 0;
   function goSearchR(inst) {
     if (inst.dyn.searched) { toast(TEXTS.searched); return; }
     const cx = inst.def.at[0], cz = inst.def.at[1], dx = hero.x - cx, dz = hero.z - cz, dl = Math.hypot(dx, dz) || 1;
     plan({ type: 'path', to: [cx + dx / dl * inst.def.rx * 0.85, cz + dz / dl * inst.def.rz * 0.85] }, { type: 'call', fn: () => { hero.tyaw = yawTo(cx, cz); } }, { type: 'turned' },
-      { type: 'act', kind: 'kneel', inst, opts: { cb: () => { inst.dyn.searched = true; toast(FINDS_R[findI++ % FINDS_R.length]); } } });
+      { type: 'act', kind: 'kneel', inst, opts: { cb: () => {
+        inst.dyn.searched = true;
+        const [t, text] = FINDS_R[findI++ % FINDS_R.length];
+        if (t) invAdd(INV.hero, t, 1);
+        toast(t ? text + ' В рюкзак.' : text);
+      } } });
   }
   const onTowerDeck = (t) => Math.abs(hero.y - t.built.top[1]) < 0.2 && Math.hypot(hero.x - xf(t.M0, t.built.top)[0], hero.z - xf(t.M0, t.built.top)[2]) < 1.6;
   Object.assign(USE, {

@@ -283,6 +283,16 @@
     p.head[0] -= 0.22 * w * hold; p.neck[0] -= 0.1 * w * hold;
     return { held: t < THROW_REL, ball: add(H, [0, 0.03, 0.09]) };
   }
+  // talking: the head nods to the words, one hand explains, the other joins in now and then
+  function applyTalk(p, t, w, D) {
+    const a = D.armor ? 0.05 : 0, k = w * (0.6 + 0.4 * Math.sin(t * 1.9));
+    p.head[0] += 0.07 * Math.sin(t * 7.1) * w; p.neck[1] += 0.06 * Math.sin(t * 1.3) * w;
+    p.rHand = lerpV(p.rHand, [-0.15 * D.w - a, -0.03 + 0.05 * Math.sin(t * 3.3), 0.24 + a + 0.03 * Math.sin(t * 4.6)], k);
+    p.rPole = lerpV(p.rPole, [-0.8, -0.9, -0.3], k);
+    const l = w * clamp(Math.sin(t * 0.9 + 1.2) * 1.4 - 0.4, 0, 1);
+    p.lHand = lerpV(p.lHand, [0.14 * D.w + a, -0.06 + 0.04 * Math.sin(t * 2.7), 0.22 + a], l);
+    p.lPole = lerpV(p.lPole, [0.8, -0.9, -0.3], l);
+  }
   // right hand reaches a point given in chest space (intercom, roof edge), head looks at it
   function applyReach(p, t, w, D, target) {
     const k = smooth(t / 0.45) * (1 - smooth((t - 1.25) / 0.4));
@@ -339,7 +349,10 @@
     if (c.drinkW > 0) st.drink = applyDrink(p, c.drinkT, c.drinkW, D);
     if (c.punchW > 0) st.punch = applyPunch(p, c.punchT, c.punchW, D);
     if (c.throwW > 0) st.thr = applyThrow(p, c.throwT, c.throwW, D);
+    if (c.talkW > 0) applyTalk(p, c.talkT, c.talkW, D);
     if (c.reachW > 0 && c.reachTo) applyReach(p, c.reachT, c.reachW, D, c.reachTo);
+    // the head turned towards something (radians to the left of where the body faces)
+    if (c.headYaw) { const h = clamp(c.headYaw, -1.2, 1.2); p.neck[1] += h * 0.45; p.head[1] += h * 0.55; }
     return { p, rifle, st };
   }
 

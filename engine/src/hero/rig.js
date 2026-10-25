@@ -14,7 +14,8 @@
       t: Q(hero.t), phase: quant ? Math.floor(hero.phase * 12) / 12 : hero.phase, walkW: W(hero.walkW), runW: W(hero.runW), sitW: W(smooth(hero.sit)), seat: hero.seat,
       smokeW: W(hero.smoke.w), smokeT: Q(hero.smoke.t), drinkW: W(hero.drink.w), drinkT: Q(hero.drink.t),
       punchW: W(hero.punch.w), punchT: Q(hero.punch.t), shootW: W(hero.shoot.w), shootT: Q(hero.shoot.t),
-      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to, act: a
+      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to,
+      talkW: W(hero.talk.w), talkT: Q(hero.talk.t), act: a
     };
   }
   const PXV = S * UV[1];   // screen px per metre of height

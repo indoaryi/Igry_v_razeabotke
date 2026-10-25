@@ -10,7 +10,9 @@
     focus: [],    // f(heroScreen) → [x, y] or null: a point the camera leans towards (the first one that answers wins)
     lights: [],   // f(out): lamps that are not catalog things, push { p, r, col, k, d, cone } (a machine's headlamps)
     drawFx: [],   // f(ctx, k, X, Y): 2D effects of the game's own, drawn over the scene with the engine's
-    frame: []     // f(dt, now): after the stage is drawn: panels and HUD of the game
+    frame: [],    // f(dt, now): after the stage is drawn: panels and HUD of the game
+    state: [],    // f() → text or null: what the hero is busy with, for the chip over the stage (the first that answers wins)
+    context: []   // f() → { inst, mode } or null: what the panel «рядом» is about, before the engine looks for the nearest thing
   };
   function hook(list, f, at = 50) {
     const h = (...a) => f(...a);

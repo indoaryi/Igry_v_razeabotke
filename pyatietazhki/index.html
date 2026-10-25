@@ -443,7 +443,9 @@ pre.code { background: var(--code); border-radius: 10px; padding: 14px 16px; ove
     focus: [],    // f(heroScreen) → [x, y] or null: a point the camera leans towards (the first one that answers wins)
     lights: [],   // f(out): lamps that are not catalog things, push { p, r, col, k, d, cone } (a machine's headlamps)
     drawFx: [],   // f(ctx, k, X, Y): 2D effects of the game's own, drawn over the scene with the engine's
-    frame: []     // f(dt, now): after the stage is drawn: panels and HUD of the game
+    frame: [],    // f(dt, now): after the stage is drawn: panels and HUD of the game
+    state: [],    // f() → text or null: what the hero is busy with, for the chip over the stage (the first that answers wins)
+    context: []   // f() → { inst, mode } or null: what the panel «рядом» is about, before the engine looks for the nearest thing
   };
   function hook(list, f, at = 50) {
     const h = (...a) => f(...a);
@@ -874,6 +876,13 @@ in vec3 vS;
 layout(location=0) out vec4 o;
 layout(location=1) out vec4 oId;
 float h3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+// smooth value noise (camouflage blotches)
+float vn3(vec3 p){
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float a = mix(mix(h3(i), h3(i + vec3(1.0, 0.0, 0.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 0.0)), h3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y);
+  float b = mix(mix(h3(i + vec3(0.0, 0.0, 1.0)), h3(i + vec3(1.0, 0.0, 1.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 1.0)), h3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y);
+  return mix(a, b, f.z);
+}
 const float BY4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 float bayer(){ ivec2 q = ivec2(gl_FragCoord.xy) & 3; return (BY4[q.y * 4 + q.x] + 0.5) / 16.0; }
 // light of the lamps at a point, in three steps with a dithered edge, like the rest of the palette
@@ -1192,6 +1201,19 @@ void main(){
     if (n.y > 0.5 && (fract(vW.x / uP.x) < 0.03 || fract(vW.z / uP.x) < 0.03)) shift = -1;
     float sp = h3(floor(vW * 14.0));
     if (sp > 0.96) shift = -1; else if (sp < 0.03) shift = 1;
+  } else if (uPat == 53) {            // camouflage in part-local space: blotches of ramp B and of dark brown over the base, light flecks
+                                      // p: blotches per metre, thresholds for B and for brown, how rare the flecks are; r.x: webbing rows per metre (0: none)
+    vec3 q = vL * uP.x + vec3(vSeed * 17.0, vSeed * 5.0, vSeed * 11.0);
+    float n1 = vn3(q), n2 = vn3(q * 1.37 + 31.7);
+    if (n1 > uP.y) useB = true;
+    else if (n2 > uP.z) shift = -2;
+    else if (h3(floor(vL * uP.x * 2.7) + 5.1) > uP.w) shift = 1;
+    if (uR.x > 0.0 && fract(vL.y * uR.x) < 0.2) shift = min(shift, 0) - 1;
+  } else if (uPat == 54) {            // smoked visor: dark glass with a band of sky reflection across it (p.xy: its direction, p.z: where, p.w: half width)
+    if (abs(vL.x * uP.x + vL.y * uP.y - uP.z) < uP.w) shift = 2;
+  } else if (uPat == 55) {            // a box with a louvred vent on its +z face: p.x where the face is, p.y half width, p.zw rows from … to in y; r.x louvres per metre
+    if (vL.z > uP.x && ax < uP.y && vL.y > uP.z && vL.y < uP.w) { idx = fract(vL.y * uR.x) < 0.5 ? 0 : 1; forced = true; }
+    else if (h3(floor(vL * 30.0)) > 0.93) shift = -1;
   }
   if (uMode == 3) { o = vec4(0.0); oId = vec4(0.0); return; }
   if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, 0.32); oId = vec4(0.0); return; }
@@ -1216,7 +1238,8 @@ void main(){
     // the hour: sunlit and shaded parts take their tints, lamps nearby add their light to the colour of the thing itself
     vec3 base = isDecal ? decal : (useB ? uRampB[3] : uRampA[3]);
     vec3 tint = mix(uShadeTint, uSunTint, sv);
-    if (abs(uId.x * 255.0 - 1.0) < 0.5) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) stays readable at night
+    int flg = int(uId.y * 255.0 + 0.5);
+    if (abs(uId.x * 255.0 - 1.0) < 0.5 || (flg & 16) != 0) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) and other people (flag 16) stay readable at night
     c = mix(vec3(dot(c, vec3(0.3, 0.59, 0.11))), c, uSat) * tint;
     if (uNL > 0) c += base * lampsAt(vS, n) * 0.9;
     if (lit) c = mix(c, lcol, clamp(0.35 + uWin.z * 0.8, 0.0, 1.0));     // a lit window: faint by day, bright at night
@@ -1785,6 +1808,29 @@ void main(){
     }
     return { chunks, bb };
   }
+  // like bake(), but into one bone's space (walking machines, people): parts = [{ mesh: raw, off: matrix }];
+  // every part keeps its own coordinates for the shader patterns and gets its own seed
+  function mergeRaw(parts, R) {
+    let nv = 0, ni = 0;
+    for (const p of parts) { nv += p.mesh.pos.length / 3; ni += p.mesh.idx.length; }
+    const pos = new Float32Array(nv * 3), nr = new Float32Array(nv * 3), loc = new Float32Array(nv * 3), seed = new Float32Array(nv), idx = new Uint32Array(ni);
+    let vo = 0, io = 0;
+    for (const p of parts) {
+      const r = p.mesh, n = r.pos.length / 3, W = p.off, sd = R();
+      for (let i = 0; i < n; i++) {
+        const x = r.pos[i * 3], y = r.pos[i * 3 + 1], z = r.pos[i * 3 + 2], j = (vo + i) * 3;
+        pos[j] = W[0] * x + W[4] * y + W[8] * z + W[12]; pos[j + 1] = W[1] * x + W[5] * y + W[9] * z + W[13]; pos[j + 2] = W[2] * x + W[6] * y + W[10] * z + W[14];
+        loc[j] = x; loc[j + 1] = y; loc[j + 2] = z;
+        const nx = r.nrm[i * 3], ny = r.nrm[i * 3 + 1], nz = r.nrm[i * 3 + 2];
+        const q = nrm([W[0] * nx + W[4] * ny + W[8] * nz, W[1] * nx + W[5] * ny + W[9] * nz, W[2] * nx + W[6] * ny + W[10] * nz]);
+        nr[j] = q[0]; nr[j + 1] = q[1]; nr[j + 2] = q[2];
+        seed[vo + i] = sd;
+      }
+      for (let i = 0; i < r.idx.length; i++) idx[io + i] = r.idx[i] + vo;
+      vo += n; io += r.idx.length;
+    }
+    return { pos, nrm: nr, loc, seed, idx, lines: !!parts[0].mesh.lines };
+  }
   // screen rectangle (world art px) of an axis-aligned world box, and of its shadow on the ground
   function screenRect(bb) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1960,6 +2006,8 @@ void main(){
     return CATALOG[inst.type] ? CATALOG[inst.type].name : inst.type;
   }
   function noteOf(inst) { const U = useOf(inst); return U && U.note ? (typeof U.note === 'function' ? U.note(inst) : U.note) : ''; }
+  // the name in the chip over the stage («рядом: …»): lower case, unless the thing gives its own (a person keeps his surname capitalised)
+  function chipOf(inst) { const U = useOf(inst); return U && U.short ? (typeof U.short === 'function' ? U.short(inst) : U.short) : nameOf(inst).toLowerCase(); }
   function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }
   // ================= ground: the cell strings painted pixel by pixel into one big canvas =================
   // the map size and the ground canvas geometry belong to the current location (see setGeometry in locations.js)
@@ -2982,6 +3030,16 @@ void main(){
     p.head[0] -= 0.22 * w * hold; p.neck[0] -= 0.1 * w * hold;
     return { held: t < THROW_REL, ball: add(H, [0, 0.03, 0.09]) };
   }
+  // talking: the head nods to the words, one hand explains, the other joins in now and then
+  function applyTalk(p, t, w, D) {
+    const a = D.armor ? 0.05 : 0, k = w * (0.6 + 0.4 * Math.sin(t * 1.9));
+    p.head[0] += 0.07 * Math.sin(t * 7.1) * w; p.neck[1] += 0.06 * Math.sin(t * 1.3) * w;
+    p.rHand = lerpV(p.rHand, [-0.15 * D.w - a, -0.03 + 0.05 * Math.sin(t * 3.3), 0.24 + a + 0.03 * Math.sin(t * 4.6)], k);
+    p.rPole = lerpV(p.rPole, [-0.8, -0.9, -0.3], k);
+    const l = w * clamp(Math.sin(t * 0.9 + 1.2) * 1.4 - 0.4, 0, 1);
+    p.lHand = lerpV(p.lHand, [0.14 * D.w + a, -0.06 + 0.04 * Math.sin(t * 2.7), 0.22 + a], l);
+    p.lPole = lerpV(p.lPole, [0.8, -0.9, -0.3], l);
+  }
   // right hand reaches a point given in chest space (intercom, roof edge), head looks at it
   function applyReach(p, t, w, D, target) {
     const k = smooth(t / 0.45) * (1 - smooth((t - 1.25) / 0.4));
@@ -3038,7 +3096,10 @@ void main(){
     if (c.drinkW > 0) st.drink = applyDrink(p, c.drinkT, c.drinkW, D);
     if (c.punchW > 0) st.punch = applyPunch(p, c.punchT, c.punchW, D);
     if (c.throwW > 0) st.thr = applyThrow(p, c.throwT, c.throwW, D);
+    if (c.talkW > 0) applyTalk(p, c.talkT, c.talkW, D);
     if (c.reachW > 0 && c.reachTo) applyReach(p, c.reachT, c.reachW, D, c.reachTo);
+    // the head turned towards something (radians to the left of where the body faces)
+    if (c.headYaw) { const h = clamp(c.headYaw, -1.2, 1.2); p.neck[1] += h * 0.45; p.head[1] += h * 0.55; }
     return { p, rifle, st };
   }
 
@@ -3058,7 +3119,8 @@ void main(){
       t: Q(hero.t), phase: quant ? Math.floor(hero.phase * 12) / 12 : hero.phase, walkW: W(hero.walkW), runW: W(hero.runW), sitW: W(smooth(hero.sit)), seat: hero.seat,
       smokeW: W(hero.smoke.w), smokeT: Q(hero.smoke.t), drinkW: W(hero.drink.w), drinkT: Q(hero.drink.t),
       punchW: W(hero.punch.w), punchT: Q(hero.punch.t), shootW: W(hero.shoot.w), shootT: Q(hero.shoot.t),
-      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to, act: a
+      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to,
+      talkW: W(hero.talk.w), talkT: Q(hero.talk.t), act: a
     };
   }
   const PXV = S * UV[1];   // screen px per metre of height
@@ -3137,6 +3199,7 @@ void main(){
     sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
     smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
     thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
+    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
     vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
   };
   const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
@@ -3327,11 +3390,12 @@ void main(){
     hero.sit = approach(hero.sit, hero.sitTarget, dt / 0.5);
     if (!hero.act) hero.y = approach(hero.y, groundY(hero.x, hero.z), dt * 1.6);
     const sh = hero.shoot, prevT = sh.t;
-    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach']) {
+    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach', 'talk']) {
       const a = hero[k];
       a.w = approach(a.w, a.on ? 1 : 0, dt * (k === 'shoot' ? 8 : k === 'thr' || k === 'reach' ? 6 : 4));
       if (a.on || a.w > 0) a.t += dt; else a.t = 0;
     }
+    if (hero.talk.on && (hero.talk.t > hero.talk.dur || hero.path.length || busyAct())) hero.talk.on = false;
     if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) fireShot();
     if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; hero.aimYaw = null; }
     if (hero.punch.on && hero.punch.t > 1.25) hero.punch.on = false;
@@ -3702,7 +3766,7 @@ void main(){
     }
     const tod = dayFrame(rect, tickNow / FPS);
     const c = rig.c;
-    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
+    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.talkW, c.talkT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
     const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid, dayKey()].join('|');
     if (key !== lastKey) {
       lastKey = key;
@@ -3811,6 +3875,7 @@ void main(){
   function stateText() {
     let s;
     if (driving() && !hero.act) return dirOf(hero.yaw).arrow + ' ' + (hero.vehicle.ride ? hero.vehicle.ride.state() : 'внутри');
+    for (const f of GAME.state) { const g = f(); if (g) return dirOf(hero.yaw).arrow + ' ' + g; }
     if (hero.act) s = ACT[hero.act.kind].state(hero.act);
     else if (hero.path.length) s = hero.run ? 'бежит' : 'идёт';
     else if (hero.sitTarget === 1) s = hero.sit < 1 ? 'садится' : 'сидит';
@@ -3833,6 +3898,7 @@ void main(){
   // what the context panel is about: the machine he drives, what he is busy with, his seat, the nearest active thing, the last one tapped
   function contextNow() {
     if (driving() && !hero.act) return { inst: hero.vehicle, mode: 'pilot' };
+    for (const f of GAME.context) { const c = f(); if (c) return c; }
     if (hero.act && hero.act.inst && !ACT[hero.act.kind].quiet) return { inst: hero.act.inst, mode: 'busy' };
     if ((hero.sitTarget === 1 || hero.sit > 0) && hero.seat) return { inst: hero.seat.inst, mode: 'seated' };
     let best = null, bd = 2.2;
@@ -3858,7 +3924,7 @@ void main(){
     const key = cx ? cx.mode + cx.inst.id + acts.map((a) => a.label).join() + (hero.act ? hero.act.stage : '') + (cx.inst.machine ? cx.inst.machine.mode : '') : 'none';
     if (hudNear) {
       hudNear.hidden = !(cx && (cx.mode === 'near' || cx.mode === 'busy' || cx.mode === 'seated'));
-      if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + nameOf(cx.inst).toLowerCase();
+      if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + chipOf(cx.inst);
     }
     if (key === ctxKey || !ctxActs) return;
     ctxKey = key;
@@ -4918,28 +4984,6 @@ void main(){
     const R = rng(4242);
     K.parts = [...groups.values()].map((g) => ({ bone: g.bone, mat: g.mat, alt: g.alt, when: g.when, noShadow: g.lines || !!g.mat.noShadow, mesh: upload(mergeRaw(g.parts, R)) }));
     return K.parts;
-  }
-  // like bake(), but into the bone's space; every part keeps its own coordinates for the shader patterns
-  function mergeRaw(parts, R) {
-    let nv = 0, ni = 0;
-    for (const p of parts) { nv += p.mesh.pos.length / 3; ni += p.mesh.idx.length; }
-    const pos = new Float32Array(nv * 3), nr = new Float32Array(nv * 3), loc = new Float32Array(nv * 3), seed = new Float32Array(nv), idx = new Uint32Array(ni);
-    let vo = 0, io = 0;
-    for (const p of parts) {
-      const r = p.mesh, n = r.pos.length / 3, W = p.off, sd = R();
-      for (let i = 0; i < n; i++) {
-        const x = r.pos[i * 3], y = r.pos[i * 3 + 1], z = r.pos[i * 3 + 2], j = (vo + i) * 3;
-        pos[j] = W[0] * x + W[4] * y + W[8] * z + W[12]; pos[j + 1] = W[1] * x + W[5] * y + W[9] * z + W[13]; pos[j + 2] = W[2] * x + W[6] * y + W[10] * z + W[14];
-        loc[j] = x; loc[j + 1] = y; loc[j + 2] = z;
-        const nx = r.nrm[i * 3], ny = r.nrm[i * 3 + 1], nz = r.nrm[i * 3 + 2];
-        const q = nrm([W[0] * nx + W[4] * ny + W[8] * nz, W[1] * nx + W[5] * ny + W[9] * nz, W[2] * nx + W[6] * ny + W[10] * nz]);
-        nr[j] = q[0]; nr[j + 1] = q[1]; nr[j + 2] = q[2];
-        seed[vo + i] = sd;
-      }
-      for (let i = 0; i < r.idx.length; i++) idx[io + i] = r.idx[i] + vo;
-      vo += n; io += r.idx.length;
-    }
-    return { pos, nrm: nr, loc, seed, idx, lines: !!parts[0].mesh.lines };
   }
 
   // ---------- what gets drawn: a snapshot taken twelve times a second, so the machine moves in the same steps as the hero ----------

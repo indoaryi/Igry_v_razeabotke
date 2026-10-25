@@ -58,6 +58,29 @@
     }
     return { chunks, bb };
   }
+  // like bake(), but into one bone's space (walking machines, people): parts = [{ mesh: raw, off: matrix }];
+  // every part keeps its own coordinates for the shader patterns and gets its own seed
+  function mergeRaw(parts, R) {
+    let nv = 0, ni = 0;
+    for (const p of parts) { nv += p.mesh.pos.length / 3; ni += p.mesh.idx.length; }
+    const pos = new Float32Array(nv * 3), nr = new Float32Array(nv * 3), loc = new Float32Array(nv * 3), seed = new Float32Array(nv), idx = new Uint32Array(ni);
+    let vo = 0, io = 0;
+    for (const p of parts) {
+      const r = p.mesh, n = r.pos.length / 3, W = p.off, sd = R();
+      for (let i = 0; i < n; i++) {
+        const x = r.pos[i * 3], y = r.pos[i * 3 + 1], z = r.pos[i * 3 + 2], j = (vo + i) * 3;
+        pos[j] = W[0] * x + W[4] * y + W[8] * z + W[12]; pos[j + 1] = W[1] * x + W[5] * y + W[9] * z + W[13]; pos[j + 2] = W[2] * x + W[6] * y + W[10] * z + W[14];
+        loc[j] = x; loc[j + 1] = y; loc[j + 2] = z;
+        const nx = r.nrm[i * 3], ny = r.nrm[i * 3 + 1], nz = r.nrm[i * 3 + 2];
+        const q = nrm([W[0] * nx + W[4] * ny + W[8] * nz, W[1] * nx + W[5] * ny + W[9] * nz, W[2] * nx + W[6] * ny + W[10] * nz]);
+        nr[j] = q[0]; nr[j + 1] = q[1]; nr[j + 2] = q[2];
+        seed[vo + i] = sd;
+      }
+      for (let i = 0; i < r.idx.length; i++) idx[io + i] = r.idx[i] + vo;
+      vo += n; io += r.idx.length;
+    }
+    return { pos, nrm: nr, loc, seed, idx, lines: !!parts[0].mesh.lines };
+  }
   // screen rectangle (world art px) of an axis-aligned world box, and of its shadow on the ground
   function screenRect(bb) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;

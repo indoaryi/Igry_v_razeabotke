@@ -75,6 +75,13 @@ in vec3 vS;
 layout(location=0) out vec4 o;
 layout(location=1) out vec4 oId;
 float h3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+// smooth value noise (camouflage blotches)
+float vn3(vec3 p){
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float a = mix(mix(h3(i), h3(i + vec3(1.0, 0.0, 0.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 0.0)), h3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y);
+  float b = mix(mix(h3(i + vec3(0.0, 0.0, 1.0)), h3(i + vec3(1.0, 0.0, 1.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 1.0)), h3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y);
+  return mix(a, b, f.z);
+}
 const float BY4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 float bayer(){ ivec2 q = ivec2(gl_FragCoord.xy) & 3; return (BY4[q.y * 4 + q.x] + 0.5) / 16.0; }
 // light of the lamps at a point, in three steps with a dithered edge, like the rest of the palette
@@ -393,6 +400,19 @@ void main(){
     if (n.y > 0.5 && (fract(vW.x / uP.x) < 0.03 || fract(vW.z / uP.x) < 0.03)) shift = -1;
     float sp = h3(floor(vW * 14.0));
     if (sp > 0.96) shift = -1; else if (sp < 0.03) shift = 1;
+  } else if (uPat == 53) {            // camouflage in part-local space: blotches of ramp B and of dark brown over the base, light flecks
+                                      // p: blotches per metre, thresholds for B and for brown, how rare the flecks are; r.x: webbing rows per metre (0: none)
+    vec3 q = vL * uP.x + vec3(vSeed * 17.0, vSeed * 5.0, vSeed * 11.0);
+    float n1 = vn3(q), n2 = vn3(q * 1.37 + 31.7);
+    if (n1 > uP.y) useB = true;
+    else if (n2 > uP.z) shift = -2;
+    else if (h3(floor(vL * uP.x * 2.7) + 5.1) > uP.w) shift = 1;
+    if (uR.x > 0.0 && fract(vL.y * uR.x) < 0.2) shift = min(shift, 0) - 1;
+  } else if (uPat == 54) {            // smoked visor: dark glass with a band of sky reflection across it (p.xy: its direction, p.z: where, p.w: half width)
+    if (abs(vL.x * uP.x + vL.y * uP.y - uP.z) < uP.w) shift = 2;
+  } else if (uPat == 55) {            // a box with a louvred vent on its +z face: p.x where the face is, p.y half width, p.zw rows from … to in y; r.x louvres per metre
+    if (vL.z > uP.x && ax < uP.y && vL.y > uP.z && vL.y < uP.w) { idx = fract(vL.y * uR.x) < 0.5 ? 0 : 1; forced = true; }
+    else if (h3(floor(vL * 30.0)) > 0.93) shift = -1;
   }
   if (uMode == 3) { o = vec4(0.0); oId = vec4(0.0); return; }
   if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, 0.32); oId = vec4(0.0); return; }
@@ -417,7 +437,8 @@ void main(){
     // the hour: sunlit and shaded parts take their tints, lamps nearby add their light to the colour of the thing itself
     vec3 base = isDecal ? decal : (useB ? uRampB[3] : uRampA[3]);
     vec3 tint = mix(uShadeTint, uSunTint, sv);
-    if (abs(uId.x * 255.0 - 1.0) < 0.5) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) stays readable at night
+    int flg = int(uId.y * 255.0 + 0.5);
+    if (abs(uId.x * 255.0 - 1.0) < 0.5 || (flg & 16) != 0) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) and other people (flag 16) stay readable at night
     c = mix(vec3(dot(c, vec3(0.3, 0.59, 0.11))), c, uSat) * tint;
     if (uNL > 0) c += base * lampsAt(vS, n) * 0.9;
     if (lit) c = mix(c, lcol, clamp(0.35 + uWin.z * 0.8, 0.0, 1.0));     // a lit window: faint by day, bright at night

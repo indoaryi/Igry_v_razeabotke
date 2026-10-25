@@ -12,6 +12,7 @@
   function stateText() {
     let s;
     if (driving() && !hero.act) return dirOf(hero.yaw).arrow + ' ' + (hero.vehicle.ride ? hero.vehicle.ride.state() : 'внутри');
+    for (const f of GAME.state) { const g = f(); if (g) return dirOf(hero.yaw).arrow + ' ' + g; }
     if (hero.act) s = ACT[hero.act.kind].state(hero.act);
     else if (hero.path.length) s = hero.run ? 'бежит' : 'идёт';
     else if (hero.sitTarget === 1) s = hero.sit < 1 ? 'садится' : 'сидит';
@@ -34,6 +35,7 @@
   // what the context panel is about: the machine he drives, what he is busy with, his seat, the nearest active thing, the last one tapped
   function contextNow() {
     if (driving() && !hero.act) return { inst: hero.vehicle, mode: 'pilot' };
+    for (const f of GAME.context) { const c = f(); if (c) return c; }
     if (hero.act && hero.act.inst && !ACT[hero.act.kind].quiet) return { inst: hero.act.inst, mode: 'busy' };
     if ((hero.sitTarget === 1 || hero.sit > 0) && hero.seat) return { inst: hero.seat.inst, mode: 'seated' };
     let best = null, bd = 2.2;
@@ -59,7 +61,7 @@
     const key = cx ? cx.mode + cx.inst.id + acts.map((a) => a.label).join() + (hero.act ? hero.act.stage : '') + (cx.inst.machine ? cx.inst.machine.mode : '') : 'none';
     if (hudNear) {
       hudNear.hidden = !(cx && (cx.mode === 'near' || cx.mode === 'busy' || cx.mode === 'seated'));
-      if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + nameOf(cx.inst).toLowerCase();
+      if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + chipOf(cx.inst);
     }
     if (key === ctxKey || !ctxActs) return;
     ctxKey = key;

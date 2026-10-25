@@ -5,22 +5,40 @@
   aDrink.addEventListener('click', () => { if (hero.drink.on) hero.drink.on = false; else startDrink(); });
   aPunch.addEventListener('click', doPunch);
   aThrow.addEventListener('click', doThrow);
-  const gearEl = $('gear');
-  for (const g of GEAR) {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'btn'; b.textContent = g.label; b.dataset.id = g.id;
-    b.addEventListener('click', () => toggleGear(g));
-    gearEl.append(b);
-  }
+  // ---------- the hero's things: a tap puts on or takes off, lights a cigarette, opens a can, throws a grenade ----------
+  const worn = (t) => equip.body === t || equip.head === t || equip.hands === t;
+  const invEl = $('inv'), cashEl = $('cash');
+  const invPanel = invGrid(invEl, {
+    inv: () => INV.hero,
+    hide: (t) => t === MONEY,
+    state: (t, n) => {
+      const T = ITEM_TYPES[t];
+      if (T.gear) return worn(t) ? (t === 'rifle' ? 'в руках' : 'надето') : 'в рюкзаке';
+      if (t === 'cigs') return hero.smoke.on ? 'куришь · ' + n + ' шт.' : n + ' шт.';
+      if (t === 'drink') return hero.drink.on ? 'пьёшь · ×' + n : '×' + n;
+      return (n > 1 ? '×' + n + ' · ' : '') + fmtMoney(T.price);
+    },
+    pressed: (t) => worn(t) || (t === 'cigs' && hero.smoke.on) || (t === 'drink' && hero.drink.on),
+    tap: (t) => {
+      const g = GEAR.find((x) => x.id === t);
+      if (g) toggleGear(g);
+      else if (t === 'cigs') { if (hero.smoke.on) hero.smoke.on = false; else startSmoke(); }
+      else if (t === 'drink') { if (hero.drink.on) hero.drink.on = false; else startDrink(); }
+      else if (t === 'grenade') doThrow();
+      else toast(ITEM_TYPES[t].name + '. ' + ITEM_TYPES[t].note);
+    }
+  });
   let pageKey = '';
   hook(GAME.frame, () => {
-    const key = '' + hero.smoke.on + hero.drink.on + equip.body + equip.head + equip.hands;
+    const key = '' + hero.smoke.on + hero.drink.on + equip.body + equip.head + equip.hands + '|' + invVer;
     if (key === pageKey) return;
     pageKey = key;
     aSmoke.textContent = hero.smoke.on ? 'Потушить' : 'Закурить'; aSmoke.setAttribute('aria-pressed', String(hero.smoke.on));
-    aDrink.textContent = hero.drink.on ? 'Убрать воду' : 'Попить'; aDrink.setAttribute('aria-pressed', String(hero.drink.on));
+    aDrink.textContent = hero.drink.on ? 'Убрать банку' : 'Попить'; aDrink.setAttribute('aria-pressed', String(hero.drink.on));
     aShoot.disabled = equip.hands !== 'rifle';
-    for (const b of gearEl.children) b.setAttribute('aria-pressed', String(equip.body === b.dataset.id || equip.head === b.dataset.id || equip.hands === b.dataset.id));
+    aThrow.textContent = 'Граната · ' + invCount(INV.hero, 'grenade');
+    if (cashEl) cashEl.textContent = fmtMoney(invCount(INV.hero, MONEY));
+    invPanel.refresh(true);
   });
 
   // ---------- the checklist: every feature of the engine and a button that shows it ----------
@@ -28,6 +46,11 @@
   function inRange(f) { return () => { if (MAP.id !== 'range') { toast('Это на полигоне — вернись через ворота.'); goToLocation('range'); return; } f(); }; }
   function inEdge(f) { return () => { if (MAP.id !== 'edge') { goToLocation('edge'); toast('Иду на опушку — это за воротами.'); return; } f(); }; }
   const firstOf = (t) => byType(t)[0];
+  // the warrant officer may be in the other location: then the hero goes there first
+  function somovGo(f) {
+    if (SOMOV.loc !== MAP.id) { toast('Прапорщик Сомов сейчас не здесь — иду к нему.'); goToLocation(SOMOV.loc); return; }
+    f();
+  }
   const machineOf = (kind) => INST.find((i) => i.machine && i.machine.kind === kind);
   const FEATURES = [
     { t: 'Свет и тени', d: 'Солнце рисует настоящие тени на земле, стенах и герое; листва пропускает свет пятнами.', go: () => { dayGoto(14); setView('far'); } },
@@ -43,7 +66,11 @@
     { t: 'Обыскать бурьян', d: 'Герой опускается на колено и шарит в траве.', go: () => { const g = byType('grass').find((i) => !i.dyn.searched); if (g) doDefault(g); else toast('Бурьян здесь уже обыскан.'); } },
     { t: 'Ветер, листва, трава', d: 'Кроны качаются волной, травинки гнутся, жёлтые листья падают и ложатся на землю.', go: inEdge(() => { setView('near'); walkTo(4.6, 10.2); }) },
     { t: 'Переход между локациями', d: 'Дорога за ворота ведёт на опушку и обратно; каждая локация помнит, что в ней оставили.', go: () => goToLocation(MAP.id === 'range' ? 'edge' : 'range') },
-    { t: 'Снаряжение', d: 'Куртка, броня, шлем, винтовка — модель героя собирается заново. В броне медленнее.', go: () => toggleGear(GEAR[1]) },
+    { t: 'Второй человек', d: 'Прапорщик Сомов в защитном комплекте по эскизу игрока: замечает героя, поворачивает к нему голову, здоровается, оглядывается.', go: () => somovGo(() => { setView('near'); plan({ type: 'path', to: [clamp(SOMOV.x + 0.5, 1, GW - 1), clamp(SOMOV.z + 1.9, 1, GH - 1)] }, { type: 'call', fn: () => { hero.tyaw = yawTo(SOMOV.x, SOMOV.z); } }); }) },
+    { t: 'Разговор', d: 'Герой подходит, оба встают лицом друг к другу; в панели — его реплики и твои ответы. Пока говорит, кивает и жестикулирует.', go: () => somovGo(() => talkTo(SOMOV)) },
+    { t: 'Спутник', d: '«Идём со мной»: держится в паре шагов, отстав, догоняет бегом, садится рядом на лавочку, переходит с героем на опушку и обратно.', go: () => somovGo(() => { personFollow(SOMOV); const b = MAP.id === 'range' ? firstOf('bench') : null; if (b) goSit(b); }) },
+    { t: 'Обмен и торговля', d: 'Свои вещи на его, разница — рублями. Сигареты, банки и гранаты тратятся, находки из бурьяна можно продать.', go: () => somovGo(() => goTrade(SOMOV)) },
+    { t: 'Снаряжение', d: 'Куртка, броня, шлем, винтовка — модель героя собирается заново. В броне медленнее. Проданное снимается.', go: () => toggleGear(GEAR[1]) },
     { t: 'Вся локация сверху', d: 'Обзор целиком: видно, как собраны земля, дома и деревья.', go: () => setView('all') },
     { t: '3D без пикселей', d: 'Та же сцена до перевода в пиксель-арт: плавный свет и настоящая геометрия.', go: () => { const c = $('rawChk'); c.checked = !c.checked; raw = c.checked; lastKey = ''; } }
   ];
@@ -61,11 +88,19 @@
   // ---------- boot ----------
   // what survives a page update for someone who has the range open: where the hero stood, his gear, the hour, the view
   function hotData() {
-    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), hour: DAY.goal ?? DAY.t, clock: DAY.run, view: viewMode };
+    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), hour: DAY.goal ?? DAY.t, clock: DAY.run, view: viewMode,
+      inv: INV.hero.map((s) => ({ t: s.t, n: s.n })), people: peopleHot(), talked: TALK_SEEN };
+  }
+  // things and people come back before the first location is built (people stand where they were left)
+  function applyHotBefore(d) {
+    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return;
+    if (Array.isArray(d.inv)) INV.hero = invClean(d.inv);
+    peopleFromHot(d.people);
+    if (d.talked && typeof d.talked === 'object') for (const [id, seen] of Object.entries(d.talked)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen);
   }
   function applyHot(d) {
     if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return false;
-    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || GEAR.some((g) => g.id === d.equip[k] && g.slot === k))) equip[k] = d.equip[k];
+    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || GEAR.some((g) => g.id === d.equip[k] && g.slot === k && hasThing(g.id)))) equip[k] = d.equip[k];
     if (Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) { hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z); }
     if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
     if (Number.isFinite(d.hour)) daySet(d.hour);
@@ -75,12 +110,13 @@
   function boot(hot) {
     const t0 = performance.now();
     buildDecals();
+    applyHotBefore(hot);
     enterLocation(hot && LOCATIONS[hot.loc] ? hot.loc : 'range', 'start');
     const resumed = applyHot(hot);
     HERO = buildHero(equip);
     prepareStage();
     $('loading').hidden = true;
-    Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets });
+    Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });
     GAME_API.bootMs = Math.round(performance.now() - t0);
     if (resumed && hot.view && vBtns[hot.view] && hot.view !== viewMode) setView(hot.view);
     try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(hotData); } catch (e) { /* no live updates here */ }

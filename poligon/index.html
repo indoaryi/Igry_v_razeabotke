@@ -100,6 +100,15 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; }
 .hint { font-size: 13px; color: var(--muted); }
+.inv-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.inv { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 6px; }
+.item { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 8px; align-items: center; text-align: left; padding: 3px 8px 3px 3px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; }
+.item .icon { grid-row: 1 / 3; width: 40px; height: 40px; image-rendering: pixelated; }
+.iname { font-size: 13.5px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.istate { font-size: 12px; line-height: 1.25; color: var(--muted); }
+.item[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .feat { list-style: none; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--line); }
 @media (min-width: 900px) { .feat { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; } }
 .feat li { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
@@ -113,7 +122,7 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
   <header class="intro">
     <p class="eyebrow">Проверка движка · все возможности</p>
     <h1>Испытательный полигон</h1>
-    <p class="lead">Своя локация на отвязанном движке, без единой строчки кода дворов. Общежитие, подстанция с фонарём, контейнеры, вышка у огневого рубежа, ряд мишеней, будка КПП и два шагающих костюма на бетонной площадке. За воротами — опушка с берёзами и листопадом. Нажимай на землю, чтобы идти, на предметы — чтобы с ними что-то сделать. Внизу список всего, что умеет движок, и кнопка, которая это покажет.</p>
+    <p class="lead">Своя локация на отвязанном движке, без единой строчки кода дворов. Общежитие, подстанция с фонарём, контейнеры, вышка у огневого рубежа, ряд мишеней, будка КПП и два шагающих костюма на бетонной площадке. У костюмов стоит прапорщик Сомов в защитном комплекте: с ним можно поговорить, позвать с собой и поменяться вещами. За воротами — опушка с берёзами и листопадом. Нажимай на землю, чтобы идти, на предметы — чтобы с ними что-то сделать. Внизу список всего, что умеет движок, и кнопка, которая это покажет.</p>
   </header>
 
   <section class="play" aria-label="Полигон">
@@ -148,8 +157,8 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
         </div>
       </div>
       <div class="panel">
-        <p class="group-k">Снаряжение</p>
-        <div class="actions" id="gear" aria-label="Снаряжение"></div>
+        <div class="inv-head"><p class="group-k">Вещи героя</p><span class="chip" id="cash" title="Деньги">150 ₽</span></div>
+        <div class="inv" id="inv" aria-label="Вещи героя"></div>
         <div class="view">
           <div class="seg" role="group" aria-label="Время суток" id="todSeg"></div>
           <label class="check" for="clockChk"><input type="checkbox" id="clockChk"> Время идёт</label>
@@ -304,7 +313,9 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
     focus: [],    // f(heroScreen) → [x, y] or null: a point the camera leans towards (the first one that answers wins)
     lights: [],   // f(out): lamps that are not catalog things, push { p, r, col, k, d, cone } (a machine's headlamps)
     drawFx: [],   // f(ctx, k, X, Y): 2D effects of the game's own, drawn over the scene with the engine's
-    frame: []     // f(dt, now): after the stage is drawn: panels and HUD of the game
+    frame: [],    // f(dt, now): after the stage is drawn: panels and HUD of the game
+    state: [],    // f() → text or null: what the hero is busy with, for the chip over the stage (the first that answers wins)
+    context: []   // f() → { inst, mode } or null: what the panel «рядом» is about, before the engine looks for the nearest thing
   };
   function hook(list, f, at = 50) {
     const h = (...a) => f(...a);
@@ -735,6 +746,13 @@ in vec3 vS;
 layout(location=0) out vec4 o;
 layout(location=1) out vec4 oId;
 float h3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+// smooth value noise (camouflage blotches)
+float vn3(vec3 p){
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float a = mix(mix(h3(i), h3(i + vec3(1.0, 0.0, 0.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 0.0)), h3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y);
+  float b = mix(mix(h3(i + vec3(0.0, 0.0, 1.0)), h3(i + vec3(1.0, 0.0, 1.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 1.0)), h3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y);
+  return mix(a, b, f.z);
+}
 const float BY4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 float bayer(){ ivec2 q = ivec2(gl_FragCoord.xy) & 3; return (BY4[q.y * 4 + q.x] + 0.5) / 16.0; }
 // light of the lamps at a point, in three steps with a dithered edge, like the rest of the palette
@@ -1053,6 +1071,19 @@ void main(){
     if (n.y > 0.5 && (fract(vW.x / uP.x) < 0.03 || fract(vW.z / uP.x) < 0.03)) shift = -1;
     float sp = h3(floor(vW * 14.0));
     if (sp > 0.96) shift = -1; else if (sp < 0.03) shift = 1;
+  } else if (uPat == 53) {            // camouflage in part-local space: blotches of ramp B and of dark brown over the base, light flecks
+                                      // p: blotches per metre, thresholds for B and for brown, how rare the flecks are; r.x: webbing rows per metre (0: none)
+    vec3 q = vL * uP.x + vec3(vSeed * 17.0, vSeed * 5.0, vSeed * 11.0);
+    float n1 = vn3(q), n2 = vn3(q * 1.37 + 31.7);
+    if (n1 > uP.y) useB = true;
+    else if (n2 > uP.z) shift = -2;
+    else if (h3(floor(vL * uP.x * 2.7) + 5.1) > uP.w) shift = 1;
+    if (uR.x > 0.0 && fract(vL.y * uR.x) < 0.2) shift = min(shift, 0) - 1;
+  } else if (uPat == 54) {            // smoked visor: dark glass with a band of sky reflection across it (p.xy: its direction, p.z: where, p.w: half width)
+    if (abs(vL.x * uP.x + vL.y * uP.y - uP.z) < uP.w) shift = 2;
+  } else if (uPat == 55) {            // a box with a louvred vent on its +z face: p.x where the face is, p.y half width, p.zw rows from … to in y; r.x louvres per metre
+    if (vL.z > uP.x && ax < uP.y && vL.y > uP.z && vL.y < uP.w) { idx = fract(vL.y * uR.x) < 0.5 ? 0 : 1; forced = true; }
+    else if (h3(floor(vL * 30.0)) > 0.93) shift = -1;
   }
   if (uMode == 3) { o = vec4(0.0); oId = vec4(0.0); return; }
   if (uMode == 2) { o = vec4(0.0, 0.0, 0.0, 0.32); oId = vec4(0.0); return; }
@@ -1077,7 +1108,8 @@ void main(){
     // the hour: sunlit and shaded parts take their tints, lamps nearby add their light to the colour of the thing itself
     vec3 base = isDecal ? decal : (useB ? uRampB[3] : uRampA[3]);
     vec3 tint = mix(uShadeTint, uSunTint, sv);
-    if (abs(uId.x * 255.0 - 1.0) < 0.5) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) stays readable at night
+    int flg = int(uId.y * 255.0 + 0.5);
+    if (abs(uId.x * 255.0 - 1.0) < 0.5 || (flg & 16) != 0) tint = max(tint, vec3(0.6, 0.64, 0.78));     // the hero (id 1) and other people (flag 16) stay readable at night
     c = mix(vec3(dot(c, vec3(0.3, 0.59, 0.11))), c, uSat) * tint;
     if (uNL > 0) c += base * lampsAt(vS, n) * 0.9;
     if (lit) c = mix(c, lcol, clamp(0.35 + uWin.z * 0.8, 0.0, 1.0));     // a lit window: faint by day, bright at night
@@ -1646,6 +1678,29 @@ void main(){
     }
     return { chunks, bb };
   }
+  // like bake(), but into one bone's space (walking machines, people): parts = [{ mesh: raw, off: matrix }];
+  // every part keeps its own coordinates for the shader patterns and gets its own seed
+  function mergeRaw(parts, R) {
+    let nv = 0, ni = 0;
+    for (const p of parts) { nv += p.mesh.pos.length / 3; ni += p.mesh.idx.length; }
+    const pos = new Float32Array(nv * 3), nr = new Float32Array(nv * 3), loc = new Float32Array(nv * 3), seed = new Float32Array(nv), idx = new Uint32Array(ni);
+    let vo = 0, io = 0;
+    for (const p of parts) {
+      const r = p.mesh, n = r.pos.length / 3, W = p.off, sd = R();
+      for (let i = 0; i < n; i++) {
+        const x = r.pos[i * 3], y = r.pos[i * 3 + 1], z = r.pos[i * 3 + 2], j = (vo + i) * 3;
+        pos[j] = W[0] * x + W[4] * y + W[8] * z + W[12]; pos[j + 1] = W[1] * x + W[5] * y + W[9] * z + W[13]; pos[j + 2] = W[2] * x + W[6] * y + W[10] * z + W[14];
+        loc[j] = x; loc[j + 1] = y; loc[j + 2] = z;
+        const nx = r.nrm[i * 3], ny = r.nrm[i * 3 + 1], nz = r.nrm[i * 3 + 2];
+        const q = nrm([W[0] * nx + W[4] * ny + W[8] * nz, W[1] * nx + W[5] * ny + W[9] * nz, W[2] * nx + W[6] * ny + W[10] * nz]);
+        nr[j] = q[0]; nr[j + 1] = q[1]; nr[j + 2] = q[2];
+        seed[vo + i] = sd;
+      }
+      for (let i = 0; i < r.idx.length; i++) idx[io + i] = r.idx[i] + vo;
+      vo += n; io += r.idx.length;
+    }
+    return { pos, nrm: nr, loc, seed, idx, lines: !!parts[0].mesh.lines };
+  }
   // screen rectangle (world art px) of an axis-aligned world box, and of its shadow on the ground
   function screenRect(bb) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1821,6 +1876,8 @@ void main(){
     return CATALOG[inst.type] ? CATALOG[inst.type].name : inst.type;
   }
   function noteOf(inst) { const U = useOf(inst); return U && U.note ? (typeof U.note === 'function' ? U.note(inst) : U.note) : ''; }
+  // the name in the chip over the stage («рядом: …»): lower case, unless the thing gives its own (a person keeps his surname capitalised)
+  function chipOf(inst) { const U = useOf(inst); return U && U.short ? (typeof U.short === 'function' ? U.short(inst) : U.short) : nameOf(inst).toLowerCase(); }
   function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }
   // ================= ground: the cell strings painted pixel by pixel into one big canvas =================
   // the map size and the ground canvas geometry belong to the current location (see setGeometry in locations.js)
@@ -2843,6 +2900,16 @@ void main(){
     p.head[0] -= 0.22 * w * hold; p.neck[0] -= 0.1 * w * hold;
     return { held: t < THROW_REL, ball: add(H, [0, 0.03, 0.09]) };
   }
+  // talking: the head nods to the words, one hand explains, the other joins in now and then
+  function applyTalk(p, t, w, D) {
+    const a = D.armor ? 0.05 : 0, k = w * (0.6 + 0.4 * Math.sin(t * 1.9));
+    p.head[0] += 0.07 * Math.sin(t * 7.1) * w; p.neck[1] += 0.06 * Math.sin(t * 1.3) * w;
+    p.rHand = lerpV(p.rHand, [-0.15 * D.w - a, -0.03 + 0.05 * Math.sin(t * 3.3), 0.24 + a + 0.03 * Math.sin(t * 4.6)], k);
+    p.rPole = lerpV(p.rPole, [-0.8, -0.9, -0.3], k);
+    const l = w * clamp(Math.sin(t * 0.9 + 1.2) * 1.4 - 0.4, 0, 1);
+    p.lHand = lerpV(p.lHand, [0.14 * D.w + a, -0.06 + 0.04 * Math.sin(t * 2.7), 0.22 + a], l);
+    p.lPole = lerpV(p.lPole, [0.8, -0.9, -0.3], l);
+  }
   // right hand reaches a point given in chest space (intercom, roof edge), head looks at it
   function applyReach(p, t, w, D, target) {
     const k = smooth(t / 0.45) * (1 - smooth((t - 1.25) / 0.4));
@@ -2899,7 +2966,10 @@ void main(){
     if (c.drinkW > 0) st.drink = applyDrink(p, c.drinkT, c.drinkW, D);
     if (c.punchW > 0) st.punch = applyPunch(p, c.punchT, c.punchW, D);
     if (c.throwW > 0) st.thr = applyThrow(p, c.throwT, c.throwW, D);
+    if (c.talkW > 0) applyTalk(p, c.talkT, c.talkW, D);
     if (c.reachW > 0 && c.reachTo) applyReach(p, c.reachT, c.reachW, D, c.reachTo);
+    // the head turned towards something (radians to the left of where the body faces)
+    if (c.headYaw) { const h = clamp(c.headYaw, -1.2, 1.2); p.neck[1] += h * 0.45; p.head[1] += h * 0.55; }
     return { p, rifle, st };
   }
 
@@ -2919,7 +2989,8 @@ void main(){
       t: Q(hero.t), phase: quant ? Math.floor(hero.phase * 12) / 12 : hero.phase, walkW: W(hero.walkW), runW: W(hero.runW), sitW: W(smooth(hero.sit)), seat: hero.seat,
       smokeW: W(hero.smoke.w), smokeT: Q(hero.smoke.t), drinkW: W(hero.drink.w), drinkT: Q(hero.drink.t),
       punchW: W(hero.punch.w), punchT: Q(hero.punch.t), shootW: W(hero.shoot.w), shootT: Q(hero.shoot.t),
-      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to, act: a
+      throwW: W(hero.thr.w), throwT: Q(hero.thr.t), reachW: W(hero.reach.w), reachT: Q(hero.reach.t), reachTo: hero.reach.to,
+      talkW: W(hero.talk.w), talkT: Q(hero.talk.t), act: a
     };
   }
   const PXV = S * UV[1];   // screen px per metre of height
@@ -2998,6 +3069,7 @@ void main(){
     sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
     smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
     thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
+    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
     vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
   };
   const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
@@ -3188,11 +3260,12 @@ void main(){
     hero.sit = approach(hero.sit, hero.sitTarget, dt / 0.5);
     if (!hero.act) hero.y = approach(hero.y, groundY(hero.x, hero.z), dt * 1.6);
     const sh = hero.shoot, prevT = sh.t;
-    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach']) {
+    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach', 'talk']) {
       const a = hero[k];
       a.w = approach(a.w, a.on ? 1 : 0, dt * (k === 'shoot' ? 8 : k === 'thr' || k === 'reach' ? 6 : 4));
       if (a.on || a.w > 0) a.t += dt; else a.t = 0;
     }
+    if (hero.talk.on && (hero.talk.t > hero.talk.dur || hero.path.length || busyAct())) hero.talk.on = false;
     if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) fireShot();
     if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; hero.aimYaw = null; }
     if (hero.punch.on && hero.punch.t > 1.25) hero.punch.on = false;
@@ -3563,7 +3636,7 @@ void main(){
     }
     const tod = dayFrame(rect, tickNow / FPS);
     const c = rig.c;
-    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
+    const ckey = [c.t, c.phase, c.walkW, c.runW, c.sitW, c.smokeW, c.smokeT, c.drinkW, c.drinkT, c.punchW, c.punchT, c.shootW, c.shootT, c.throwW, c.throwT, c.reachW, c.reachT, c.talkW, c.talkT, c.act ? JSON.stringify(c.act) : '', hero.seat ? 1 : 0].join(',');
     const key = [ox, oy, rig.root.join(','), rig.yaw.toFixed(3), ckey, tickNow, gearVer, raw, over, VW, VH, kDev, hoverId, dynKey(), hero.target ? hero.target.join(',') : '', showGrid, dayKey()].join('|');
     if (key !== lastKey) {
       lastKey = key;
@@ -3672,6 +3745,7 @@ void main(){
   function stateText() {
     let s;
     if (driving() && !hero.act) return dirOf(hero.yaw).arrow + ' ' + (hero.vehicle.ride ? hero.vehicle.ride.state() : 'внутри');
+    for (const f of GAME.state) { const g = f(); if (g) return dirOf(hero.yaw).arrow + ' ' + g; }
     if (hero.act) s = ACT[hero.act.kind].state(hero.act);
     else if (hero.path.length) s = hero.run ? 'бежит' : 'идёт';
     else if (hero.sitTarget === 1) s = hero.sit < 1 ? 'садится' : 'сидит';
@@ -3694,6 +3768,7 @@ void main(){
   // what the context panel is about: the machine he drives, what he is busy with, his seat, the nearest active thing, the last one tapped
   function contextNow() {
     if (driving() && !hero.act) return { inst: hero.vehicle, mode: 'pilot' };
+    for (const f of GAME.context) { const c = f(); if (c) return c; }
     if (hero.act && hero.act.inst && !ACT[hero.act.kind].quiet) return { inst: hero.act.inst, mode: 'busy' };
     if ((hero.sitTarget === 1 || hero.sit > 0) && hero.seat) return { inst: hero.seat.inst, mode: 'seated' };
     let best = null, bd = 2.2;
@@ -3719,7 +3794,7 @@ void main(){
     const key = cx ? cx.mode + cx.inst.id + acts.map((a) => a.label).join() + (hero.act ? hero.act.stage : '') + (cx.inst.machine ? cx.inst.machine.mode : '') : 'none';
     if (hudNear) {
       hudNear.hidden = !(cx && (cx.mode === 'near' || cx.mode === 'busy' || cx.mode === 'seated'));
-      if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + nameOf(cx.inst).toLowerCase();
+      if (cx) hudNear.textContent = (cx.mode === 'near' ? 'рядом: ' : '') + chipOf(cx.inst);
     }
     if (key === ctxKey || !ctxActs) return;
     ctxKey = key;
@@ -4779,28 +4854,6 @@ void main(){
     const R = rng(4242);
     K.parts = [...groups.values()].map((g) => ({ bone: g.bone, mat: g.mat, alt: g.alt, when: g.when, noShadow: g.lines || !!g.mat.noShadow, mesh: upload(mergeRaw(g.parts, R)) }));
     return K.parts;
-  }
-  // like bake(), but into the bone's space; every part keeps its own coordinates for the shader patterns
-  function mergeRaw(parts, R) {
-    let nv = 0, ni = 0;
-    for (const p of parts) { nv += p.mesh.pos.length / 3; ni += p.mesh.idx.length; }
-    const pos = new Float32Array(nv * 3), nr = new Float32Array(nv * 3), loc = new Float32Array(nv * 3), seed = new Float32Array(nv), idx = new Uint32Array(ni);
-    let vo = 0, io = 0;
-    for (const p of parts) {
-      const r = p.mesh, n = r.pos.length / 3, W = p.off, sd = R();
-      for (let i = 0; i < n; i++) {
-        const x = r.pos[i * 3], y = r.pos[i * 3 + 1], z = r.pos[i * 3 + 2], j = (vo + i) * 3;
-        pos[j] = W[0] * x + W[4] * y + W[8] * z + W[12]; pos[j + 1] = W[1] * x + W[5] * y + W[9] * z + W[13]; pos[j + 2] = W[2] * x + W[6] * y + W[10] * z + W[14];
-        loc[j] = x; loc[j + 1] = y; loc[j + 2] = z;
-        const nx = r.nrm[i * 3], ny = r.nrm[i * 3 + 1], nz = r.nrm[i * 3 + 2];
-        const q = nrm([W[0] * nx + W[4] * ny + W[8] * nz, W[1] * nx + W[5] * ny + W[9] * nz, W[2] * nx + W[6] * ny + W[10] * nz]);
-        nr[j] = q[0]; nr[j + 1] = q[1]; nr[j + 2] = q[2];
-        seed[vo + i] = sd;
-      }
-      for (let i = 0; i < r.idx.length; i++) idx[io + i] = r.idx[i] + vo;
-      vo += n; io += r.idx.length;
-    }
-    return { pos, nrm: nr, loc, seed, idx, lines: !!parts[0].mesh.lines };
   }
 
   // ---------- what gets drawn: a snapshot taken twelve times a second, so the machine moves in the same steps as the hero ----------
@@ -5990,6 +6043,1041 @@ void main(){
     };
     CATALOG.b32 = { name: 'Бронекостюм «32»', size: '3,1 м', note: 'Короб брони с выпуклой капсулой спереди, на коротких ногах, по эскизу игрока: капсула откидывается вверх, внутри место для одного.' };
   }
+  // ================= things people carry: item types, inventories, icons drawn from 3D models =================
+  // A game describes its things with itemType(id, { … }):
+  //   name, note, price (in money; what it is worth before any trader's cut), stack (default true: counted, one row per type),
+  //   money: true (the money itself: one unit is worth 1), gear: { slot: 'body' | 'head' | 'hands' } (the hero can wear it: equip[slot] = id),
+  //   icon: () => ({ list: [draw items], at: [x, y, z] the point that lands in the middle, zoom }) — a small 3D model, drawn once into a canvas.
+  // An inventory is an array of { t: type id, n: count }. The hero's is INV.hero; each person keeps his own in p.inv.
+  const ITEM_TYPES = {};
+  const MONEY = 'rub';
+  const INV = { hero: [] };
+  let invVer = 0;                 // changes whenever any inventory does: panels redraw on it
+  function itemType(id, def) { ITEM_TYPES[id] = Object.assign({ id, stack: true, price: 0 }, def); return ITEM_TYPES[id]; }
+  const invFind = (inv, t) => inv.find((s) => s.t === t);
+  const invCount = (inv, t) => { const s = invFind(inv, t); return s ? s.n : 0; };
+  function invAdd(inv, t, n = 1) { if (!(n > 0)) return; const s = invFind(inv, t); if (s) s.n += n; else inv.push({ t, n }); invVer++; }
+  function invTake(inv, t, n = 1) {
+    const s = invFind(inv, t);
+    if (!s || s.n < n) return false;
+    s.n -= n;
+    if (s.n <= 0) inv.splice(inv.indexOf(s), 1);
+    invVer++;
+    return true;
+  }
+  // a saved inventory back in: only known types, whole positive counts
+  const invClean = (list) => Array.isArray(list) ? list.filter((s) => s && ITEM_TYPES[s.t] && s.n > 0).map((s) => ({ t: s.t, n: Math.floor(s.n) })) : [];
+  const fmtMoney = (n) => n + ' ₽';
+  // the order things are listed in: money first, then what can be worn, then the rest by price
+  const invSorted = (inv) => inv.slice().sort((a, b) => {
+    const A = ITEM_TYPES[a.t], B = ITEM_TYPES[b.t];
+    return (B.money ? 2 : B.gear ? 1 : 0) - (A.money ? 2 : A.gear ? 1 : 0) || B.price - A.price || A.name.localeCompare(B.name);
+  });
+
+  // ---------- icons: each type's little model, drawn once by the engine's own renderer (so the icons are pixel art too) ----------
+  const ICONS = new Map();
+  function itemIcon(t, size = 32) {
+    const key = t + '|' + size;
+    let master = ICONS.get(key);
+    if (!master) {
+      master = document.createElement('canvas'); master.width = master.height = size;
+      const T = ITEM_TYPES[t];
+      const ic = T && T.icon ? T.icon() : null;
+      if (ic) render3D(TGT_SMALL, { w: size, h: size, ax: size / 2, ay: size / 2, s: S * (ic.zoom || 1) * size / 32, A: ic.at || [0, 0, 0] }, { main: ic.list }, false, master.getContext('2d'), 0, 0);
+      ICONS.set(key, master);
+    }
+    // a canvas can stand in one place of the page only: every use gets a copy
+    const cv = document.createElement('canvas'); cv.width = cv.height = size;
+    cv.getContext('2d').drawImage(master, 0, 0);
+    cv.className = 'icon'; cv.setAttribute('aria-hidden', 'true');
+    return cv;
+  }
+  // an icon of some parts of a figure (a jacket, a helmet): the figure stands with its arms out, only those groups are drawn
+  function figureIcon(model, groups, yaw, zoom, anchor) {
+    const c = { t: 0, phase: 0, walkW: 0, runW: 0, sitW: 0, smokeW: 0, drinkW: 0, punchW: 0, shootW: 0, throwW: 0, reachW: 0, talkW: 0 };
+    const pose = buildPose(c, model.D, false), D = model.D;
+    pose.p.lHand = [D.sx + 0.34, D.shY - 0.4, 0.05]; pose.p.rHand = [-D.sx - 0.34, D.shY - 0.4, 0.05];
+    const B = evalBones(pose.p, [0, 0, 0], yaw, D);
+    const list = model.parts.filter((pt) => !groups || groups.includes(pt.group)).map((pt) => ({ mesh: pt.mesh, model: mul(B[pt.bone], pt.off), mat: pt.mat }));
+    return { list, at: anchor(B), zoom };
+  }
+  // a single prop: parts = [{ mesh, model, mat }] already placed; the camera looks at `at`
+  const propIcon = (parts, zoom, at = [0, 0, 0]) => ({ list: parts, at, zoom });
+
+  // ---------- a grid of things for a page: a button per type with its icon, name and a state line; rebuilt when invVer changes ----------
+  // opts: { inv: () => the inventory, state(t, n) → text, pressed(t) → bool, tap(t), hide(t) → bool (money is usually shown apart), icon: size in px (40) }
+  function invGrid(el, opts) {
+    let ver = -1;
+    const rows = new Map();
+    function refresh(force) {
+      if (!el || (!force && ver === invVer)) return;
+      ver = invVer;
+      const inv = invSorted(opts.inv()).filter((s) => !(opts.hide && opts.hide(s.t)));
+      const want = new Set(inv.map((s) => s.t));
+      for (const [t, b] of rows) if (!want.has(t)) { b.remove(); rows.delete(t); }
+      inv.forEach((s, i) => {
+        let b = rows.get(s.t);
+        if (!b) {
+          const T = ITEM_TYPES[s.t];
+          b = document.createElement('button'); b.type = 'button'; b.className = 'item'; b.dataset.t = s.t;
+          const nm = document.createElement('span'); nm.className = 'iname'; nm.textContent = T.name;
+          const st = document.createElement('span'); st.className = 'istate';
+          b.append(itemIcon(s.t, opts.icon || 40), nm, st);
+          b.addEventListener('click', () => opts.tap && opts.tap(s.t));
+          rows.set(s.t, b);
+        }
+        if (el.children[i] !== b) el.insertBefore(b, el.children[i] || null);
+        b.querySelector('.istate').textContent = opts.state ? opts.state(s.t, s.n) : (s.n > 1 ? '×' + s.n : '');
+        if (opts.pressed) b.setAttribute('aria-pressed', String(!!opts.pressed(s.t)));
+      });
+    }
+    return { refresh };
+  }
+  // ================= people: how they look =================
+  // A person stands on the hero's skeleton (hero/skeleton.js): the same bones, poses, walk and gestures. What a person wears is a look:
+  //   { id, dims: { … } (changes to the hero's proportions, see dims() in hero/model.js), armor: true (bulky kit: the arms hang off the body),
+  //     pieces: [names from PERSON_PIECES], colors: { … } (the pieces read what they need), seed }
+  // A piece is a function (put, D, C) that puts parts on bones: put(bone, key, () => mesh, offset in bone space, material, group).
+  // The key names the mesh (it is cached by it), so it has to change whenever the shape does. Parts that share a bone, a material and
+  // a group are merged into one mesh: the fully kitted soldier is ~7500 triangles in about fifty draws. Groups let an icon show one piece alone.
+  const PERSON_PIECES = {};
+  const PERSON_MODELS = new Map();
+  function buildPerson(look) {
+    let model = PERSON_MODELS.get(look.id);
+    if (model) return model;
+    const D = Object.assign(dims(!!look.armor), look.dims || {}, { armor: !!look.armor });
+    const C = look.colors || {};
+    const raw = [];
+    const put = (bone, key, fn, off, m, group) => raw.push({ bone, mesh: rawMesh('person:' + key, fn), off: off || ID4, mat: m, group: group || 'body' });
+    for (const name of look.pieces) PERSON_PIECES[name](put, D, C, look);
+    const groups = new Map();
+    for (const p of raw) {
+      const key = p.bone + '|' + p.mat.key + '|' + p.group + '|' + (p.mesh.lines ? 1 : 0);
+      let g = groups.get(key);
+      if (!g) { g = { bone: p.bone, mat: p.mat, group: p.group, parts: [] }; groups.set(key, g); }
+      g.parts.push(p);
+    }
+    const R = rng(look.seed || 4711);
+    model = {
+      look, D,
+      parts: [...groups.values()].map((g) => ({ bone: g.bone, mat: g.mat, group: g.group, off: ID4, noShadow: !!g.mat.noShadow || !!g.parts[0].mesh.lines, mesh: upload(mergeRaw(g.parts, R)) }))
+    };
+    PERSON_MODELS.set(look.id, model);
+    return model;
+  }
+  // a rod (capsule) from a to b in a bone's space, and a plain cylinder
+  function personRod(put, bone, key, a, b, r, m, group) {
+    const L = len(sub(b, a));
+    put(bone, key + ':' + L.toFixed(3) + ',' + r, () => capsule(L, r, r, { seg: 6 }), M(tr(...a), alongMinusY(sub(b, a))), m, group);
+  }
+  function personCyl(put, bone, key, a, b, r, m, group, seg = 10) {
+    const L = len(sub(b, a));
+    put(bone, key + ':' + L.toFixed(3) + ',' + r, () => cyl(r, r, L, seg), M(tr(...a), alongPlusY(sub(b, a))), m, group);
+  }
+
+  // ---------- КЗУ: a sealed protective kit — camouflage suit, plate carrier, pads, a helmet with a smoked visor and a respirator,
+  // a hose to the life-support box on the back, a radio with a whip antenna. After the player's reference (front and back views). ----------
+  const KZU_COLORS = {
+    camo: '#8b8267', camo2: '#5a6046', web: '#5b5946', pad: '#40433a', glove: '#2c2d29', boot: '#5f5647', sole: '#1e1d1b',
+    glass: '#14171b', rubber: '#34362f', hose: '#1b1b1c', box: '#646a50', dark: '#2a2b27'
+  };
+  function kzuMats(C) {
+    const c = Object.assign({}, KZU_COLORS, C);
+    // camouflage: blotches of the second colour and of dark brown over the base, light flecks; hard parts are a little glossy
+    const camo = (o = {}) => mat(c.camo, Object.assign({ pat: 53, b: c.camo2, p: [9, 0.6, 0.64, 0.94], noise: 0.06, grain: 70 }, o));
+    return {
+      c,
+      cloth: camo(),
+      vest: camo({ r: [15, 0, 0, 0] }),                                      // webbing rows across the carrier
+      hard: camo({ noise: 0.05, grain: 40, spec: 0.25, gloss: 14 }),
+      web: mat(c.web, { noise: 0.1, grain: 80 }),
+      pad: mat(c.pad, { noise: 0.06, grain: 40, spec: 0.35, gloss: 16 }),
+      glove: mat(c.glove, { noise: 0.08, grain: 70 }),
+      boot: mat(c.boot, { pat: 19, b: '#3b352c', p: [0.02, 0.024, -0.035, 55], noise: 0.1, grain: 60, spec: 0.25, gloss: 14 }),
+      shaft: mat(c.boot, { pat: 19, b: '#3b352c', p: [0.03, 0.022, -0.19, 50], noise: 0.1, grain: 60, spec: 0.25, gloss: 14 }),
+      sole: mat(c.sole, { pat: 23, p: [90, 0, 0, 0], noise: 0.05 }),
+      glass: mat(c.glass, { pat: 54, p: [0.6, 0.8, 0.045, 0.011], noise: 0.02, spec: 1.1, gloss: 34 }),
+      rubber: mat(c.rubber, { noise: 0.06, grain: 60, spec: 0.3, gloss: 12 }),
+      hose: mat(c.hose, { pat: 23, p: [110, 0, 0, 0], noise: 0.04, spec: 0.4, gloss: 16 }),
+      box: mat(c.box, { pat: 55, p: [0.06, 0.085, -0.08, -0.01], r: [60, 0, 0, 0], noise: 0.08, grain: 45, spec: 0.35, gloss: 14 }),
+      boxPlain: mat(c.box, { noise: 0.08, grain: 45, spec: 0.35, gloss: 14 }),
+      dark: mat(c.dark, { noise: 0.05, spec: 0.4, gloss: 16 }),
+      cable: mat(COL.cable, { noise: 0.02, spec: 0.4, gloss: 18 }),
+      metal: mat('#7c7e77', { noise: 0.04, spec: 0.9, gloss: 10 })
+    };
+  }
+  const KZU_MATS = new Map();
+  const kzu = (C) => { const k = JSON.stringify(C || {}); if (!KZU_MATS.has(k)) KZU_MATS.set(k, kzuMats(C)); return KZU_MATS.get(k); };
+  const SIDES = [['l', 1], ['r', -1]];
+
+  // the suit: jacket, sleeves, trousers
+  PERSON_PIECES.kzuSuit = (put, D, C) => {
+    const K = kzu(C), dk = D.w.toFixed(3) + D.d.toFixed(3);
+    put('chest', 'kzu:torso' + dk, () => torsoMesh(D, 0.02, -0.33), null, K.cloth);
+    put('chest', 'kzu:seal', () => tube([{ a: 0.27, hu: 0.13, hv: 0.105, cv: -0.012 }, { a: 0.31, hu: 0.105, hv: 0.095, cv: -0.012 }, { a: 0.35, hu: 0.085, hv: 0.08, cv: -0.012 }]), null, K.rubber);
+    for (const [s, sg] of SIDES) {
+      put(s + 'Up', 'kzu:delt', () => ellipsoid(0.074, 0.078, 0.072, { seg: 12, rings: 7 }), tr(0, -0.035, 0), K.cloth);
+      put(s + 'Up', 'kzu:sleeve' + D.upper, () => capsule(D.upper, 0.065, 0.057), null, K.cloth);
+      put(s + 'Lo', 'kzu:fore', () => capsule(0.24, 0.057, 0.048), null, K.cloth);
+      put(s + 'Thigh', 'kzu:thigh' + D.thigh, () => capsule(D.thigh, 0.1, 0.077), null, K.cloth);
+      put(s + 'Shin', 'kzu:shin', () => capsule(0.27, 0.075, 0.072), null, K.cloth);
+    }
+    // a cargo pocket on the outside of the left thigh (the right one carries the holster)
+    put('lThigh', 'kzu:pocket', () => box(0.022, 0.06, 0.055), tr(0.1, -0.2, 0.004), K.cloth);
+    put('hips', 'kzu:pelvis' + dk, () => loft([
+      { a: -0.13, hu: 0.11 * D.w + 0.01, hv: 0.075 * D.d + 0.01 }, { a: -0.09, hu: 0.155 * D.w + 0.026, hv: 0.105 * D.d + 0.026 },
+      { a: -0.02, hu: 0.168 * D.w + 0.028, hv: 0.115 * D.d + 0.028, cv: 0.004 }, { a: 0.06, hu: 0.165 * D.w + 0.028, hv: 0.118 * D.d + 0.028, cv: 0.008 },
+      { a: 0.12, hu: 0.16 * D.w + 0.028, hv: 0.115 * D.d + 0.028, cv: 0.008 }], { seg: 14, exp: 2.4, capAAt: -0.15, capBAt: 0.13 }), null, K.cloth);
+  };
+  // the plate carrier: a chamfered shell round the chest, magazine pouches and an admin pouch in front, shoulder straps
+  PERSON_PIECES.kzuVest = (put, D, C) => {
+    const K = kzu(C);
+    put('chest', 'kzu:vest', () => facets([
+      { a: -0.2, x0: -0.208, x1: 0.208, b0: -0.142, b1: 0.18, c: 0.05 },
+      { a: 0.04, x0: -0.24, x1: 0.24, b0: -0.166, b1: 0.192, c: 0.06 },
+      { a: 0.17, x0: -0.242, x1: 0.242, b0: -0.166, b1: 0.182, c: 0.06 },
+      { a: 0.238, x0: -0.2, x1: 0.2, b0: -0.156, b1: 0.16, c: 0.05 }]), null, K.vest);
+    for (const x of [-0.105, 0, 0.105]) {
+      put('chest', 'kzu:mag', () => box(0.044, 0.054, 0.022), tr(x, -0.03, 0.212), K.cloth);
+      put('chest', 'kzu:magFlap', () => box(0.046, 0.012, 0.024), tr(x, 0.026, 0.212), K.web);
+    }
+    put('chest', 'kzu:admin', () => box(0.088, 0.034, 0.016), tr(0, 0.105, 0.2), K.cloth);
+    for (const [, sg] of SIDES) {
+      put('chest', 'kzu:strap', () => box(0.034, 0.012, 0.145), M(tr(sg * 0.125, 0.29, -0.005), rz(sg * 0.32)), K.web);
+      put('chest', 'kzu:sidePouch', () => box(0.026, 0.05, 0.045), tr(sg * 0.255, -0.02, 0.03), K.web);
+    }
+  };
+  // pads: two-piece shoulder pads, elbow and knee pads, forearm and shin guards, a groin plate hanging from the carrier
+  PERSON_PIECES.kzuPads = (put, D, C) => {
+    const K = kzu(C);
+    for (const [s, sg] of SIDES) {
+      put(s + 'Up', 'kzu:paul', () => ellipsoid(0.11, 0.092, 0.114, { half: true, seg: 14, rings: 5 }), tr(sg * 0.026, -0.045, 0), K.hard);
+      put(s + 'Up', 'kzu:paul2', () => ellipsoid(0.088, 0.07, 0.094, { half: true, seg: 14, rings: 4 }), M(tr(sg * 0.036, -0.112, 0), rz(sg * 0.12)), K.hard);
+      put(s + 'Lo', 'kzu:elbow', () => ellipsoid(0.056, 0.062, 0.05, { seg: 10, rings: 6 }), tr(0, -0.004, -0.026), K.pad);
+      put(s + 'Lo', 'kzu:guard', () => loft([{ a: -0.215, hu: 0.06, hv: 0.058 }, { a: -0.12, hu: 0.066, hv: 0.064 }, { a: -0.06, hu: 0.064, hv: 0.062 }], { seg: 12, exp: 2.6, capAAt: -0.22, capBAt: -0.055 }), null, K.hard);
+      put(s + 'Shin', 'kzu:knee', () => ellipsoid(0.074, 0.084, 0.052, { seg: 12, rings: 6 }), tr(0, -0.025, 0.07), K.pad);
+      put(s + 'Shin', 'kzu:kneeStrap', () => tube([{ a: -0.07, hu: 0.081, hv: 0.079 }, { a: -0.052, hu: 0.081, hv: 0.079 }], 12), null, K.dark);
+      put(s + 'Shin', 'kzu:shinGuard' + D.shin, () => loft([{ a: -D.shin + 0.12, hu: 0.08, hv: 0.08, cv: 0.008 }, { a: -0.2, hu: 0.084, hv: 0.086, cv: 0.01 }, { a: -0.11, hu: 0.08, hv: 0.082, cv: 0.008 }], { seg: 12, exp: 2.6, capAAt: -D.shin + 0.11, capBAt: -0.1 }), null, K.hard);
+      for (const y of [-0.17, -0.27]) put(s + 'Shin', 'kzu:shinStrap' + y, () => tube([{ a: y - 0.009, hu: 0.087, hv: 0.089, cv: 0.009 }, { a: y + 0.009, hu: 0.087, hv: 0.089, cv: 0.009 }], 12), null, K.dark);
+    }
+    put('hips', 'kzu:groin', () => facets([
+      { a: -0.21, x0: -0.07, x1: 0.07, b0: 0.13, b1: 0.152, c: 0.012 },
+      { a: 0.0, x0: -0.11, x1: 0.11, b0: 0.156, b1: 0.18, c: 0.012 },
+      { a: 0.04, x0: -0.11, x1: 0.11, b0: 0.158, b1: 0.182, c: 0.012 }]), null, K.hard);
+  };
+  // the belt with pouches round it, a holster on the right thigh
+  PERSON_PIECES.kzuBelt = (put, D, C) => {
+    const K = kzu(C);
+    const bu = 0.175 * D.w + 0.04, bv = 0.122 * D.d + 0.04;
+    put('hips', 'kzu:belt' + D.w, () => tube([{ a: 0.045, hu: bu, hv: bv, cv: 0.008 }, { a: 0.105, hu: bu - 0.002, hv: bv - 0.002, cv: 0.008 }]), null, K.web);
+    for (const th of [1.0, -1.0, 1.75, -1.75, 2.5, -2.5]) put('hips', 'kzu:beltPouch' + th, () => box(0.034, 0.04, 0.026), M(tr(Math.sin(th) * (bu + 0.018), 0.05, Math.cos(th) * (bv + 0.018) + 0.008), ry(th)), Math.abs(th) > 2 ? K.cloth : K.web);
+    put('rThigh', 'kzu:holster', () => box(0.026, 0.08, 0.046), tr(-0.118, -0.11, 0.008), K.dark);
+    put('rThigh', 'kzu:pistol', () => box(0.016, 0.04, 0.022), M(tr(-0.122, 0.0, -0.01), rx(-0.35)), K.dark);
+    for (const y of [-0.06, -0.16]) put('rThigh', 'kzu:legStrap' + y, () => tube([{ a: y - 0.01, hu: 0.104, hv: 0.084 }, { a: y + 0.01, hu: 0.102, hv: 0.082 }], 12), null, K.web);
+  };
+  PERSON_PIECES.kzuGloves = (put, D, C) => {
+    const K = kzu(C);
+    for (const [s] of SIDES) {
+      put(s + 'Hand', 'kzu:cuff', () => capsule(0.07, 0.052, 0.046, { seg: 10 }), tr(0, 0.05, 0), K.glove);
+      put(s + 'Hand', 'kzu:palm', () => ellipsoid(0.03, 0.056, 0.047, { seg: 10, rings: 6, exp: 2.4 }), tr(0, -0.01, 0.004), K.glove);
+      put(s + 'Hand', 'kzu:thumb', () => capsule(0.036, 0.014, 0.012, { seg: 6 }), M(tr(0, 0.016, 0.036), rx(-0.9)), K.glove);
+    }
+  };
+  PERSON_PIECES.kzuBoots = (put, D, C) => {
+    const K = kzu(C);
+    for (const [s] of SIDES) {
+      put(s + 'Foot', 'kzu:boot', () => loft([
+        { a: -0.085, hu: 0.05, hv: 0.044, cv: -0.056 }, { a: -0.07, hu: 0.062, hv: 0.066, cv: -0.032 },
+        { a: -0.01, hu: 0.066, hv: 0.084, cv: -0.012 }, { a: 0.075, hu: 0.066, hv: 0.062, cv: -0.036 },
+        { a: 0.155, hu: 0.062, hv: 0.048, cv: -0.05 }, { a: 0.215, hu: 0.05, hv: 0.037, cv: -0.06 }], { axis: 'z', seg: 12, exp: 2.6, capAAt: -0.093, capBAt: 0.228 }),
+        null, K.boot);
+      put(s + 'Foot', 'kzu:sole', () => loft([{ a: -0.09, hu: 0.054, hv: 0.018, cv: -0.086 }, { a: -0.065, hu: 0.068, hv: 0.018, cv: -0.086 }, { a: 0.155, hu: 0.068, hv: 0.018, cv: -0.086 }, { a: 0.225, hu: 0.054, hv: 0.016, cv: -0.086 }], { axis: 'z', seg: 10, exp: 3, capAAt: -0.097, capBAt: 0.232 }),
+        null, K.sole);
+      put(s + 'Shin', 'kzu:shaft' + D.shin, () => capsule(0.17, 0.072, 0.07), tr(0, -D.shin + 0.17, 0), K.shaft);
+    }
+  };
+  // the helmet: a round shell under a camouflage cover, a big smoked visor in a dark rim, the respirator below it,
+  // rails and comm cups on the sides, a mount on the brow, a battery on the back
+  PERSON_PIECES.kzuHelmet = (put, D, C) => {
+    const K = kzu(C), H = (x, y, z) => tr(HC[0] + x, HC[1] + y, HC[2] + z), g = 'helmet';
+    put('head', 'kzu:shell', () => ellipsoid(0.152, 0.168, 0.162, { exp: 2.2, seg: 18, rings: 10 }), H(0, 0.012, -0.014), K.hard, g);
+    // the visor takes the whole face, brow to chin; the respirator shows through its lower part and juts out under it
+    put('head', 'kzu:visor', () => ellipsoid(0.13, 0.114, 0.09, { seg: 18, rings: 9 }), H(0, 0.006, 0.088), K.glass, g);
+    put('head', 'kzu:rim', () => tube([{ a: -0.007, hu: 0.133, hv: 0.116 }, { a: 0.007, hu: 0.131, hv: 0.114 }], 18, 2), M(H(0, 0.006, 0.112), rx(Math.PI / 2)), K.dark, g);
+    put('head', 'kzu:mask', () => ellipsoid(0.066, 0.05, 0.05, { seg: 12, rings: 6 }), H(0, -0.088, 0.136), K.rubber, g);
+    put('head', 'kzu:port', () => cyl(0.026, 0.026, 0.03, 10), M(H(0, -0.098, 0.17), alongPlusY([0, -0.2, 1])), K.dark, g);
+    put('head', 'kzu:valve', () => cyl(0.017, 0.017, 0.026, 8), M(H(-0.05, -0.1, 0.155), alongPlusY([-0.65, -0.1, 0.75])), K.dark, g);
+    for (const [, sg] of SIDES) {
+      put('head', 'kzu:rail', () => box(0.012, 0.022, 0.085), H(sg * 0.152, 0.045, -0.012), K.dark, g);
+      put('head', 'kzu:cup', () => cyl(0.046, 0.046, 0.024, 12), M(H(sg * 0.14, -0.01, -0.01), alongPlusY([sg, 0, 0])), K.pad, g);
+    }
+    put('head', 'kzu:mount', () => box(0.034, 0.026, 0.018), M(H(0, 0.152, 0.11), rx(0.55)), K.dark, g);
+    put('head', 'kzu:battery', () => box(0.05, 0.034, 0.022), H(0, 0.07, -0.172), K.web, g);
+  };
+  // the life-support box on a frame on the back, canisters on both sides, a pouch under it, a radio with a whip antenna,
+  // cables, and the ribbed hose from the respirator over the left shoulder into the box
+  PERSON_PIECES.kzuPack = (put, D, C) => {
+    const K = kzu(C), g = 'pack';
+    put('chest', 'kzu:frame', () => box(0.15, 0.19, 0.012), tr(0, 0.1, -0.182), K.dark, g);
+    put('chest', 'kzu:box', () => box(0.13, 0.115, 0.065), M(tr(0, 0.165, -0.258), ry(Math.PI)), K.box, g);
+    put('chest', 'kzu:lid', () => box(0.136, 0.012, 0.07), tr(0, 0.286, -0.258), K.dark, g);
+    for (const [, sg] of SIDES) {
+      personCyl(put, 'chest', 'kzu:can', [sg * 0.168, -0.06, -0.24], [sg * 0.168, 0.2, -0.24], 0.032, K.dark, g);
+      personCyl(put, 'chest', 'kzu:canCap', [sg * 0.168, 0.2, -0.24], [sg * 0.168, 0.23, -0.24], 0.026, K.metal, g);
+    }
+    put('chest', 'kzu:lowPouch', () => box(0.115, 0.062, 0.052), tr(0, -0.035, -0.248), K.cloth, g);
+    put('chest', 'kzu:lowFlap', () => box(0.118, 0.014, 0.055), tr(0, 0.022, -0.249), K.web, g);
+    put('chest', 'kzu:radio', () => box(0.03, 0.085, 0.028), tr(-0.205, 0.2, -0.215), K.boxPlain, g);
+    personRod(put, 'chest', 'kzu:antenna', [-0.205, 0.78, -0.215], [-0.205, 0.28, -0.215], 0.0065, K.cable, g);
+    const cable = (key, pts) => put('chest', 'kzu:' + key, () => tubeAlong(smoothPath(pts, 5), 0.0085, 5), null, K.cable, g);
+    cable('cab1', [[0.1, 0.25, -0.325], [0.15, 0.22, -0.31], [0.17, 0.17, -0.27]]);
+    cable('cab2', [[-0.1, 0.24, -0.325], [-0.17, 0.25, -0.28], [-0.2, 0.2, -0.24]]);
+    cable('cab3', [[-0.06, 0.06, -0.325], [-0.12, 0.02, -0.3], [-0.168, -0.02, -0.272]]);
+    // the hose: from the left side of the mask, down in front of the collarbone, over the left shoulder, down into the box
+    put('chest', 'kzu:hose', () => tubeAlong(smoothPath([[0.045, 0.385, 0.15], [0.125, 0.345, 0.172], [0.205, 0.345, 0.08], [0.21, 0.366, -0.06], [0.152, 0.336, -0.19], [0.075, 0.298, -0.25]], 6), 0.023, 7), null, K.hose, g);
+  };
+  PERSON_PIECES.kzuNeck = (put, D, C) => {
+    const K = kzu(C);
+    put('neck', 'kzu:neck', () => capsule(0.12, 0.07, 0.074), tr(0, 0.07, -0.006), K.rubber);
+  };
+  // the whole kit, ready to wear
+  const KZU_LOOK = {
+    id: 'kzu', armor: true, seed: 4711,
+    dims: { sx: 0.226, shY: 0.256, hipX: 0.1, chestY: 0.185, neckY: 0.325, upper: 0.285, fore: 0.3, thigh: 0.425, shin: 0.395, sole: -0.1 },
+    pieces: ['kzuSuit', 'kzuNeck', 'kzuVest', 'kzuPads', 'kzuBelt', 'kzuGloves', 'kzuBoots', 'kzuHelmet', 'kzuPack']
+  };
+  // ================= people: other characters in the world — where they are, what they do, how they are drawn =================
+  // A game adds people with addPerson(def):
+  //   { id, name, short (the chip «рядом: …»), note(p) (a line for the context panel), look (look.js), loc, at: [x, z], yaw,
+  //     mode: 'post' (default), inv: [{ t, n }] (items.js), trade: { … } (trade.js), dialog: id (talk.js), speed: 1,
+  //     barks: { hello, follow, wait, home, sit, arrive(location), idle, … } (a line, a list to pick from or (p, …) → line) }
+  // What a person has in mind is his mode:
+  //   post — stands at his place, turns his head to the hero, looks round now and then, goes back to his place if he had to step aside;
+  //   follow — keeps a step or two from the hero, runs when left behind, sits beside him on a bench, goes through exits with him;
+  //   wait — stays where he was asked to; home — walks back to his place (through an exit, if it is in another location);
+  //   talk — faces the hero while they talk (talk.js).
+  // Every person in the current location has an INST entry: it can be tapped, it shows in the panel «рядом», and the person is drawn
+  // from his bones twelve times a second with everything else (GAME.tick → snapshot, GAME.items, GAME.key).
+  const PEOPLE = [];
+  const PEOPLE_HOOKS = { acts: [] };         // f(p, list): more actions for a person's panel, { label, run, order } (talk and trade add theirs)
+  const personHere = (p) => !!p.inst && p.loc === MAP.id;
+  const personById = (id) => PEOPLE.find((p) => p.id === id);
+  function addPerson(def) {
+    const p = {
+      def, id: def.id, name: def.name, loc: def.loc, x: def.at[0], z: def.at[1], y: 0, yaw: def.yaw || 0, tyaw: def.yaw || 0,
+      home: { loc: def.loc, at: def.at.slice(), yaw: def.yaw || 0 }, mode: def.mode || 'post', prevMode: null,
+      path: [], queue: [], run: false, phase: 0, walkW: 0, runW: 0, t: 3 + Math.random() * 10, sit: 0, sitTarget: 0, seat: null,
+      head: 0, headTo: 0, attend: 0, talk: { on: false, w: 0, t: 0, dur: 0 }, reach: { on: false, w: 0, t: 0, to: null },
+      idleT: 3 + Math.random() * 4, replanT: 0, homeT: 0, delay: 0, metT: -1e9, chatT: 30 + Math.random() * 30, bark: null, barkEl: null, arriveT: 0,
+      travel: false, inst: null, model: null, bones: null, items: [], snapKey: '',
+      inv: (def.inv || []).map((s) => ({ t: s.t, n: s.n }))
+    };
+    PEOPLE.push(p);
+    return p;
+  }
+  // a mode change that waits for a conversation to end, if one is going on
+  function setPersonMode(p, m) { if (p.mode === 'talk') p.prevMode = m; else p.mode = m; }
+
+  // ---------- the person in the current location: an entry in INST ----------
+  const PERSON_USE = { name: (i) => i.person.name, short: (i) => i.person.def.short || i.person.name, note: (i) => personNote(i.person), acts: (i) => personActs(i.person) };
+  function personInst(p) {
+    // ids are per location and only 8 bits: a person keeps the one he got the first time he came to a location
+    const ids = p.ids || (p.ids = {});
+    if (!ids[MAP.id]) ids[MAP.id] = nextId++;
+    const inst = {
+      id: ids[MAP.id], def: { type: 'person', at: [p.x, p.z] }, type: 'person', person: p, use: PERSON_USE,
+      T: { near: (i, x, z) => Math.max(0, Math.hypot(x - p.x, z - p.z) - 0.35) },
+      M0: ID4, yaw0: p.yaw, built: {}, chunks: [], items: [], bb: [p.x - 0.4, 0, p.z - 0.4, p.x + 0.4, 2, p.z + 0.4], active: true,
+      sr: [0, 0, 0, 0], shr: [0, 0, 0, 0], n: 0, dyn: {}, center: [p.x, p.z], blocks: [], spots: []
+    };
+    p.inst = inst;
+    INST.push(inst);
+    if (instById) instById.set(inst.id, inst);
+    p.items = [];
+    return inst;
+  }
+  function dropPersonInst(p) {
+    const i = p.inst; if (!i) return;
+    const k = INST.indexOf(i); if (k >= 0) INST.splice(k, 1);
+    instById.delete(i.id);
+    p.inst = null; p.items = [];
+  }
+  hook(LOC_HOOKS.objects, () => { for (const p of PEOPLE) if (p.loc === MAP.id && !p.travel) personInst(p); }, 12);
+  function personNote(p) {
+    const own = typeof p.def.note === 'function' ? p.def.note(p) : (p.def.note || '');
+    const m = { follow: 'Идёт за тобой.', wait: 'Ждёт здесь, как ты просил.', home: 'Возвращается на своё место.' }[p.mode === 'talk' ? p.prevMode : p.mode] || '';
+    return [m, own].filter(Boolean).join(' ');
+  }
+  const atHome = (p) => p.loc === p.home.loc && Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) < 0.6;
+  function personActs(p) {
+    const out = [];
+    for (const f of PEOPLE_HOOKS.acts) f(p, out);
+    if (p.def.follows !== false) {
+      const m = p.mode === 'talk' ? p.prevMode : p.mode;
+      if (m === 'follow') out.push({ label: 'Жди здесь', run: () => personWait(p), order: 40 });
+      else out.push({ label: 'Идём со мной', run: () => personFollow(p), order: 40 });
+      if (!atHome(p) && m !== 'home') out.push({ label: 'Ступай на место', run: () => personHome(p), order: 50 });
+    }
+    return out.sort((a, b) => (a.order ?? 50) - (b.order ?? 50));
+  }
+
+  // ---------- orders ----------
+  function personFollow(p) { setPersonMode(p, 'follow'); p.replanT = 0; personBark(p, 'follow'); }
+  function personWait(p) { setPersonMode(p, 'wait'); p.path.length = 0; personBark(p, 'wait'); }
+  function personHome(p) { setPersonMode(p, 'home'); p.path.length = 0; personBark(p, 'home'); }
+  // walk to a point round the obstacles
+  function personGo(p, to, run = false) {
+    const pts = findPath([p.x, p.z], to, NAV.hero);
+    p.path = pts ? pts.map((q) => ({ x: q[0], z: q[1] })) : [];
+    p.run = run;
+    return !!pts;
+  }
+  // a short list of steps, like the hero's queue: path, goto (straight; back: walking backwards), face, turned, sit, stand
+  function personQueue(p) {
+    while (p.queue.length && !p.path.length) {
+      const c = p.queue[0];
+      if (c.type === 'path') { p.queue.shift(); if (personGo(p, c.to) && p.path.length) return; continue; }
+      if (c.type === 'goto') { p.queue.shift(); if (Math.hypot(c.x - p.x, c.z - p.z) > 0.01) { p.path.push({ x: c.x, z: c.z, back: !!c.back }); p.run = false; return; } continue; }
+      if (c.type === 'face') { p.queue.shift(); p.tyaw = c.yaw; continue; }
+      if (c.type === 'turned') { if (Math.abs(wrapA(p.yaw - p.tyaw)) > 0.06) return; p.queue.shift(); continue; }
+      if (c.type === 'sit') { p.seat = c.seat; p.sitTarget = 1; if (p.sit < 1) return; p.queue.shift(); continue; }
+      if (c.type === 'stand') { p.sitTarget = 0; if (p.sit > 0) return; p.seat = null; p.queue.shift(); continue; }
+      p.queue.shift();
+    }
+  }
+  // the hero sat down: take the free seat nearest to him, on his bench or the next one
+  const seatTaken = (st, me) => (hero.seat && hero.seat.inst === st.inst && hero.seat.s === st.s) || PEOPLE.some((q) => q !== me && q.seat && q.seat.inst === st.inst && q.seat.s === st.s);
+  function personSitNear(p) {
+    let best = null, bd = 4.5;
+    for (const inst of INST) {
+      if (!inst.built || !inst.built.seats || !inst.built.seats.length) continue;
+      for (const st of seatsOf(inst)) {
+        if (seatTaken(st, p)) continue;
+        const d = Math.hypot(st.at[0] - hero.x, st.at[1] - hero.z);
+        if (d < bd) { bd = d; best = st; }
+      }
+    }
+    if (!best) return false;
+    p.path.length = 0;
+    p.queue = [{ type: 'path', to: best.front }, { type: 'goto', x: best.front[0], z: best.front[1] }, { type: 'face', yaw: best.yaw }, { type: 'turned' },
+      { type: 'goto', x: best.at[0], z: best.at[1], back: true }, { type: 'sit', seat: best }];
+    return true;
+  }
+  function personStand(p) {
+    if (!p.seat) { p.sitTarget = 0; p.queue = []; return; }
+    p.queue = [{ type: 'stand' }, { type: 'goto', x: p.seat.front[0], z: p.seat.front[1] }];
+  }
+
+  // ---------- what he has in mind ----------
+  const FOLLOW_NEAR = 1.6;
+  function followGoal(p, near) {
+    // a point on a circle round the hero, on our side of him: behind him when he walks away
+    let dx = p.x - hero.x, dz = p.z - hero.z, d = Math.hypot(dx, dz);
+    if (d < 1e-3) { dx = -Math.sin(hero.yaw); dz = -Math.cos(hero.yaw); d = 1; }
+    return nearestFree(clamp(hero.x + dx / d * near, 0.5, GW - 0.5), clamp(hero.z + dz / d * near, 0.5, GH - 0.5), 2, NAV.hero);
+  }
+  function thinkFollow(p, dt, dh) {
+    if (hero.sitTarget === 1 && hero.seat && hero.sit > 0.4) {      // he sits down: so do we, beside him
+      if (!p.seat && !p.queue.length && !p.sitTarget && personSitNear(p)) personBark(p, 'sit');
+      return;
+    }
+    if (p.queue.some((c) => c.type === 'sit')) { p.queue.length = 0; p.path.length = 0; }       // he got up before we sat down
+    if (p.seat || p.sitTarget) { if (!p.queue.length) personStand(p); return; }     // he got up: up we get too
+    if (p.queue.length) return;
+    const near = driving() ? 3.4 : FOLLOW_NEAR;
+    p.replanT -= dt;
+    if ((dh > near + 0.9 || (p.path.length && hero.path.length)) && p.replanT <= 0) {
+      p.replanT = 0.45;
+      const g = followGoal(p, near);
+      if (g && Math.hypot(g[0] - p.x, g[1] - p.z) > 0.25) personGo(p, g, dh > 5 || (hero.run && hero.path.length > 0));
+    }
+    if (p.path.length && dh < near && !hero.path.length) p.path.length = 0;       // close enough, and he stopped: so do we
+  }
+  function thinkHome(p) {
+    if (p.path.length) return;
+    if (p.loc !== p.home.loc) {
+      // home is in another location: walk out through the exit that leads there; once in it, he is home
+      const e = (MAP.exits || []).find((x) => x.to === p.home.loc) || (MAP.exits || [])[0];
+      if (!e) { p.mode = 'wait'; return; }
+      if (Math.hypot(p.x - e.go[0], p.z - e.go[1]) > 0.6) { personGo(p, e.go); return; }
+      dropPersonInst(p);
+      Object.assign(p, { loc: p.home.loc, x: p.home.at[0], z: p.home.at[1], yaw: p.home.yaw, tyaw: p.home.yaw, mode: 'post' });
+      return;
+    }
+    if (Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) > 0.3) { if (!personGo(p, p.home.at)) p.mode = 'post'; return; }
+    p.mode = 'post'; p.tyaw = p.home.yaw;
+  }
+  // standing about: notices the hero, looks round, goes back to his place after stepping aside
+  function thinkIdle(p, dt, dh) {
+    const toHero = Math.atan2(hero.x - p.x, hero.z - p.z), rel = wrapA(toHero - p.yaw);
+    const sees = dh < 4.5 && !heroHidden() && !travelState;
+    if (p.attend > 0 || (sees && dh < 2.4 && !hero.path.length && !p.path.length && !p.sitTarget && Math.abs(rel) > 1.05)) p.tyaw = toHero;
+    if (sees) {
+      p.headTo = Math.abs(rel) < 1.9 ? clamp(rel, -1.05, 1.05) : 0;
+      if (dh < 3 && p.t - p.metT > 90) { p.metT = p.t; personBark(p, 'hello'); }
+    } else {
+      p.idleT -= dt;
+      if (p.idleT <= 0) {
+        p.idleT = 3.5 + Math.random() * 5;
+        p.headTo = Math.random() < 0.35 ? 0 : (Math.random() - 0.5) * 1.7;
+        // now and then a hand goes to the kit on his chest (a radio, a pouch)
+        if (Math.random() < 0.25 && !p.path.length && !p.sitTarget) Object.assign(p.reach, { on: true, t: 0, to: [-0.07, 0.08, 0.25] });
+      }
+    }
+    // stepped aside or pushed off his post: back to it when nobody is around
+    if (p.mode === 'post' && !p.path.length && !atHome(p) && p.loc === p.home.loc) {
+      p.homeT += dt;
+      if (p.homeT > 6 && dh > 2.5) { p.homeT = 0; personGo(p, p.home.at); p.queue = [{ type: 'face', yaw: p.home.yaw }]; }
+    } else p.homeT = 0;
+  }
+  // the hero walks right into him: one step aside
+  function stepAside(p, dh) {
+    if (p.path.length || p.queue.length || p.sit > 0 || p.sitTarget || !hero.path.length || dh > 0.62 || driving()) return;
+    for (const sg of [1, -1]) {
+      const a = hero.yaw + sg * Math.PI / 2, g = [p.x + Math.sin(a) * 0.95, p.z + Math.cos(a) * 0.95];
+      if (g[0] > 0.5 && g[1] > 0.5 && g[0] < GW - 0.5 && g[1] < GH - 0.5 && !blockedAt(g[0], g[1], NAV.hero)) { p.path = [{ x: g[0], z: g[1] }]; p.run = false; return; }
+    }
+  }
+
+  // ---------- the step ----------
+  const personSpeed = (p) => (p.run ? 3.2 : (p.def.look && p.def.look.armor ? 1.3 : 1.38)) * (p.def.speed || 1);
+  const personCycle = (p) => p.run ? 2.3 : (p.def.look && p.def.look.armor ? 1.45 : 1.38);
+  function updatePerson(p, dt) {
+    p.t += dt;
+    if (p.delay > 0) p.delay -= dt;
+    p.attend = Math.max(0, p.attend - dt);
+    const dh = Math.hypot(hero.x - p.x, hero.z - p.z);
+    if (p.mode === 'follow') thinkFollow(p, dt, dh);
+    else if (p.mode === 'home') thinkHome(p);
+    else if (p.mode === 'talk') {
+      // face the hero; sitting on a bench, only the head turns to him
+      const toHero = Math.atan2(hero.x - p.x, hero.z - p.z);
+      p.path.length = 0; p.tyaw = toHero;
+      p.headTo = p.sit > 0 && p.seat ? clamp(wrapA(toHero - p.seat.yaw), -1.05, 1.05) : 0;
+    }
+    if (p.mode === 'post' || p.mode === 'wait') thinkIdle(p, dt, dh);
+    if (!p.inst || p.loc !== MAP.id) return;        // walked out of the location (home through an exit)
+    if (p.mode !== 'talk') stepAside(p, dh);
+    personQueue(p);
+    // walking along the path
+    const moving = p.path.length > 0 && p.delay <= 0;
+    if (moving) {
+      let budget = personSpeed(p) * dt * (p.mode === 'follow' && dh < 1.1 && hero.path.length ? 0.6 : 1);
+      while (budget > 0 && p.path.length) {
+        const wp = p.path[0], dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
+        if (d > 1e-4 && !wp.back) p.tyaw = Math.atan2(dx, dz);
+        if (d <= budget) { p.x = wp.x; p.z = wp.z; budget -= d; p.phase += d / personCycle(p); p.path.shift(); }
+        else { p.x += dx / d * budget; p.z += dz / d * budget; p.phase += budget / personCycle(p); budget = 0; }
+      }
+    }
+    if (p.mode === 'follow' && !p.path.length && !p.sitTarget && !p.queue.length && dh < 4) p.tyaw = approachAngle(p.tyaw, Math.atan2(hero.x - p.x, hero.z - p.z), dt * 2);
+    p.yaw = approachAngle(p.yaw, p.tyaw, dt * (p.path.length ? 15 : 7));
+    if (p.path.length) p.headTo = 0;
+    p.head = approach(p.head, p.headTo, dt * 3);
+    p.walkW = approach(p.walkW, p.path.length && p.delay <= 0 ? 1 : 0, dt * 7);
+    p.runW = approach(p.runW, p.path.length && p.run ? 1 : 0, dt * 4);
+    p.sit = approach(p.sit, p.sitTarget, dt / 0.5);
+    p.y = approach(p.y, groundY(p.x, p.z), dt * 1.6);
+    for (const k of ['talk', 'reach']) { const a = p[k]; a.w = approach(a.w, a.on ? 1 : 0, dt * (k === 'reach' ? 6 : 4)); if (a.on || a.w > 0) a.t += dt; else a.t = 0; }
+    if (p.talk.on && (p.talk.t > p.talk.dur || p.path.length)) p.talk.on = false;
+    if (p.reach.on && p.reach.t > 1.7) p.reach.on = false;
+    p.inst.center = [p.x, p.z]; p.inst.def.at = [p.x, p.z];
+    // a word now and then: about the new place, or just like that while walking about together
+    if (p.bark) { p.bark.t -= dt; if (p.bark.t <= 0) p.bark = null; }
+    if (p.arriveT > 0) { p.arriveT -= dt; if (p.arriveT <= 0) personBark(p, 'arrive', MAP); }
+    if (p.mode === 'follow') { p.chatT -= dt; if (p.chatT <= 0) { p.chatT = 45 + Math.random() * 40; if (!p.bark && !travelState) personBark(p, 'idle'); } }
+  }
+  function updatePeople(dt) { for (const p of PEOPLE) if (personHere(p)) updatePerson(p, dt); }
+
+  // ---------- going through exits with the hero ----------
+  LOC_HOOKS.leave.push((from) => {
+    for (const p of PEOPLE) {
+      if (p.loc !== from.id || !p.inst || (p.mode !== 'follow' && !(p.mode === 'talk' && p.prevMode === 'follow'))) continue;
+      if (Math.hypot(p.x - hero.x, p.z - hero.z) > 16) continue;        // left far behind: he stays where he is
+      dropPersonInst(p);
+      Object.assign(p, { loc: null, travel: true, seat: null, sit: 0, sitTarget: 0, bark: null, mode: 'follow', prevMode: null });
+      p.path.length = 0; p.queue.length = 0;
+    }
+  });
+  LOC_HOOKS.enter.push((def, spawnName) => {
+    for (const p of PEOPLE) {
+      // someone who came here on his own while the hero was away (went home through an exit) gets his entry now
+      if (!p.travel && p.loc === def.id && !p.inst) { personInst(p); continue; }
+      if (!p.travel) continue;
+      const sp = def.spawns[spawnName] || def.spawns.start;
+      let bx = sp.at[0], bz = sp.at[1];
+      if (sp.walk) { const dx = sp.walk[0] - bx, dz = sp.walk[1] - bz, d = Math.hypot(dx, dz) || 1; bx -= dx / d * 0.7; bz -= dz / d * 0.7; }
+      Object.assign(p, { travel: false, loc: def.id, x: clamp(bx, 0.3, GW - 0.3), z: clamp(bz, 0.3, GH - 0.3), yaw: hero.yaw, tyaw: hero.yaw, delay: 0.55, replanT: 0, arriveT: 1.6 });
+      p.y = groundY(p.x, p.z);
+      personInst(p);
+    }
+  });
+
+  // ---------- drawing: a snapshot twelve times a second, so people move in the same steps as the hero ----------
+  function personCtx(p) {
+    return {
+      t: q(p.t), phase: Math.floor(p.phase * 12) / 12, walkW: wq(p.walkW), runW: wq(p.runW), sitW: wq(smooth(p.sit)), seat: p.seat,
+      smokeW: 0, smokeT: 0, drinkW: 0, drinkT: 0, punchW: 0, punchT: 0, shootW: 0, shootT: 0, throwW: 0, throwT: 0,
+      reachW: wq(p.reach.w), reachT: q(p.reach.t), reachTo: p.reach.to, talkW: wq(p.talk.w), talkT: q(p.talk.t), headYaw: Math.round(p.head * 8) / 8, act: null
+    };
+  }
+  function personSnapshot(p) {
+    if (!p.model) p.model = buildPerson(p.def.look);
+    const c = personCtx(p), D = p.model.D;
+    const s = wpx([p.x, 0, p.z]), g = groundAt(Math.round(s[0]), Math.round(s[1]));
+    const root = [g[0], Math.round(p.y * PXV) / PXV, g[1]];
+    const yaw = p.sit > 0 && p.seat ? p.seat.yaw : p.yaw;
+    const pose = buildPose(c, D, false);
+    const B = evalBones(pose.p, root, yaw, D);
+    const id = p.inst ? p.inst.id : 0;
+    p.bones = B;
+    p.items = p.model.parts.map((pt) => ({ mesh: pt.mesh, model: B[pt.bone], mat: pt.mat, id, flags: 2 | 16, shadow: !pt.noShadow }));
+    p.snapKey = [id, root.map((v) => v.toFixed(3)).join(','), yaw.toFixed(3), c.t, c.phase, c.walkW, c.runW, c.sitW, c.reachW, c.reachT, c.talkW, c.talkT, c.headYaw].join(',') + ';';
+  }
+  hook(GAME.update, (dt) => updatePeople(dt), 30);
+  hook(GAME.tick, () => { for (const p of PEOPLE) if (personHere(p)) personSnapshot(p); });
+  hook(GAME.key, () => { let k = ''; for (const p of PEOPLE) if (personHere(p)) k += p.snapKey; return k; }, 60);
+  hook(GAME.items, (out) => { for (const p of PEOPLE) if (personHere(p)) { if (!p.items.length) personSnapshot(p); for (const it of p.items) out.push(it); } }, 60);
+
+  // ---------- a word over the head ----------
+  function personBark(p, key, ...args) {
+    const B = p.def.barks || {}, v = B[key];
+    let text = typeof v === 'function' ? v(p, ...args) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v;
+    if (!text) return;
+    p.bark = { text, t: clamp(1.4 + text.length * 0.055, 2.4, 6) };
+  }
+  // the bubble follows the head as the camera moves; hidden while the screen fades or the person is out of view
+  function stageFrac(P) {
+    const lv = lastView, s = wpx(P);
+    if (!lv) return null;
+    return lv.over ? [(s[0] - lv.ox) * lv.sc / lv.v.w, (s[1] - lv.oy) * lv.sc / lv.v.h] : [(s[0] - lv.ox) / VW, (s[1] - lv.oy) / VH];
+  }
+  function drawBarks() {
+    const box = stageEl.parentElement;
+    for (const p of PEOPLE) {
+      let el = p.barkEl;
+      const f = p.bark && personHere(p) && p.bones && !travelState && !(TALK_NOW() === p) ? stageFrac(xf(p.bones.head, [0, 0.32, 0])) : null;
+      if (!f || f[0] < -0.05 || f[0] > 1.05 || f[1] < 0 || f[1] > 1.05) { if (el) el.hidden = true; continue; }
+      if (!el) { el = p.barkEl = document.createElement('p'); el.className = 'bark'; el.setAttribute('role', 'status'); box.append(el); }
+      if (el.textContent !== p.bark.text) el.textContent = p.bark.text;
+      el.style.left = (clamp(f[0], 0.14, 0.86) * stageEl.clientWidth) + 'px';
+      el.style.top = (clamp(f[1], 0.1, 1) * stageEl.clientHeight) + 'px';
+      el.hidden = false;
+    }
+  }
+  hook(GAME.frame, drawBarks);
+  // who the hero is talking to (talk.js answers; without it nobody)
+  const TALK_HOOKS = { who: [] };
+  const TALK_NOW = () => { for (const f of TALK_HOOKS.who) { const p = f(); if (p) return p; } return null; };
+
+  // ---------- what survives a page update ----------
+  function peopleHot() {
+    return PEOPLE.map((p) => ({ id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode, inv: p.inv.map((s) => ({ t: s.t, n: s.n })) }));
+  }
+  function peopleFromHot(list) {
+    if (!Array.isArray(list)) return;
+    for (const d of list) {
+      const p = d && personById(d.id);
+      if (!p || !LOCATIONS[d.loc] || !Number.isFinite(d.x) || !Number.isFinite(d.z)) continue;
+      Object.assign(p, { loc: d.loc, x: d.x, z: d.z, yaw: d.yaw || 0, tyaw: d.yaw || 0, mode: ['post', 'follow', 'wait', 'home'].includes(d.mode) ? d.mode : 'post' });
+      if (Array.isArray(d.inv)) p.inv = invClean(d.inv);
+    }
+  }
+
+  // ---------- the bits of page the people module adds by itself (speech bubbles, the talk panel, the trade window) ----------
+  function peopleCss(id, css) {
+    if (document.getElementById(id)) return;
+    const st = document.createElement('style'); st.id = id; st.textContent = css;
+    document.head.append(st);
+  }
+  peopleCss('css-people', `
+.bark { position: absolute; transform: translate(-50%, calc(-100% - 8px)); width: max-content; max-width: min(62%, 270px); margin: 0;
+  font: 500 13px/1.3 var(--body, system-ui, sans-serif); padding: 6px 10px; border-radius: 10px; text-align: center; pointer-events: none; z-index: 3;
+  background: var(--surface, #fff); color: var(--ink, #1b1f22); border: 1px solid var(--line, #c6ccc9); box-shadow: 0 2px 0 rgba(0, 0, 0, .08); }
+.bark::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit; border-right: inherit; border-bottom: inherit;
+  transform: translateX(-50%) rotate(45deg); }
+`);
+  // ================= conversations =================
+  // DIALOGS[id] = { start(p) → node id (default 'start'), nodes: { id: node } }; a person talks if his def has dialog: id.
+  //   node:   { say: his line | [lines, one at random] | (p) → line, run(p) (when he says it), opts: [option] | (p) → [option] }
+  //   option: { say: what the hero says (a line or (p) → line), to: the next node (an id or (p) → id), when(p) → false hides it,
+  //             run(p): right after the hero's line (start following, wait, open the trade…) }
+  //   An option without `to` ends the conversation after the hero's line.
+  // talkTo(p) walks the hero up to the person, turns them to face each other and opens the panel in place of the panel «рядом».
+  // Walking away, the location changing or «Уйти» ends it. talkSeen(p, node) tells how often a node was said (first meeting or not).
+  const DIALOGS = {};
+  let TALK = null;              // { p, D, id, node, line, heroLine, busy, wait, next, opts }
+  let talkPending = null;       // the person the hero is walking up to
+  const TALK_SEEN = {};
+  const talkSeen = (p, id) => (TALK_SEEN[p.id] && TALK_SEEN[p.id][id]) || 0;
+  TALK_HOOKS.who.push(() => TALK ? TALK.p : null);
+  const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : (v || '');
+
+  function talkTo(p) {
+    const D = DIALOGS[p.def.dialog];
+    if (!D || !personHere(p) || (TALK && TALK.p === p)) return;
+    if (inMachine()) return;
+    if (TALK) endTalk();
+    if (p.mode !== 'talk') { p.prevMode = p.mode; p.mode = 'talk'; }
+    if (!p.sitTarget) { p.path.length = 0; p.queue.length = 0; }
+    p.attend = 3;
+    const d = Math.hypot(hero.x - p.x, hero.z - p.z);
+    if ((hero.sit > 0 || hero.sitTarget) && d < 3) { openTalk(p); return; }        // from the bench beside him: no need to get up
+    talkPending = p;
+    const face = { type: 'call', fn: () => { hero.tyaw = yawTo(p.x, p.z); } }, open = { type: 'call', fn: () => openTalk(p), talkTo: p };
+    if (d < 1.9) { plan(face, { type: 'turned' }, open); return; }
+    const k = 1.2 / (d || 1), spot = nearestFree(p.x + (hero.x - p.x) * k, p.z + (hero.z - p.z) * k, 1.5, NAV.hero) || [hero.x, hero.z];
+    plan({ type: 'path', to: spot }, { type: 'goto', x: spot[0], z: spot[1] }, face, { type: 'turned' }, open);
+  }
+  function openTalk(p) {
+    talkPending = null;
+    const D = DIALOGS[p.def.dialog];
+    if (!D || !personHere(p)) return;
+    if (p.mode !== 'talk') { p.prevMode = p.mode; p.mode = 'talk'; }
+    TALK = { p, D, id: null, node: null, line: '', heroLine: '', busy: false, wait: 0, next: null, opts: [] };
+    talkPanel(true);
+    goNode(D.start ? D.start(p) : 'start');
+    if (TALK) talkInView();
+  }
+  function goNode(id) {
+    const T = TALK; if (!T) return;
+    const node = T.D.nodes[id];
+    if (!node) { endTalk(); return; }
+    const seen = TALK_SEEN[T.p.id] || (TALK_SEEN[T.p.id] = {});
+    T.id = id; T.node = node; T.busy = false;
+    T.line = lineOf(node.say, T.p);
+    seen[id] = (seen[id] || 0) + 1;
+    if (T.line) personSays(T.p, T.line);
+    if (node.run) node.run(T.p);
+    if (TALK === T) renderTalk();
+  }
+  function personSays(p, line) { Object.assign(p.talk, { on: true, t: 0, dur: clamp(0.8 + line.length * 0.035, 1.2, 4.5) }); }
+  function chooseOpt(o) {
+    const T = TALK; if (!T || T.busy) return;
+    const said = lineOf(o.say, T.p);
+    Object.assign(T, { busy: true, heroLine: said, line: '' });
+    Object.assign(hero.talk, { on: true, t: 0, dur: clamp(0.6 + said.length * 0.03, 0.9, 3) });
+    T.p.talk.on = false;
+    renderTalk();
+    T.wait = clamp(0.45 + said.length * 0.012, 0.6, 1.3);
+    T.next = () => {
+      if (o.run) o.run(T.p);
+      if (TALK !== T) return;                  // the option's run may have ended it
+      const to = typeof o.to === 'function' ? o.to(T.p) : o.to;
+      if (to) goNode(to); else endTalk();
+    };
+  }
+  function endTalk() {
+    const T = TALK; if (!T) return;
+    TALK = null;
+    const p = T.p;
+    if (p.mode === 'talk') { p.mode = p.prevMode || 'post'; p.prevMode = null; }
+    p.talk.on = false; hero.talk.on = false;
+    talkPanel(false);
+  }
+  hook(GAME.update, (dt) => {
+    const P = talkPending;
+    if (P && !TALK && !hero.queue.some((c) => c.talkTo === P)) {         // the walk up was cut short by another order
+      talkPending = null;
+      if (P.mode === 'talk') { P.mode = P.prevMode || 'post'; P.prevMode = null; }
+    }
+    const T = TALK; if (!T) return;
+    const p = T.p;
+    if (!personHere(p) || travelState || hero.path.length || Math.hypot(hero.x - p.x, hero.z - p.z) > 3.4) { endTalk(); return; }
+    if (!(hero.sit > 0)) hero.tyaw = yawTo(p.x, p.z);
+    if (T.wait > 0) { T.wait -= dt; if (T.wait <= 0 && T.next) { const f = T.next; T.next = null; f(); } }
+  }, 35);
+  // the camera frames both of them; the chip over the stage says what he is doing
+  hook(GAME.focus, (hs) => TALK ? lerpV([...hs, 0], [...wpx([TALK.p.x, 1.2, TALK.p.z]), 0], 0.5) : null, 25);
+  hook(GAME.state, () => TALK ? 'разговаривает' : null);
+  hook(GAME.context, () => TALK && TALK.p.inst ? { inst: TALK.p.inst, mode: 'near' } : null);
+  PEOPLE_HOOKS.acts.push((p, out) => { if (p.def.dialog && DIALOGS[p.def.dialog]) out.push({ label: 'Поговорить', run: () => talkTo(p), order: 10 }); });
+
+  // ---------- the panel: his face, his line, what the hero can answer ----------
+  let talkEl = null;
+  function talkDom() {
+    if (talkEl) return talkEl;
+    talkEl = $('talk');
+    if (!talkEl) {
+      talkEl = document.createElement('div'); talkEl.id = 'talk';
+      const ctx = $('ctx');
+      if (ctx) ctx.before(talkEl); else stageEl.parentElement.after(talkEl);
+    }
+    talkEl.className = 'talk'; talkEl.hidden = true;
+    talkEl.innerHTML = '<div class="talk-head"><canvas class="talk-face" width="48" height="48" aria-hidden="true"></canvas>'
+      + '<div class="talk-who"><span class="talk-k">Разговор</span><b class="talk-name"></b></div><button type="button" class="btn talk-x">Уйти</button></div>'
+      + '<p class="talk-hero" hidden></p><p class="talk-line" aria-live="polite"></p><div class="talk-opts"></div>';
+    talkEl.querySelector('.talk-x').addEventListener('click', () => endTalk());
+    return talkEl;
+  }
+  function talkPanel(show) {
+    const el = talkDom(), ctx = $('ctx');
+    el.hidden = !show;
+    if (ctx) ctx.hidden = show;
+    if (show && TALK) { el.querySelector('.talk-name').textContent = TALK.p.name; drawPersonFace(el.querySelector('.talk-face'), TALK.p); }
+  }
+  // the panel in sight once it has its first line (on a phone the stage sticks to the top of the screen: then just below it)
+  function talkInView() {
+    const el = talkDom(), r = el.getBoundingClientRect(), s = stageEl.getBoundingClientRect();
+    const top = s.top <= 2 && s.bottom > 0 ? s.bottom + 8 : 8, need = Math.min(r.height, 320);
+    const dy = r.top < top ? r.top - top : r.top + need > window.innerHeight ? Math.min(r.top - top, r.top + need - window.innerHeight + 12) : 0;
+    if (Math.abs(dy) > 4) window.scrollBy({ top: dy, behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
+  function renderTalk() {
+    const T = TALK, el = talkDom(); if (!T) return;
+    const h = el.querySelector('.talk-hero'), l = el.querySelector('.talk-line'), o = el.querySelector('.talk-opts');
+    h.hidden = !T.heroLine; h.textContent = T.heroLine ? '— ' + T.heroLine : '';
+    l.textContent = T.line || '…';
+    l.classList.toggle('wait', !T.line);
+    o.textContent = '';
+    T.opts = [];
+    if (T.busy) return;
+    T.opts = (typeof T.node.opts === 'function' ? T.node.opts(T.p) : T.node.opts || []).filter((x) => !x.when || x.when(T.p));
+    T.opts.forEach((x, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn talk-opt';
+      b.textContent = (i + 1) + '. ' + (typeof x.say === 'function' ? x.say(T.p) : x.say);
+      b.addEventListener('click', () => chooseOpt(x));
+      o.append(b);
+    });
+  }
+  // a head-and-shoulders portrait drawn by the engine, three-quarters to the viewer
+  function drawPersonFace(cv, p) {
+    if (!p.model) p.model = buildPerson(p.def.look);
+    const D = p.model.D;
+    const pose = buildPose({ t: 0, phase: 0, walkW: 0, runW: 0, sitW: 0, smokeW: 0, drinkW: 0, punchW: 0, shootW: 0, throwW: 0, reachW: 0, talkW: 0 }, D, false);
+    const B = evalBones(pose.p, [0, 0, 0], Math.PI / 4 - 0.4, D);
+    const list = p.model.parts.map((pt) => ({ mesh: pt.mesh, model: mul(B[pt.bone], pt.off), mat: pt.mat }));
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    render3D(TGT_SMALL, { w: cv.width, h: cv.height, ax: cv.width / 2, ay: cv.height / 2 + 3, s: S * 1.15, A: xf(B.neck, [0, 0.06, 0]) }, { main: list }, false, ctx, 0, 0);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (!TALK || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'Escape') { endTalk(); return; }
+    const n = +e.key;
+    if (!TALK.busy && n >= 1 && n <= TALK.opts.length) { e.preventDefault(); chooseOpt(TALK.opts[n - 1]); }
+  });
+  peopleCss('css-talk', `
+.talk { background: var(--surface, #fff); border: 1px solid var(--accent, #b8691c); border-radius: 12px; padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.talk[hidden] { display: none; }
+.talk-head { display: flex; align-items: center; gap: 12px; }
+.talk-face { width: 72px; height: 72px; flex: none; image-rendering: pixelated; background: var(--stage, #cbd3cf); border-radius: 8px; }
+.talk-who { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.talk-k { font: 500 11px/1.2 var(--mono, monospace); letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #586067); }
+.talk-name { font: 600 17px/1.25 var(--body, sans-serif); }
+.talk-x { flex: none; }
+.talk-hero { margin: 0; font-size: 14px; line-height: 1.4; color: var(--muted, #586067); }
+.talk-line { margin: 0; font-size: 16px; line-height: 1.45; text-wrap: pretty; }
+.talk-line.wait { color: var(--muted, #586067); }
+.talk-opts { display: flex; flex-direction: column; gap: 6px; }
+.talk-opt { text-align: left; line-height: 1.3; padding: 10px 12px; white-space: normal; }
+`);
+  // ================= trading: the hero's things for a person's, with money to even it out =================
+  // A person trades if his def has trade: { buy: share of the price he pays for the hero's things (0.6 by default),
+  //   sell: share of the price he asks for his own (1 by default), wants(t) → true, or a line why he will not take it,
+  //   says: { open, done, short, refuse } (lines; a list to pick from or (p) → line) }.
+  // openTrade(p) opens the window: the hero's things and the person's, what the hero gives and what he takes, the balance in money.
+  // A tap on a thing puts one of it in the deal, a tap on it in the deal takes it back. The deal goes through when what the hero gives
+  // is worth at least what he takes; the person pays the difference back in money as far as he has it.
+  // PEOPLE_HOOKS.traded: f(p, give, take) after a deal — the game takes off sold clothes, refreshes its panels.
+  PEOPLE_HOOKS.traded = [];
+  let DEAL = null;              // { p, give: Map(t → n), take: Map(t → n), note }
+  const tradeBuy = (p, t) => ITEM_TYPES[t].money ? 1 : Math.max(1, Math.round(ITEM_TYPES[t].price * (p.def.trade.buy ?? 0.6)));
+  const tradeSell = (p, t) => ITEM_TYPES[t].money ? 1 : Math.max(1, Math.round(ITEM_TYPES[t].price * (p.def.trade.sell ?? 1)));
+  const tradeLine = (p, key) => { const s = p.def.trade.says || {}; return lineOf(s[key], p); };
+  function dealCalc() {
+    const D = DEAL, p = D.p;
+    let give = 0, take = 0;
+    for (const [t, n] of D.give) give += tradeBuy(p, t) * n;
+    for (const [t, n] of D.take) take += tradeSell(p, t) * n;
+    const cashHero = invCount(INV.hero, MONEY) - (D.give.get(MONEY) || 0);
+    const cashHim = invCount(p.inv, MONEY);
+    const change = Math.max(0, give - take);
+    return { give, take, short: Math.max(0, take - give), change, payBack: Math.min(change, cashHim), cashHero, cashHim };
+  }
+  function openTrade(p) {
+    if (!p.def.trade) return;
+    if (TALK && TALK.p !== p) endTalk();
+    DEAL = { p, give: new Map(), take: new Map(), note: tradeLine(p, 'open'), bad: false, back: document.activeElement };
+    const el = tradeDom();
+    el.querySelector('.trade-name').textContent = p.name;
+    el.hidden = false;
+    renderTrade();
+    el.querySelector('.trade-x').focus();
+  }
+  function closeTrade() {
+    if (!DEAL) return;
+    const back = DEAL.back;
+    DEAL = null;
+    tradeDom().hidden = true;
+    if (back && back.focus && document.contains(back)) back.focus();
+  }
+  // walk up to him first, like for a talk, then open the window
+  function goTrade(p) {
+    if (TALK && TALK.p === p) { openTrade(p); return; }
+    const d = Math.hypot(hero.x - p.x, hero.z - p.z), k = 1.2 / (d || 1);
+    if (d < 2.4 || (hero.sit > 0 && d < 3)) { if (!(hero.sit > 0)) hero.tyaw = yawTo(p.x, p.z); openTrade(p); return; }
+    const spot = nearestFree(p.x + (hero.x - p.x) * k, p.z + (hero.z - p.z) * k, 1.5, NAV.hero) || [hero.x, hero.z];
+    p.attend = 3;
+    plan({ type: 'path', to: spot }, { type: 'call', fn: () => { hero.tyaw = yawTo(p.x, p.z); } }, { type: 'turned' }, { type: 'call', fn: () => { if (personHere(p)) openTrade(p); } });
+  }
+  PEOPLE_HOOKS.acts.push((p, out) => { if (p.def.trade) out.push({ label: 'Обмен', run: () => goTrade(p), order: 20 }); });
+
+  // ---------- what a tap does ----------
+  function dealPut(side, t) {
+    const D = DEAL, p = D.p, pile = side === 'give' ? D.give : D.take, inv = side === 'give' ? INV.hero : p.inv;
+    if ((pile.get(t) || 0) >= invCount(inv, t)) return;
+    if (side === 'give') {
+      const w = p.def.trade.wants ? p.def.trade.wants(t, p) : true;
+      if (w !== true) { D.note = typeof w === 'string' ? w : tradeLine(p, 'refuse') || 'Это ему не нужно.'; D.bad = true; renderTrade(); return; }
+    }
+    pile.set(t, (pile.get(t) || 0) + 1);
+    D.note = ''; D.bad = false;
+    renderTrade();
+  }
+  function dealBack(side, t) {
+    const pile = side === 'give' ? DEAL.give : DEAL.take, n = (pile.get(t) || 0) - (t === MONEY ? pile.get(t) : 1);
+    if (n > 0) pile.set(t, n); else pile.delete(t);
+    DEAL.note = ''; DEAL.bad = false;
+    renderTrade();
+  }
+  // add the missing money from the hero's pocket
+  function dealPay() {
+    const c = dealCalc(), add = Math.min(c.short, c.cashHero);
+    if (add <= 0) return;
+    DEAL.give.set(MONEY, (DEAL.give.get(MONEY) || 0) + add);
+    DEAL.note = ''; DEAL.bad = false;
+    renderTrade();
+  }
+  function dealDo() {
+    const D = DEAL, p = D.p, c = dealCalc();
+    if (c.short > 0 || (!D.give.size && !D.take.size)) return;
+    for (const [t, n] of D.give) { invTake(INV.hero, t, n); invAdd(p.inv, t, n); }
+    for (const [t, n] of D.take) { invTake(p.inv, t, n); invAdd(INV.hero, t, n); }
+    if (c.payBack > 0) { invTake(p.inv, MONEY, c.payBack); invAdd(INV.hero, MONEY, c.payBack); }
+    const give = new Map(D.give), take = new Map(D.take);
+    for (const f of PEOPLE_HOOKS.traded) f(p, give, take);
+    D.give.clear(); D.take.clear();
+    D.note = tradeLine(p, 'done') || 'По рукам.'; D.bad = false;
+    personSays(p, D.note);
+    renderTrade();
+  }
+
+  // ---------- the window ----------
+  let tradeEl = null;
+  function tradeDom() {
+    if (tradeEl) return tradeEl;
+    tradeEl = document.createElement('div');
+    tradeEl.className = 'trade-back'; tradeEl.id = 'trade'; tradeEl.hidden = true;
+    tradeEl.innerHTML = '<div class="trade" role="dialog" aria-modal="true" aria-labelledby="tradeTitle">'
+      + '<div class="trade-top"><div class="trade-who"><span class="talk-k">Обмен</span><h3 class="trade-name" id="tradeTitle"></h3></div><button type="button" class="btn trade-x">Закрыть</button></div>'
+      + '<div class="trade-cols"><section class="trade-col"><div class="trade-h"><span>У тебя</span><b data-cash="hero"></b></div><div class="trade-list" data-who="hero"></div></section>'
+      + '<section class="trade-col"><div class="trade-h"><span>У него</span><b data-cash="him"></b></div><div class="trade-list" data-who="him"></div></section></div>'
+      + '<div class="trade-cols"><section class="trade-col"><div class="trade-h"><span>Отдаёшь</span><b data-sum="give"></b></div><div class="trade-chips" data-pile="give"></div></section>'
+      + '<section class="trade-col"><div class="trade-h"><span>Берёшь</span><b data-sum="take"></b></div><div class="trade-chips" data-pile="take"></div></section></div>'
+      + '<p class="trade-say" aria-live="polite"></p>'
+      + '<div class="trade-acts"><button type="button" class="btn trade-pay">Доплатить</button><button type="button" class="btn main trade-ok">Обменять</button></div></div>';
+    document.body.append(tradeEl);
+    tradeEl.querySelector('.trade-x').addEventListener('click', closeTrade);
+    tradeEl.querySelector('.trade-pay').addEventListener('click', dealPay);
+    tradeEl.querySelector('.trade-ok').addEventListener('click', dealDo);
+    tradeEl.addEventListener('click', (e) => { if (e.target === tradeEl) closeTrade(); });
+    // in the capture phase, so Escape closes the window and not the talk behind it
+    document.addEventListener('keydown', (e) => { if (DEAL && e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); closeTrade(); } }, true);
+    return tradeEl;
+  }
+  function tradeRow(t, n, price, meta, side, off) {
+    const T = ITEM_TYPES[t], b = document.createElement('button');
+    b.type = 'button'; b.className = 'trade-item';
+    const nm = document.createElement('span'); nm.className = 'ti-name'; nm.textContent = T.name;
+    const mt = document.createElement('span'); mt.className = 'ti-meta'; mt.textContent = fmtMoney(price) + (n > 1 ? ' · ×' + n : '') + (meta ? ' · ' + meta : '');
+    b.append(itemIcon(t, 40), nm, mt);
+    b.title = T.note || T.name;
+    if (off) b.disabled = true; else b.addEventListener('click', () => dealPut(side, t));
+    return b;
+  }
+  function tradeChip(t, n, side) {
+    const T = ITEM_TYPES[t], b = document.createElement('button');
+    b.type = 'button'; b.className = 'trade-chip';
+    b.append(itemIcon(t, 24), document.createTextNode(T.money ? fmtMoney(n) : T.name + (n > 1 ? ' ×' + n : '')));
+    b.setAttribute('aria-label', 'Убрать из сделки: ' + T.name);
+    b.addEventListener('click', () => dealBack(side, t));
+    return b;
+  }
+  function renderTrade() {
+    const D = DEAL; if (!D) return;
+    const el = tradeDom(), p = D.p, c = dealCalc(), q = (s) => el.querySelector(s);
+    q('[data-cash="hero"]').textContent = fmtMoney(invCount(INV.hero, MONEY));
+    q('[data-cash="him"]').textContent = fmtMoney(invCount(p.inv, MONEY));
+    for (const side of ['give', 'take']) {
+      const list = q(side === 'give' ? '[data-who="hero"]' : '[data-who="him"]'), inv = side === 'give' ? INV.hero : p.inv, pile = side === 'give' ? D.give : D.take;
+      list.textContent = '';
+      for (const s of invSorted(inv)) {
+        if (ITEM_TYPES[s.t].money) continue;
+        const left = s.n - (pile.get(s.t) || 0);
+        if (left <= 0) continue;
+        const worn = side === 'give' && ITEM_TYPES[s.t].gear && equip[ITEM_TYPES[s.t].gear.slot] === s.t;
+        const w = side === 'give' && p.def.trade.wants ? p.def.trade.wants(s.t, p) : true;
+        list.append(tradeRow(s.t, left, side === 'give' ? tradeBuy(p, s.t) : tradeSell(p, s.t), w !== true ? 'не возьмёт' : worn ? (ITEM_TYPES[s.t].gear.slot === 'hands' ? 'в руках' : 'надето') : '', side, false));
+      }
+      if (!list.children.length) { const e = document.createElement('p'); e.className = 'trade-empty'; e.textContent = side === 'give' ? 'Отдать больше нечего.' : 'Больше у него ничего нет.'; list.append(e); }
+      const chips = q('[data-pile="' + side + '"]');
+      chips.textContent = '';
+      for (const [t, n] of pile) chips.append(tradeChip(t, n, side));
+      if (!pile.size) { const e = document.createElement('span'); e.className = 'trade-empty'; e.textContent = 'пусто'; chips.append(e); }
+    }
+    q('[data-sum="give"]').textContent = fmtMoney(c.give);
+    q('[data-sum="take"]').textContent = fmtMoney(c.take);
+    let say = D.note, bad = D.bad;
+    if (!say) {
+      if (!D.give.size && !D.take.size) say = 'Нажми на вещь, чтобы положить её в сделку. Нажми в сделке — чтобы убрать.';
+      else if (c.short > 0) { say = 'Не хватает ' + fmtMoney(c.short) + (c.cashHero < c.short ? ', а свободных денег у тебя ' + fmtMoney(c.cashHero) + '.' : '. Добавь вещей или доплати.'); bad = true; }
+      else if (c.change > 0) say = c.payBack < c.change ? 'У него всего ' + fmtMoney(c.cashHim) + ': вернёт ' + fmtMoney(c.payBack) + ', остальное пропадёт.' : 'Он вернёт тебе ' + fmtMoney(c.change) + '.';
+      else say = 'Ровно. Можно меняться.';
+    }
+    const sayEl = q('.trade-say'); sayEl.textContent = say; sayEl.classList.toggle('bad', !!bad);
+    const pay = q('.trade-pay'); pay.disabled = !(c.short > 0 && c.cashHero > 0);
+    pay.textContent = c.short > 0 && c.cashHero > 0 ? 'Доплатить ' + fmtMoney(Math.min(c.short, c.cashHero)) : 'Доплатить';
+    q('.trade-ok').disabled = c.short > 0 || (!D.give.size && !D.take.size);
+  }
+  hook(GAME.update, () => { if (DEAL && !personHere(DEAL.p)) closeTrade(); }, 36);
+  peopleCss('css-trade', `
+.trade-back { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(10, 12, 14, .55);
+  padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
+.trade-back[hidden] { display: none; }
+.trade { width: min(760px, 100%); max-height: 100%; overflow: auto; overscroll-behavior: contain; background: var(--bg, #eceeec); color: var(--ink, #1b1f22);
+  border: 1px solid var(--line, #c6ccc9); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; font-family: var(--body, sans-serif); }
+.trade-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.trade-who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.trade-name { margin: 0; font: 600 18px/1.25 var(--body, sans-serif); }
+.trade-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.trade-col { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.trade-h { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font: 500 11px/1.2 var(--mono, monospace); letter-spacing: .05em; text-transform: uppercase; color: var(--muted, #586067); }
+.trade-h b { font: 600 13px/1.2 var(--mono, monospace); letter-spacing: 0; text-transform: none; color: var(--ink, #1b1f22); }
+.trade-list { display: flex; flex-direction: column; gap: 4px; max-height: min(300px, 38vh); overflow: auto; overscroll-behavior: contain; }
+.trade-item { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 8px; align-items: center; text-align: left; padding: 3px 8px 3px 3px;
+  border: 1px solid var(--line, #c6ccc9); border-radius: 8px; background: var(--surface, #fff); color: var(--ink, #1b1f22); cursor: pointer; font: inherit; }
+.trade-item .icon { grid-row: 1 / 3; width: 40px; height: 40px; image-rendering: pixelated; }
+.ti-name { font-size: 13.5px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-meta { font-size: 12px; line-height: 1.25; color: var(--muted, #586067); }
+.trade-item:disabled { opacity: .45; cursor: default; }
+.trade-item:focus-visible, .trade-chip:focus-visible { outline: 2px solid var(--accent, #b8691c); outline-offset: 2px; }
+.trade-chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 40px; padding: 5px; border: 1px dashed var(--line, #c6ccc9); border-radius: 8px; align-content: flex-start; }
+.trade-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px 1px 2px; border: 1px solid var(--line, #c6ccc9); border-radius: 999px;
+  background: var(--surface, #fff); color: var(--ink, #1b1f22); font: 500 12.5px/1 var(--body, sans-serif); cursor: pointer; max-width: 100%; }
+.trade-chip .icon { width: 24px; height: 24px; image-rendering: pixelated; flex: none; }
+.trade-empty { margin: 0; align-self: center; font-size: 12.5px; color: var(--muted, #586067); }
+.trade-say { margin: 0; font-size: 14.5px; line-height: 1.4; min-height: 1.4em; }
+.trade-say.bad { color: var(--accent, #b8691c); }
+.trade-acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .trade { padding: 12px 10px; gap: 10px; }
+  .trade-item { grid-template-columns: 32px minmax(0, 1fr); column-gap: 6px; padding-right: 6px; }
+  .trade-item .icon { width: 32px; height: 32px; }
+  .ti-name { white-space: normal; font-size: 13px; }
+  .ti-meta { font-size: 11.5px; }
+}
+`);
   // ================= the test range's own things: targets, a watchtower, a container, barrels, concrete blocks, a sign, a guard booth =================
   // Everything else on the range (houses, trees, grass, cars, the lamp post, benches) comes from the engine's library (engine/src/props),
   // the walking suits from engine/src/machine. Local frame: origin on the ground at the anchor, +z is the front.
@@ -6284,7 +7372,7 @@ void main(){
     },
     machines: [{ n: 19, kind: 'ibk3', at: [9.6, 14.2], yaw: Math.PI / 2 }, { n: 20, kind: 'b32', at: [13.2, 16.8], yaw: Math.PI / 4 }],
     spawns: {
-      start: { at: [14.6, 19.2], yaw: -2.5 },
+      start: { at: [15.2, 19.0], yaw: -2.5 },
       fromEdge: { at: [19.0, 27.4], yaw: Math.PI, walk: [19.0, 24.0] }
     },
     exits: [{ to: 'edge', rect: [17.0, 27.2, 21.0, 28], go: [19.0, 27.6], arrive: 'fromRange' }],
@@ -6340,16 +7428,95 @@ void main(){
   };
   LOCATIONS.range = RANGE;
   LOCATIONS.edge = EDGE;
+  // ================= the range's things: what the hero carries, what the warrant officer trades, their little models for icons =================
+  // Item types are the engine's (engine/src/people/items.js); each has a price in roubles and a small 3D model the engine draws as an icon.
+  const thingMat = (hex, o) => mat(hex, Object.assign({ noise: 0.06, grain: 50 }, o || {}));
+  const THING_M = {
+    note: thingMat('#a7b28c', { noise: 0.12, grain: 90 }), note2: thingMat('#c4b07c', { noise: 0.12, grain: 90 }),
+    orange: thingMat('#d4692a', { spec: 0.4, gloss: 16 }), white: thingMat('#efe9df'),
+    tin: thingMat('#b9bcbe', { pat: 6, b: '#5f6f3b', p: [0.014, 0.062, 0, 0], spec: 0.9, gloss: 10 }), lid: thingMat('#9a9da0', { spec: 0.9, gloss: 10 }),
+    filter: thingMat('#5c5f52', { pat: 23, p: [70, 0, 0, 0], spec: 0.3, gloss: 14 }), dark: thingMat('#2b2c2e', { spec: 0.4, gloss: 16 }),
+    cell: thingMat('#3a3b3d', { pat: 6, b: '#c08a3a', p: [0.038, 0.06, 0, 0], spec: 0.5, gloss: 14 }),
+    torch: thingMat('#3c4a3a', { pat: 23, p: [40, 0, 0, 0], spec: 0.4, gloss: 14 }), lens: flat('#f6e7a6', 4),
+    brass: thingMat('#c9a24a', { spec: 1, gloss: 8 }), brassDark: thingMat('#8f6f2e', { spec: 0.8, gloss: 8 }),
+    olive: thingMat('#4e5a3a', { pat: 23, p: [60, 0, 0, 0], spec: 0.3, gloss: 14 }), steel: thingMat('#6a6d70', { spec: 0.8, gloss: 10 })
+  };
+  // a prop lying three-quarters to the camera: the yaw that turns its +z face to the viewer
+  const FACE_CAM = Math.PI / 4;
+  const ic = (key, fn, m, model) => ({ mesh: getMesh('thing:' + key, fn), model: model || ID4, mat: m });
+
+  itemType(MONEY, { name: 'Деньги', note: 'Рубли.', price: 1, money: true,
+    icon: () => propIcon([ic('note', () => box(0.066, 0.003, 0.032), THING_M.note, M(ry(FACE_CAM + 0.5), tr(0, 0.003, 0))), ic('note', () => box(0.066, 0.003, 0.032), THING_M.note2, M(tr(0.004, 0.009, 0.004), ry(FACE_CAM - 0.1))),
+      ic('note', () => box(0.066, 0.003, 0.032), THING_M.note, M(tr(-0.004, 0.015, -0.003), ry(FACE_CAM - 0.45)))], 2.5, [0, 0.01, 0]) });
+  // what can be worn: the same pieces the hero's model is built from, alone
+  const gearFigure = (eq, groups, yaw, zoom, at) => () => figureIcon(buildHero(eq), groups, yaw, zoom, at);
+  itemType('jacket', { name: 'Кожаная куртка', note: 'Тёплая, броня +1.', price: 180, stack: false, gear: { slot: 'body' },
+    icon: gearFigure({ body: 'jacket', head: null }, ['jacket'], Math.PI / 4, 0.346, (B) => xf(B.chest, [0, 0.04, 0])) });
+  itemType('armor', { name: 'Силовая броня', note: 'Броня +8, скорость −15%.', price: 1200, stack: false, gear: { slot: 'body' },
+    icon: gearFigure({ body: 'armor', head: null }, ['armorTop'], Math.PI / 4, 0.336, (B) => xf(B.chest, [0, 0.1, 0])) });
+  itemType('helmet', { name: 'Шлем', note: 'Броня +3. В нём не покуришь.', price: 450, stack: false, gear: { slot: 'head' },
+    icon: gearFigure({ body: 'jacket', head: 'helmet' }, ['helmet'], 0, 0.71, (B) => xf(B.head, [0, HC[1] - 0.01, 0])) });
+  itemType('rifle', { name: 'Винтовка', note: 'Урон 12, очередь по три.', price: 900, stack: false, gear: { slot: 'hands' },
+    icon: () => { const R = frameY([0, 1, 0], RV); return propIcon(RIFLE.map((r) => ({ mesh: r.mesh, model: mul(R, r.off), mat: r.mat })), 0.437, xf(R, [0, 0.05, 0.17])); } });
+  // what gets used up
+  itemType('cigs', { name: 'Сигареты', note: '«Альдебаран», без фильтра. Одна — на один перекур.', price: 6, unit: 'шт.',
+    icon: () => propIcon([{ mesh: PROPS.pack.mesh, model: frameY([0, 1, 0], nrm([TOCAM[0], 0, TOCAM[2]])), mat: PROPS.pack.mat }], 3.46) });
+  itemType('drink', { name: 'Энергетик «ATOM»', note: 'Бодрость +5. Банка — на один раз.', price: 60,
+    icon: () => propIcon([{ mesh: PROPS.can.mesh, model: ry(0.3), mat: PROPS.can.mat }], 2.0, [0, 0.083, 0]) });
+  itemType('grenade', { name: 'Учебная граната', note: 'Без заряда: пыль и грохот.', price: 40,
+    icon: () => propIcon([ic('gren', () => ellipsoid(0.04, 0.055, 0.04, { seg: 10, rings: 6 }), THING_M.olive), ic('grenFuse', () => cyl(0.012, 0.012, 0.03, 8), THING_M.steel, tr(0, 0.05, 0)),
+      ic('grenLever', () => box(0.007, 0.032, 0.005), THING_M.steel, M(tr(0.02, 0.05, 0.03), rz(-0.25))), ic('grenRing', () => torus(0.012, 0.0025, 12, 4), THING_M.steel, M(tr(-0.02, 0.085, 0), rz(1.2)))], 3.0, [0, 0.015, 0]) });
+  // what a warrant officer has in his pack
+  itemType('medkit', { name: 'Аптечка', note: 'Оранжевая коробка, бинт и шприц-тюбик.', price: 150,
+    icon: () => propIcon([ic('kit', () => box(0.045, 0.052, 0.013), THING_M.orange, ry(FACE_CAM)), ic('kitX1', () => box(0.024, 0.007, 0.002), THING_M.white, M(ry(FACE_CAM), tr(0, 0, 0.014))),
+      ic('kitX2', () => box(0.007, 0.024, 0.002), THING_M.white, M(ry(FACE_CAM), tr(0, 0, 0.014)))], 3.4) });
+  itemType('stew', { name: 'Тушёнка', note: 'Армейская, говяжья.', price: 90,
+    icon: () => propIcon([ic('tin', () => cyl(0.05, 0.05, 0.075, 16), THING_M.tin), ic('tinLid', () => cyl(0.051, 0.051, 0.006, 16), THING_M.lid, tr(0, 0.075, 0))], 2.6, [0, 0.04, 0]) });
+  itemType('filter', { name: 'Фильтр к противогазу', note: 'Хватает на шесть часов.', price: 70,
+    icon: () => propIcon([ic('filt', () => cyl(0.045, 0.045, 0.055, 16), THING_M.filter), ic('filtNeck', () => cyl(0.02, 0.02, 0.02, 10), THING_M.dark, tr(0, 0.055, 0))], 2.8, [0, 0.035, 0]) });
+  itemType('battery', { name: 'Батарейки', note: 'Пара круглых, для фонаря и рации.', price: 25,
+    icon: () => propIcon([ic('cell', () => cyl(0.014, 0.014, 0.06, 10), THING_M.cell, tr(-0.017, 0, 0)), ic('cell', () => cyl(0.014, 0.014, 0.06, 10), THING_M.cell, M(tr(0.017, 0, 0.004), ry(1)))], 3.6, [0, 0.03, 0]) });
+  itemType('torch', { name: 'Фонарик', note: 'Армейский, с зелёным корпусом.', price: 120,
+    icon: () => { const R = M(ry(FACE_CAM + 0.9), rz(-1.3)); return propIcon([ic('torchBody', () => cyl(0.016, 0.016, 0.1, 10), THING_M.torch, R), ic('torchHead', () => cyl(0.019, 0.025, 0.03, 12), THING_M.dark, M(R, tr(0, 0.1, 0))), ic('torchLens', () => cyl(0.021, 0.021, 0.004, 12), THING_M.lens, M(R, tr(0, 0.13, 0)))], 2.5, xf(R, [0, 0.065, 0])); } });
+  // what turns up in the weeds
+  itemType('casing', { name: 'Стреляная гильза', note: 'Позеленела. Кому-то нужна латунь.', price: 3,
+    icon: () => propIcon([ic('case', () => cyl(0.0058, 0.0058, 0.039, 10), THING_M.brass, M(tr(-0.006, 0.006, -0.012), ry(FACE_CAM + 0.5), rx(Math.PI / 2))),
+      ic('case', () => cyl(0.0058, 0.0058, 0.039, 10), THING_M.brassDark, M(tr(0.008, 0.006, -0.016), ry(FACE_CAM - 0.6), rx(Math.PI / 2)))], 6.5, [0.012, 0.006, -0.002]) });
+  itemType('mag', { name: 'Пустой магазин', note: 'Пружина ещё живая.', price: 30,
+    icon: () => propIcon([ic('mag', () => box(0.012, 0.062, 0.034), THING_M.dark, M(ry(FACE_CAM + Math.PI / 2), rx(0.25)))], 3.2, [0, 0, 0]) });
+  itemType('button', { name: 'Пуговица со звездой', note: 'Латунная, с шинели.', price: 15,
+    icon: () => propIcon([ic('btn', () => cyl(0.011, 0.011, 0.003, 14), THING_M.brass, rx(Math.PI / 2 - 0.5)), ic('btnStar', () => cyl(0.005, 0.005, 0.0015, 5), THING_M.brassDark, M(rx(Math.PI / 2 - 0.5), tr(0, 0.003, 0)))], 12, [0, 0, 0]) });
+  itemType('scrap', { name: 'Обрывок мишени', note: 'С дыркой в «десятке».', price: 2,
+    icon: () => propIcon([ic('scrap', () => box(0.2, 0.25, 0.002), decal('tgtRings'), M(ry(FACE_CAM), rz(0.15)))], 0.95, [0, -0.02, 0]) });
+
+  // the hero starts with this; everything else he finds, buys or swaps
+  INV.hero = [{ t: MONEY, n: 150 }, { t: 'jacket', n: 1 }, { t: 'armor', n: 1 }, { t: 'helmet', n: 1 }, { t: 'rifle', n: 1 }, { t: 'cigs', n: 12 }, { t: 'drink', n: 2 }, { t: 'grenade', n: 3 }];
+  const hasThing = (t) => invCount(INV.hero, t) > 0;
+  // a deal took away something he was wearing: off it comes
+  function gearCheck() {
+    let changed = false;
+    for (const slot of ['body', 'head', 'hands']) if (equip[slot] && !hasThing(equip[slot])) { equip[slot] = null; changed = true; }
+    if (!equip.hands) hero.shoot.on = false;
+    if (changed) { HERO = buildHero(equip); gearVer++; lastKey = ''; }
+    return changed;
+  }
   // ================= what the hero does on the range: targets, the tower, a training grenade, gear, and what each thing offers =================
   TEXTS.nothingNear = 'Подойди к чему-нибудь или нажми на предмет. Нажатие на землю — просто идти.';
 
-  // ---------- gear: everything is on the shelf, nothing runs out here ----------
+  // ---------- gear: what he has in his pack (things.js) he can put on; cigarettes, cans and grenades get used up ----------
   Object.assign(equip, { body: 'jacket', head: null, hands: 'rifle' });
   const GEAR = [
     { id: 'jacket', slot: 'body', label: 'Куртка' }, { id: 'armor', slot: 'body', label: 'Броня' },
     { id: 'helmet', slot: 'head', label: 'Шлем' }, { id: 'rifle', slot: 'hands', label: 'Винтовка' }
   ];
+  const OUT_OF = {
+    cigs: 'Сигареты кончились. У прапорщика есть: в шлеме ему всё равно не покурить.',
+    drink: 'Банок больше нет. Спроси у прапорщика Сомова.',
+    grenade: 'Учебные гранаты кончились. Ещё есть у прапорщика Сомова.'
+  };
+  const useUp = (t) => { if (invTake(INV.hero, t, 1)) return true; toast(OUT_OF[t]); return false; };
   function toggleGear(g) {
+    if (!hasThing(g.id)) { toast('Этого у тебя нет — продал или обменял.'); return; }
     if (hero.inside || (hero.act && ACT[hero.act.kind].vehicle)) { toast('В костюме не переоденешься — места нет.'); return; }
     if (g.id === 'armor' && equip.body !== 'armor' && busyAct()) { toast('Броня сюда не влезет. Сначала слезь.'); return; }
     equip[g.slot] = equip[g.slot] === g.id ? null : g.id;
@@ -6362,13 +7529,13 @@ void main(){
     if (inMachine()) return;
     if (equip.head === 'helmet') { toast('В шлеме не покуришь. Сними шлем.'); return; }
     if (busyAct()) { toast(TEXTS.handsBusy); return; }
-    if (!hero.smoke.on) beginSmoke();
+    if (!hero.smoke.on && useUp('cigs')) beginSmoke();
   }
   function startDrink() {
     if (inMachine()) return;
     if (equip.head === 'helmet') { toast('Через шлем не попьёшь. Сними шлем.'); return; }
     if (busyAct()) { toast(TEXTS.handsBusy); return; }
-    if (!hero.drink.on) beginDrink();
+    if (!hero.drink.on && useUp('drink')) beginDrink();
   }
 
   // ---------- targets: each plate falls back when hit and is raised again by hand ----------
@@ -6418,7 +7585,7 @@ void main(){
   function doThrow() {
     if (inMachine()) return;
     if (busyAct() || hero.sit > 0 || hero.sitTarget) { toast(TEXTS.handsBusy); return; }
-    if (hero.thr.on) return;
+    if (hero.thr.on || !useUp('grenade')) return;
     // at the nearest standing target if there is one in front, otherwise eight metres ahead
     const t = nearestTarget(standingTargets());
     const aim = t && Math.hypot(t.dyn.target.pos[0] - hero.x, t.dyn.target.pos[2] - hero.z) < 16 ? [t.dyn.target.pos[0], t.dyn.target.pos[2] + 1.2] : [hero.x + Math.sin(hero.yaw) * 8, hero.z + Math.cos(hero.yaw) * 8];
@@ -6471,13 +7638,19 @@ void main(){
   const knock = (sp, to, text) => [...goSpot(sp), { type: 'reach', to, cb: () => toast(typeof text === 'function' ? text() : text) }, { type: 'waitReach' }];
   const GUARD = ['Из окна: «Пропуск покажи… А, это ты. Проходи».', 'Охранник не отрывается от кроссворда: «Слово из пяти букв — броня?»', 'В будке гудит чайник. Охранник кивает на костюмы: «Только не урони».'];
   let guardI = -1;
-  const FINDS_R = ['Стреляная гильза, позеленевшая.', 'Пустая обойма. Пружина ещё живая.', 'Пуговица со звездой.', 'Только репейник и сухая полынь.', 'Обрывок мишени с дыркой в «десятке».'];
+  // what turns up in the weeds goes into the pack (things.js); the warrant officer buys some of it
+  const FINDS_R = [['casing', 'Стреляная гильза, позеленевшая.'], ['mag', 'Пустой магазин. Пружина ещё живая.'], ['button', 'Пуговица со звездой.'], [null, 'Только репейник и сухая полынь.'], ['scrap', 'Обрывок мишени с дыркой в «десятке».']];
   let findI = 0;
   function goSearchR(inst) {
     if (inst.dyn.searched) { toast(TEXTS.searched); return; }
     const cx = inst.def.at[0], cz = inst.def.at[1], dx = hero.x - cx, dz = hero.z - cz, dl = Math.hypot(dx, dz) || 1;
     plan({ type: 'path', to: [cx + dx / dl * inst.def.rx * 0.85, cz + dz / dl * inst.def.rz * 0.85] }, { type: 'call', fn: () => { hero.tyaw = yawTo(cx, cz); } }, { type: 'turned' },
-      { type: 'act', kind: 'kneel', inst, opts: { cb: () => { inst.dyn.searched = true; toast(FINDS_R[findI++ % FINDS_R.length]); } } });
+      { type: 'act', kind: 'kneel', inst, opts: { cb: () => {
+        inst.dyn.searched = true;
+        const [t, text] = FINDS_R[findI++ % FINDS_R.length];
+        if (t) invAdd(INV.hero, t, 1);
+        toast(t ? text + ' В рюкзак.' : text);
+      } } });
   }
   const onTowerDeck = (t) => Math.abs(hero.y - t.built.top[1]) < 0.2 && Math.hypot(hero.x - xf(t.M0, t.built.top)[0], hero.z - xf(t.M0, t.built.top)[2]) < 1.6;
   Object.assign(USE, {
@@ -6505,6 +7678,68 @@ void main(){
     entrance: { name: (i) => 'Подъезд ' + (i.def.idx + 1), note: 'Общежитие испытателей.', acts: (i) => [{ label: 'Позвонить в домофон', run: () => plan(...knock(spotOf(i, 'door'), [-0.2, 0.1, 0.46], () => MAP.intercom || 'Никто не открывает.')) }] },
     grass: { name: 'Бурьян', note: 'Тут иногда находят гильзы.', acts: (i) => [{ label: i.dyn.searched ? 'Тут уже пусто' : 'Обыскать', run: () => goSearchR(i), off: !!i.dyn.searched }] }
   });
+  // ================= the second person on the range: warrant officer Somov, testing a sealed protective kit =================
+  // He is the engine's person (engine/src/people): stands by the walking suits, notices the hero, talks, follows, trades.
+  // His kit is the engine's КЗУ look, built after the player's sketch (camouflage, a sealed helmet with a smoked visor, a respirator,
+  // a hose to the life-support box on his back, a radio with a whip antenna).
+  const modeOf = (p) => p.mode === 'talk' ? p.prevMode : p.mode;
+  const SOMOV = addPerson({
+    id: 'somov', name: 'Прапорщик Сомов', short: 'прапорщик Сомов', look: KZU_LOOK, loc: 'range', at: [15.4, 16.9], yaw: -0.1,
+    note: 'Испытывает защитный комплект. Говорит через динамик на груди.',
+    dialog: 'somov',
+    inv: [{ t: MONEY, n: 400 }, { t: 'medkit', n: 2 }, { t: 'stew', n: 3 }, { t: 'filter', n: 4 }, { t: 'battery', n: 6 }, { t: 'grenade', n: 6 }, { t: 'torch', n: 1 }, { t: 'cigs', n: 20 }, { t: 'drink', n: 3 }],
+    trade: {
+      buy: 0.6, sell: 1,
+      wants: (t) => t === 'armor' ? 'Броню не возьму: я в своём-то комплекте еле хожу.' : t === 'scrap' ? 'Бумажки не беру, у меня своих хватает.' : true,
+      says: {
+        open: 'Только по-честному. Прапорщик своё отдаёт со скрипом.',
+        done: ['По рукам.', 'Приятно иметь дело.', 'Забирай. Я не видел, ты не видел.']
+      }
+    },
+    barks: {
+      hello: (p) => (p.greeted = (p.greeted || 0) + 1) === 1 ? 'Здравия желаю.' : ['Бу-бу… Тьфу ты, динамик. Здравия желаю!', 'А, это снова ты.', 'Здравия желаю.'][p.greeted % 3],
+      follow: ['Иду.', 'Есть, за тобой.', 'Веди.'],
+      wait: ['Жду здесь.', 'Есть ждать.'],
+      home: ['Пошёл на место.', 'Есть на место.'],
+      sit: ['Перекур? Я рядом посижу. Курить всё равно не могу.', 'Посидим.'],
+      arrive: (p, loc) => loc.id === 'edge' ? 'Опушка. Тишина, листья — фильтр отдыхает.' : 'Полигон. Родные бочки.',
+      idle: ['Шланг давит на плечо. Терпимо.', 'В шлеме слышно, как сам дышишь.', 'Фильтр сипит — значит, работает.', 'Жарко в нём, как в бане.']
+    }
+  });
+  // what the hero can ask him, at almost any point of the talk
+  const somovHub = (p) => [
+    { say: 'Как тебе в этом комплекте?', to: 'suit', when: () => !talkSeen(p, 'suit') },
+    { say: 'Что тут за полигон?', to: 'range', when: () => !talkSeen(p, 'range') },
+    { say: 'Как тебя в нём кормят?', to: 'food', when: () => talkSeen(p, 'suit') && !talkSeen(p, 'food') },
+    { say: 'Что у тебя есть на обмен?', run: openTrade, to: 'shop' },
+    { say: 'Пойдём со мной.', run: personFollow, to: 'follow', when: () => modeOf(p) !== 'follow' },
+    { say: 'Подожди здесь.', run: personWait, to: 'wait', when: () => modeOf(p) === 'follow' },
+    { say: 'Ступай на своё место.', run: personHome, to: 'home', when: () => !atHome(p) && modeOf(p) !== 'home' },
+    { say: 'Бывай.' }
+  ];
+  DIALOGS.somov = {
+    start: (p) => talkSeen(p, 'hello') ? 'again' : 'hello',
+    nodes: {
+      hello: {
+        say: '«Бу-бу… бу-бу-бу!» Он стучит по коробке на груди, в шлеме щёлкает динамик. — Так слышно? Прапорщик Сомов. Испытываю защитный комплект, третьи сутки не снимаю.',
+        opts: (p) => [{ say: 'Третьи сутки? И как оно?', to: 'suit' }, ...somovHub(p).filter((o) => o.to !== 'suit')]
+      },
+      again: { say: ['Слушаю.', 'Чего хотел?', 'Снова ты. Говори, только громко — в шлеме плохо слышно.'], opts: somovHub },
+      suit: {
+        say: 'Жарко, как в бане. Зато ни пыль, ни газ не берут. Фильтры меняю каждые шесть часов. Запасные есть — могу уступить.',
+        opts: (p) => [{ say: 'А стекло выдержит?', to: 'glass', when: () => !talkSeen(p, 'glass') }, ...somovHub(p)]
+      },
+      glass: { say: 'Осколок с десяти метров держит. Проверяли на мне, между прочим. Я расписался, что не возражаю.', opts: somovHub },
+      range: { say: 'Седьмой испытательный. Гоняют шагающие костюмы. ИБК-3 старый, надёжный, как утюг. А «тридцать второй» — экспериментальный, у него вся морда открывается. Полезешь — не урони, мне за него отвечать.', opts: somovHub },
+      food: { say: 'Через трубку. Сегодня давали борщ. Через фильтр он, правда, на вкус как фильтр.', opts: somovHub },
+      shop: { say: 'Смотри, выбирай. Что ещё?', opts: somovHub },
+      follow: { say: ['Мне всё равно положено ходить — проверять комплект на марше. Веди.', 'Есть. Я за тобой.'], opts: [{ say: 'Тогда за мной.' }] },
+      wait: { say: 'Жду здесь. Только недолго: фильтр на шесть часов.', opts: [{ say: 'Я скоро.' }] },
+      home: { say: 'Есть вернуться на место. Если что — я у костюмов.', opts: [{ say: 'Бывай.' }] }
+    }
+  };
+  // a deal: clothes he sold come off, the panels redraw
+  PEOPLE_HOOKS.traded.push(() => { if (gearCheck()) sparkleAround(); });
   // ================= the range's page: quick actions, gear, the checklist of engine features, boot =================
   const aShoot = $('aShoot'), aSmoke = $('aSmoke'), aDrink = $('aDrink'), aPunch = $('aPunch'), aThrow = $('aThrow');
   aShoot.addEventListener('click', doShoot);
@@ -6512,22 +7747,40 @@ void main(){
   aDrink.addEventListener('click', () => { if (hero.drink.on) hero.drink.on = false; else startDrink(); });
   aPunch.addEventListener('click', doPunch);
   aThrow.addEventListener('click', doThrow);
-  const gearEl = $('gear');
-  for (const g of GEAR) {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'btn'; b.textContent = g.label; b.dataset.id = g.id;
-    b.addEventListener('click', () => toggleGear(g));
-    gearEl.append(b);
-  }
+  // ---------- the hero's things: a tap puts on or takes off, lights a cigarette, opens a can, throws a grenade ----------
+  const worn = (t) => equip.body === t || equip.head === t || equip.hands === t;
+  const invEl = $('inv'), cashEl = $('cash');
+  const invPanel = invGrid(invEl, {
+    inv: () => INV.hero,
+    hide: (t) => t === MONEY,
+    state: (t, n) => {
+      const T = ITEM_TYPES[t];
+      if (T.gear) return worn(t) ? (t === 'rifle' ? 'в руках' : 'надето') : 'в рюкзаке';
+      if (t === 'cigs') return hero.smoke.on ? 'куришь · ' + n + ' шт.' : n + ' шт.';
+      if (t === 'drink') return hero.drink.on ? 'пьёшь · ×' + n : '×' + n;
+      return (n > 1 ? '×' + n + ' · ' : '') + fmtMoney(T.price);
+    },
+    pressed: (t) => worn(t) || (t === 'cigs' && hero.smoke.on) || (t === 'drink' && hero.drink.on),
+    tap: (t) => {
+      const g = GEAR.find((x) => x.id === t);
+      if (g) toggleGear(g);
+      else if (t === 'cigs') { if (hero.smoke.on) hero.smoke.on = false; else startSmoke(); }
+      else if (t === 'drink') { if (hero.drink.on) hero.drink.on = false; else startDrink(); }
+      else if (t === 'grenade') doThrow();
+      else toast(ITEM_TYPES[t].name + '. ' + ITEM_TYPES[t].note);
+    }
+  });
   let pageKey = '';
   hook(GAME.frame, () => {
-    const key = '' + hero.smoke.on + hero.drink.on + equip.body + equip.head + equip.hands;
+    const key = '' + hero.smoke.on + hero.drink.on + equip.body + equip.head + equip.hands + '|' + invVer;
     if (key === pageKey) return;
     pageKey = key;
     aSmoke.textContent = hero.smoke.on ? 'Потушить' : 'Закурить'; aSmoke.setAttribute('aria-pressed', String(hero.smoke.on));
-    aDrink.textContent = hero.drink.on ? 'Убрать воду' : 'Попить'; aDrink.setAttribute('aria-pressed', String(hero.drink.on));
+    aDrink.textContent = hero.drink.on ? 'Убрать банку' : 'Попить'; aDrink.setAttribute('aria-pressed', String(hero.drink.on));
     aShoot.disabled = equip.hands !== 'rifle';
-    for (const b of gearEl.children) b.setAttribute('aria-pressed', String(equip.body === b.dataset.id || equip.head === b.dataset.id || equip.hands === b.dataset.id));
+    aThrow.textContent = 'Граната · ' + invCount(INV.hero, 'grenade');
+    if (cashEl) cashEl.textContent = fmtMoney(invCount(INV.hero, MONEY));
+    invPanel.refresh(true);
   });
 
   // ---------- the checklist: every feature of the engine and a button that shows it ----------
@@ -6535,6 +7788,11 @@ void main(){
   function inRange(f) { return () => { if (MAP.id !== 'range') { toast('Это на полигоне — вернись через ворота.'); goToLocation('range'); return; } f(); }; }
   function inEdge(f) { return () => { if (MAP.id !== 'edge') { goToLocation('edge'); toast('Иду на опушку — это за воротами.'); return; } f(); }; }
   const firstOf = (t) => byType(t)[0];
+  // the warrant officer may be in the other location: then the hero goes there first
+  function somovGo(f) {
+    if (SOMOV.loc !== MAP.id) { toast('Прапорщик Сомов сейчас не здесь — иду к нему.'); goToLocation(SOMOV.loc); return; }
+    f();
+  }
   const machineOf = (kind) => INST.find((i) => i.machine && i.machine.kind === kind);
   const FEATURES = [
     { t: 'Свет и тени', d: 'Солнце рисует настоящие тени на земле, стенах и герое; листва пропускает свет пятнами.', go: () => { dayGoto(14); setView('far'); } },
@@ -6550,7 +7808,11 @@ void main(){
     { t: 'Обыскать бурьян', d: 'Герой опускается на колено и шарит в траве.', go: () => { const g = byType('grass').find((i) => !i.dyn.searched); if (g) doDefault(g); else toast('Бурьян здесь уже обыскан.'); } },
     { t: 'Ветер, листва, трава', d: 'Кроны качаются волной, травинки гнутся, жёлтые листья падают и ложатся на землю.', go: inEdge(() => { setView('near'); walkTo(4.6, 10.2); }) },
     { t: 'Переход между локациями', d: 'Дорога за ворота ведёт на опушку и обратно; каждая локация помнит, что в ней оставили.', go: () => goToLocation(MAP.id === 'range' ? 'edge' : 'range') },
-    { t: 'Снаряжение', d: 'Куртка, броня, шлем, винтовка — модель героя собирается заново. В броне медленнее.', go: () => toggleGear(GEAR[1]) },
+    { t: 'Второй человек', d: 'Прапорщик Сомов в защитном комплекте по эскизу игрока: замечает героя, поворачивает к нему голову, здоровается, оглядывается.', go: () => somovGo(() => { setView('near'); plan({ type: 'path', to: [clamp(SOMOV.x + 0.5, 1, GW - 1), clamp(SOMOV.z + 1.9, 1, GH - 1)] }, { type: 'call', fn: () => { hero.tyaw = yawTo(SOMOV.x, SOMOV.z); } }); }) },
+    { t: 'Разговор', d: 'Герой подходит, оба встают лицом друг к другу; в панели — его реплики и твои ответы. Пока говорит, кивает и жестикулирует.', go: () => somovGo(() => talkTo(SOMOV)) },
+    { t: 'Спутник', d: '«Идём со мной»: держится в паре шагов, отстав, догоняет бегом, садится рядом на лавочку, переходит с героем на опушку и обратно.', go: () => somovGo(() => { personFollow(SOMOV); const b = MAP.id === 'range' ? firstOf('bench') : null; if (b) goSit(b); }) },
+    { t: 'Обмен и торговля', d: 'Свои вещи на его, разница — рублями. Сигареты, банки и гранаты тратятся, находки из бурьяна можно продать.', go: () => somovGo(() => goTrade(SOMOV)) },
+    { t: 'Снаряжение', d: 'Куртка, броня, шлем, винтовка — модель героя собирается заново. В броне медленнее. Проданное снимается.', go: () => toggleGear(GEAR[1]) },
     { t: 'Вся локация сверху', d: 'Обзор целиком: видно, как собраны земля, дома и деревья.', go: () => setView('all') },
     { t: '3D без пикселей', d: 'Та же сцена до перевода в пиксель-арт: плавный свет и настоящая геометрия.', go: () => { const c = $('rawChk'); c.checked = !c.checked; raw = c.checked; lastKey = ''; } }
   ];
@@ -6568,11 +7830,19 @@ void main(){
   // ---------- boot ----------
   // what survives a page update for someone who has the range open: where the hero stood, his gear, the hour, the view
   function hotData() {
-    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), hour: DAY.goal ?? DAY.t, clock: DAY.run, view: viewMode };
+    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), hour: DAY.goal ?? DAY.t, clock: DAY.run, view: viewMode,
+      inv: INV.hero.map((s) => ({ t: s.t, n: s.n })), people: peopleHot(), talked: TALK_SEEN };
+  }
+  // things and people come back before the first location is built (people stand where they were left)
+  function applyHotBefore(d) {
+    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return;
+    if (Array.isArray(d.inv)) INV.hero = invClean(d.inv);
+    peopleFromHot(d.people);
+    if (d.talked && typeof d.talked === 'object') for (const [id, seen] of Object.entries(d.talked)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen);
   }
   function applyHot(d) {
     if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return false;
-    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || GEAR.some((g) => g.id === d.equip[k] && g.slot === k))) equip[k] = d.equip[k];
+    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || GEAR.some((g) => g.id === d.equip[k] && g.slot === k && hasThing(g.id)))) equip[k] = d.equip[k];
     if (Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) { hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z); }
     if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
     if (Number.isFinite(d.hour)) daySet(d.hour);
@@ -6582,12 +7852,13 @@ void main(){
   function boot(hot) {
     const t0 = performance.now();
     buildDecals();
+    applyHotBefore(hot);
     enterLocation(hot && LOCATIONS[hot.loc] ? hot.loc : 'range', 'start');
     const resumed = applyHot(hot);
     HERO = buildHero(equip);
     prepareStage();
     $('loading').hidden = true;
-    Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets });
+    Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });
     GAME_API.bootMs = Math.round(performance.now() - t0);
     if (resumed && hot.view && vBtns[hot.view] && hot.view !== viewMode) setView(hot.view);
     try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(hotData); } catch (e) { /* no live updates here */ }

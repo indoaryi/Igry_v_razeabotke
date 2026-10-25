@@ -4,8 +4,8 @@
 //   node tools/deps.mjs <папка игры> --all      — ещё и полный список: какая часть какие имена берёт у каких частей
 // Части склеиваются в одну функцию (см. build.mjs), поэтому все имена верхнего уровня общие.
 // Движок (всё, что лежит в engine/) не должен брать имён у игры: всё игровое приходит к нему через крючки (см. engine/src/core/game.js).
-// Внутри движка ядро не должно брать имён у необязательных частей — библиотеки предметов (engine/src/props) и шагающих машин
-// (engine/src/machine): игра может их не подключать (как пустая площадка ploshchadka/).
+// Внутри движка ядро не должно брать имён у необязательных частей — библиотеки предметов (engine/src/props), шагающих машин
+// (engine/src/machine) и людей (engine/src/people): игра может их не подключать (как пустая площадка ploshchadka/).
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -94,7 +94,7 @@ const owner = new Map();              // top-level name → index of the part th
 const dupes = [];
 parts.forEach((p, i) => { for (const n of p.top.keys()) { if (owner.has(n)) dupes.push(`${n}: ${parts[owner.get(n)].file} и ${p.file}`); owner.set(n, i); } });
 const isEngine = (f) => f.startsWith('engine/');
-const isOptional = (f) => f.startsWith('engine/src/props/') || f.startsWith('engine/src/machine/');
+const isOptional = (f) => f.startsWith('engine/src/props/') || f.startsWith('engine/src/machine/') || f.startsWith('engine/src/people/');
 const isCore = (f) => isEngine(f) && !isOptional(f);
 
 const engineToGame = [], coreToOptional = [], unknown = [], early = [], edges = new Map();
@@ -122,7 +122,7 @@ const uniq = (a) => [...new Set(a)];
 const out = (title, list) => { console.log(`\n${title}: ${list.length ? '' : 'нет'}`); for (const s of list) console.log('  ' + s); };
 console.log(`${game}: ${parts.length} частей, ${owner.size} имён верхнего уровня`);
 out('Движок берёт у игры', uniq(engineToGame));
-out('Ядро движка берёт у библиотеки или машин', uniq(coreToOptional));
+out('Ядро движка берёт у библиотеки, машин или людей', uniq(coreToOptional));
 out('Неизвестные имена (нигде не объявлены)', uniq(unknown));
 out('Используется раньше, чем объявлено', uniq(early));
 out('Одно имя объявлено дважды', dupes);

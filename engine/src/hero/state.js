@@ -11,6 +11,7 @@
     sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
     smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
     thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
+    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
     vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
   };
   const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
@@ -201,11 +202,12 @@
     hero.sit = approach(hero.sit, hero.sitTarget, dt / 0.5);
     if (!hero.act) hero.y = approach(hero.y, groundY(hero.x, hero.z), dt * 1.6);
     const sh = hero.shoot, prevT = sh.t;
-    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach']) {
+    for (const k of ['smoke', 'drink', 'punch', 'shoot', 'thr', 'reach', 'talk']) {
       const a = hero[k];
       a.w = approach(a.w, a.on ? 1 : 0, dt * (k === 'shoot' ? 8 : k === 'thr' || k === 'reach' ? 6 : 4));
       if (a.on || a.w > 0) a.t += dt; else a.t = 0;
     }
+    if (hero.talk.on && (hero.talk.t > hero.talk.dur || hero.path.length || busyAct())) hero.talk.on = false;
     if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) fireShot();
     if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; hero.aimYaw = null; }
     if (hero.punch.on && hero.punch.t > 1.25) hero.punch.on = false;

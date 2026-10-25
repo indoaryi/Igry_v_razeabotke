@@ -89,7 +89,7 @@
     },
     machines: [{ n: 19, kind: 'ibk3', at: [9.6, 14.2], yaw: Math.PI / 2 }, { n: 20, kind: 'b32', at: [13.2, 16.8], yaw: Math.PI / 4 }],
     spawns: {
-      start: { at: [14.6, 19.2], yaw: -2.5 },
+      start: { at: [15.2, 19.0], yaw: -2.5 },
       fromEdge: { at: [19.0, 27.4], yaw: Math.PI, walk: [19.0, 24.0] }
     },
     exits: [{ to: 'edge', rect: [17.0, 27.2, 21.0, 28], go: [19.0, 27.6], arrive: 'fromRange' }],
