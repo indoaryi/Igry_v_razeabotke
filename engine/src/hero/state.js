@@ -5,9 +5,12 @@
   import { TEXTS, hook } from '../core/game.js';
   import { toast } from '../core/toast.js';
   import { LOC_HOOKS } from '../world/map.js';
+  import { savePart } from '../world/state.js';
   import { actionsOf, groundY, toWorld2 } from '../world/instances.js';
-  import { NAV, findPath } from '../world/nav.js';
-  import { armored } from './model.js';
+  import { GH, GW } from '../world/ground.js';
+  import { NAV, blockedAt, findPath } from '../world/nav.js';
+  import { exitAt } from '../world/locations.js';
+  import { armored, equip } from './model.js';
   import { DRINK_INTRO, DRINK_PERIOD, DRINK_SIPS, SHOOT_LEN, SHOTS, SMOKE_INTRO, SMOKE_PERIOD, SMOKE_PUFFS, THROW_LEN, THROW_REL } from './skeleton.js';
   import { ACT, cycleLen, driving, hero, speed, yawTo } from './hero.js';
   import { heroRig } from './rig.js';
@@ -192,3 +195,17 @@
     hero.arrived = true;
     if (sp.walk) hero.queue.push({ type: 'path', to: sp.walk, run: false });
   }, 0);
+
+  // ================= the hero in a save: where he stood, which way he looked, what he wore =================
+  // he is put back only where he can stand (not on a height he climbed, not inside something that has moved there since);
+  // the game checks the gear against his things itself (he may have sold the armour)
+  savePart('hero', {
+    save: () => ({ x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip) }),
+    load: (d) => {
+      if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || typeof d.equip[k] === 'string')) equip[k] = d.equip[k];
+      if (Number.isFinite(d.x) && Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) {
+        hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z);
+      }
+      if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
+    }
+  });

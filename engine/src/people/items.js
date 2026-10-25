@@ -7,6 +7,7 @@
   import { S } from '../core/camera.js';
   import { mul } from '../core/math.js';
   import { TGT_SMALL, render3D } from '../render/webgl.js';
+  import { savePart } from '../world/state.js';
   import { buildPose, evalBones } from '../hero/skeleton.js';
   export const ITEM_TYPES = {};
   export const MONEY = 'rub';
@@ -26,6 +27,8 @@
   }
   // a saved inventory back in: only known types, whole positive counts
   export const invClean = (list) => Array.isArray(list) ? list.filter((s) => s && ITEM_TYPES[s.t] && s.n > 0).map((s) => ({ t: s.t, n: Math.floor(s.n) })) : [];
+  // the hero's things in a save (people keep theirs in their own part, people.js)
+  savePart('inventory', { phase: 'before', save: () => INV.hero.map((s) => ({ t: s.t, n: s.n })), load: (d) => { INV.hero = invClean(d); invVer++; } });
   export const fmtMoney = (n) => n + ' ₽';
   // the order things are listed in: money first, then what can be worn, then the rest by price
   export const invSorted = (inv) => inv.slice().sort((a, b) => {

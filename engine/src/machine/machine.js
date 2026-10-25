@@ -14,6 +14,7 @@
   import { getMesh, groundPatch, rawMesh, upload } from '../render/webgl.js';
   import { mergeRaw, screenRect, shadowRect } from '../render/kit.js';
   import { LOCATIONS, LOC_HOOKS, MAP, groundType } from '../world/map.js';
+  import { savePart } from '../world/state.js';
   import { CATALOG, INST, instById, newId, pathDist } from '../world/instances.js';
   import { G, GH, GW, ground } from '../world/ground.js';
   import { NAV, blockedAt, buildNav } from '../world/nav.js';
@@ -771,7 +772,7 @@
     const m = inst.machine;
     return m.mode === 'waking' ? 'в костюме · заводит' : m.mode === 'parking' ? 'в костюме · глушит' : m.walking ? 'в костюме · шагает' : 'в костюме';
   }
-  // what survives a page update: where each machine stands (the hero is put back outside)
+  // what survives a page update and goes into a save: where each machine stands (the hero is put back outside)
   export function machinesHot() { return MACHINES.map((m) => ({ kind: m.kind, n: m.n, loc: m.loc || MAP.id, x: m.x, z: m.z, yaw: m.yaw })); }
   export function machinesFromHot(list) {
     makeMachines();
@@ -783,3 +784,4 @@
       m.feet = [0, 1].map((i) => footPose(m, i, 1));
     }
   }
+  savePart('machines', { phase: 'before', save: machinesHot, load: machinesFromHot });

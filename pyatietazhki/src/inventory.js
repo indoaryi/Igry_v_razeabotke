@@ -1,4 +1,5 @@
   // ================= inventory =================
+  import { savePart } from '../../engine/src/world/state.js';
   import { equip } from '../../engine/src/hero/model.js';
   export const ITEMS = [
     { id: 'jacket', name: 'Кожаная куртка', note: 'Броня +1', slot: 'body' },
@@ -13,6 +14,11 @@
   export const isOn = (id) => equip.body === id || equip.head === id || equip.hands === id;
   // the inventory panel listens: counts changed (a cigarette smoked, a find picked up) → redraw; a find → make it flash
   export const ITEM_HOOKS = { changed: [], found: [] };
+  // what is left of the supplies goes into a save (what he wears is the engine's part of the hero)
+  savePart('yard-items', {
+    save: () => ITEMS.filter((i) => i.use).map((i) => [i.id, i.count]),
+    load: (d) => { if (Array.isArray(d)) for (const [id, n] of d) { const it = itemById(id); if (it && Number.isFinite(n)) it.count = Math.max(0, n | 0); } }
+  });
   export function itemsChanged() { for (const f of ITEM_HOOKS.changed) f(); }
   export function itemFound(id) { for (const f of ITEM_HOOKS.found) f(id); }
 

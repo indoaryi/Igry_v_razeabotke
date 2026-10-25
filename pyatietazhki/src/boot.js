@@ -5,20 +5,16 @@
   import { TGT_SMALL, render3D } from '../../engine/src/render/webgl.js';
   import { buildDecals } from '../../engine/src/render/decals.js';
   import { LOCATIONS, MAP } from '../../engine/src/world/map.js';
+  import { loadSaved, startSaving, whenReady } from '../../engine/src/world/state.js';
   import { INST, byType } from '../../engine/src/world/instances.js';
-  import { GH, GW } from '../../engine/src/world/ground.js';
-  import { blockedAt } from '../../engine/src/world/nav.js';
-  import { enterLocation, exitAt } from '../../engine/src/world/locations.js';
-  import { DAY, daySet } from '../../engine/src/world/daytime.js';
+  import { enterLocation } from '../../engine/src/world/locations.js';
   import { HERO, buildHero, equip, setHero } from '../../engine/src/hero/model.js';
   import { buildPose, evalBones } from '../../engine/src/hero/skeleton.js';
   import { hero } from '../../engine/src/hero/hero.js';
   import { heroList } from '../../engine/src/hero/rig.js';
   import { goSit } from '../../engine/src/hero/state.js';
-  import { viewMode } from '../../engine/src/render/stage.js';
-  import { vBtns } from '../../engine/src/ui/hud.js';
   import { GAME_API, prepareStage, runFrames } from '../../engine/src/core/run.js';
-  import { MACHINE_HOOKS, machinesFromHot, machinesHot } from '../../engine/src/machine/machine.js';
+  import { MACHINE_HOOKS } from '../../engine/src/machine/machine.js';
   import { YARD1 } from './map.js';
   import { YARD2 } from './yard2.js';
   import { ITEMS, itemById } from './inventory.js';
@@ -35,28 +31,18 @@
   });
 
   // ================= boot =================
-  // what survives a page update for someone who has the yard open: where the hero stood, his gear and supplies, the view
-  function hotData() {
-    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), counts: ITEMS.filter((i) => i.use).map((i) => [i.id, i.count]), view: viewMode, machines: machinesHot(), hour: DAY.goal ?? DAY.t, clock: DAY.run };
-  }
-  function applyHot(d) {
-    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return false;
-    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || itemById(d.equip[k]))) equip[k] = d.equip[k];
-    if (Array.isArray(d.counts)) for (const [id, n] of d.counts) { const it = itemById(id); if (it && Number.isFinite(n)) it.count = Math.max(0, n | 0); }
-    if (Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) { hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z); }
-    if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
-    if (Number.isFinite(d.hour)) daySet(d.hour);
-    if (d.clock) { DAY.run = true; $('clockChk').checked = true; }
-    return true;
-  }
-  function boot(hot) {
+  // a save (if there is one: world/state.js) comes in two steps: the machines before the first location is built, the hero,
+  // his supplies, the clock and the camera after it; what he wears must be one of the yard's things
+  function boot(data) {
     const t0 = performance.now(), T = {}, mark = (k) => { T[k] = Math.round(performance.now() - t0); };
     buildDecals(); mark('decals');
-    const startLoc = hot && LOCATIONS[hot.loc] ? hot.loc : 'yard1';
-    if (hot && hot.machines) machinesFromHot(hot.machines);
-    enterLocation(startLoc, 'start'); mark('world');
-    const resumed = applyHot(hot);
-    if (resumed) window.__yard.noIntro = true;
+    loadSaved(data, 'before');
+    enterLocation(data && LOCATIONS[data.loc] ? data.loc : 'yard1', 'start'); mark('world');
+    const resumed = loadSaved(data, 'after');
+    if (resumed) {
+      window.__yard.noIntro = true;
+      for (const k of ['body', 'head', 'hands']) if (equip[k] !== null && !itemById(equip[k])) equip[k] = null;
+    }
     setHero(buildHero(equip));
     for (const it of ITEMS) icons[it.id] = iconCanvas(it.id);
     renderItems(); mark('ui');
@@ -75,8 +61,7 @@
         goSit(byType('platform')[0]); hero.queue.push({ type: 'call', fn: startSmoke });
       }, 13000);
     }
-    if (resumed && hot.view && vBtns[hot.view] && hot.view !== viewMode) vBtns[hot.view].click();
-    try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(hotData); } catch (e) { /* no live updates here */ }
+    startSaving();
     runFrames();
   }
   hook(GAME.frame, (dt) => drawPlan(dt), 30);
@@ -95,9 +80,4 @@
     get pigeons() { return PIGEONS; },
     renderCards: () => renderCards(), cardCanvases: () => CARDS.map((c) => c.cv), plan: planEl
   }));
-  let booted = false;
-  const start = (data) => { if (booted) return; booted = true; try { boot(data || {}); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать двор: ' + e.message; } };
-  setTimeout(() => {
-    const h = window.claude && window.claude.hot;
-    if (h && h.ready) h.ready(start); else start((h && h.data) || {});
-  }, 30);
+  whenReady('pyatietazhki', (data) => { try { boot(data); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать двор: ' + e.message; } });

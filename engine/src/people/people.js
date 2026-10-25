@@ -13,6 +13,7 @@
   import { ID4, approach, approachAngle, clamp, groundAt, smooth, wpx, wrapA, xf } from '../core/math.js';
   import { GAME, hook } from '../core/game.js';
   import { LOCATIONS, LOC_HOOKS, MAP } from '../world/map.js';
+  import { savePart } from '../world/state.js';
   import { INST, groundY, instById, newId } from '../world/instances.js';
   import { GH, GW } from '../world/ground.js';
   import { NAV, blockedAt, findPath, nearestFree } from '../world/nav.js';
@@ -336,7 +337,7 @@
   export const TALK_HOOKS = { who: [] };
   const TALK_NOW = () => { for (const f of TALK_HOOKS.who) { const p = f(); if (p) return p; } return null; };
 
-  // ---------- what survives a page update ----------
+  // ---------- what survives a page update, and what goes into a save: where each person is, his mode, his things ----------
   export function peopleHot() {
     return PEOPLE.map((p) => ({ id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode, inv: p.inv.map((s) => ({ t: s.t, n: s.n })) }));
   }
@@ -349,6 +350,7 @@
       if (Array.isArray(d.inv)) p.inv = invClean(d.inv);
     }
   }
+  savePart('people', { phase: 'before', save: peopleHot, load: peopleFromHot });
 
   // ---------- the bits of page the people module adds by itself (speech bubbles, the talk panel, the trade window) ----------
   export function peopleCss(id, css) {

@@ -40,6 +40,26 @@ export function scanImports(file, src) {
   });
   return out;
 }
+// a module's import lines written afresh: imports = [{ names, from }] in the order they should stand (side-effect imports keep names empty)
+export function withImports(file, src, imports) {
+  const lines = src.split('\n');
+  const first = lines.findIndex((l) => IMPORT_LINE.test(l));
+  const rest = lines.filter((l) => !IMPORT_LINE.test(l));
+  let at = first >= 0 ? lines.slice(0, first).filter((l) => !IMPORT_LINE.test(l)).length : 0;
+  if (first < 0) while (at < rest.length && /^\s*\/\//.test(rest[at])) at++;      // after the title comment
+  const spec = (to) => { const s = path.relative(path.dirname(path.resolve(root, file)), path.resolve(root, to)).split(path.sep).join('/'); return s.startsWith('.') ? s : './' + s; };
+  const block = imports.map((im) => im.names.length ? `  import { ${[...im.names].sort().join(', ')} } from '${spec(im.from)}';` : `  import '${spec(im.from)}';`);
+  rest.splice(at, 0, ...block);
+  return rest.join('\n');
+}
+// the word export put before a top-level declaration that starts the given line (1-based); false if that line is not one
+export function withExport(src, line) {
+  const lines = src.split('\n');
+  const l = lines[line - 1];
+  if (!/^\s*(function|const|let|class|async function)\b/.test(l)) return false;
+  lines[line - 1] = l.replace(/^(\s*)/, '$1export ');
+  return lines.join('\n');
+}
 // the module's source turned into a part of one joined script: import lines dropped, the word `export` taken off declarations
 export function joinable(src) {
   return src.split('\n').filter((l) => !IMPORT_LINE.test(l)).map((l) => l.replace(EXPORT_DECL, '$1')).join('\n');
@@ -88,8 +108,9 @@ export function readModule(file) {
       decl = st.declaration; exported = true;
       if (!EXPORT_DECL.test(lines[st.loc.start.line - 1])) form.push(`${st.loc.start.line}: export должен начинать строку`);
     } else if (st.type === 'ExportDefaultDeclaration' || st.type === 'ExportAllDeclaration') { form.push(`${st.loc.start.line}: export default / export * не используем`); continue; }
-    if (decl.type === 'FunctionDeclaration' || decl.type === 'ClassDeclaration') top.set(decl.id.name, { kind: decl.type === 'FunctionDeclaration' ? 'function' : 'class', line: decl.loc.start.line, exported });
-    else if (decl.type === 'VariableDeclaration') for (const d of decl.declarations) addPat(d.id, (n, node) => top.set(n, { kind: decl.kind, line: node.loc.start.line, exported }));
+    const stmt = st.loc.start.line;
+    if (decl.type === 'FunctionDeclaration' || decl.type === 'ClassDeclaration') top.set(decl.id.name, { kind: decl.type === 'FunctionDeclaration' ? 'function' : 'class', line: decl.loc.start.line, stmt, exported });
+    else if (decl.type === 'VariableDeclaration') for (const d of decl.declarations) addPat(d.id, (n, node) => top.set(n, { kind: decl.kind, line: node.loc.start.line, stmt, exported }));
   }
   // ---- every name used, with the locals of functions and blocks left out ----
   const refs = [];

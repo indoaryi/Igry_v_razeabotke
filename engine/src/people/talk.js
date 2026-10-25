@@ -11,6 +11,7 @@
   import { clamp, lerpV, mul, wpx, xf } from '../core/math.js';
   import { GAME, hook } from '../core/game.js';
   import { TGT_SMALL, render3D } from '../render/webgl.js';
+  import { savePart } from '../world/state.js';
   import { NAV, nearestFree } from '../world/nav.js';
   import { buildPose, evalBones } from '../hero/skeleton.js';
   import { hero, yawTo } from '../hero/hero.js';
@@ -18,12 +19,18 @@
   import { travelState } from '../hero/travel.js';
   import { stageEl } from '../render/stage.js';
   import { buildPerson } from './look.js';
-  import { PEOPLE_HOOKS, TALK_HOOKS, peopleCss, personHere } from './people.js';
+  import { PEOPLE_HOOKS, TALK_HOOKS, peopleCss, personById, personHere } from './people.js';
   export const DIALOGS = {};
   export let TALK = null;              // { p, D, id, node, line, heroLine, busy, wait, next, opts }
   let talkPending = null;       // the person the hero is walking up to
   export const TALK_SEEN = {};
   export const talkSeen = (p, id) => (TALK_SEEN[p.id] && TALK_SEEN[p.id][id]) || 0;
+  // what was said to whom goes into a save: first meetings stay first meetings
+  savePart('talks', {
+    phase: 'before',
+    save: () => TALK_SEEN,
+    load: (d) => { for (const [id, seen] of Object.entries(d)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen); }
+  });
   TALK_HOOKS.who.push(() => TALK ? TALK.p : null);
   export const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : (v || '');
 

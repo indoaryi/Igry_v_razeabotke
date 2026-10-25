@@ -179,6 +179,14 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
     </div>
   </section>
 
+  <section class="sec" aria-labelledby="h-saves">
+    <div class="sec-head">
+      <h2 id="h-saves">Сохранения</h2>
+      <p class="sec-text">Игра сохраняется сама — при переходе в другую локацию, раз в минуту и когда закрываешь страницу — и в следующий раз продолжится с того же места. Ещё три сохранения можно держать в слотах, любое — скачать в файл и открыть потом.</p>
+    </div>
+    <div id="saves"></div>
+  </section>
+
   <section class="sec" aria-labelledby="h-feat">
     <div class="sec-head">
       <h2 id="h-feat">Что здесь проверяется</h2>
@@ -1823,6 +1831,133 @@ void main(){
   //   save(rt) / restore(rt): the hero leaves / comes back — keep the game's own runtime in rt and take it back
   //   leave(def) before switching away, enter(def, spawnName) after arriving (the hero is put at his spawn first: hero/state.js)
   const LOC_HOOKS = { objects: [], build: [], save: [], restore: [], leave: [], enter: [] };
+  // ================= what the world remembers, and the saves: everything a game keeps between visits, as plain data =================
+  // WORLD keeps what has no other owner: what happened to each thing of each location (searched, looked at…) and the story's flags.
+  // Everything else stays with its owner, which adds its part to the save with savePart(): the clock (daytime.js), the hero
+  // (hero/state.js), his things (people/items.js), people (people.js), what was said (talk.js), machines (machine.js), the camera
+  // (ui/hud.js) and whatever the game keeps itself.
+  // A save is one JSON object: { v, game, saved, loc, parts: { part id: its data } }. It is applied only while a game boots:
+  // loading another save reloads the page into it (ui/saves.js), so nothing built has to be taken apart.
+  // Where saves live: the browser's storage of this site, one autosave and three slots per game; a save can also go to a file.
+  const WORLD = { things: {}, flags: {} };
+  const SAVE_V = 1;
+  let GAME_ID = 'game';
+  const gameId = () => GAME_ID;
+
+  // ---------- a thing's memory: what happened to it stays when the hero leaves, saves the game and comes back ----------
+  // a thing is known by its key: type and place on the map (instances.js gives every built thing its key);
+  // its memory is copied into inst.dyn when the location is built, and remember() writes to both
+  const memoryOf = (locId, key) => (WORLD.things[locId] && WORLD.things[locId][key]) || null;
+  function remember(inst, patch) {
+    Object.assign(inst.dyn, patch);
+    const L = WORLD.things[MAP.id] || (WORLD.things[MAP.id] = {});
+    L[inst.key] = Object.assign(L[inst.key] || {}, patch);
+  }
+  // the story's flags and counters: met someone, a door is open, a quest step is done
+  const flag = (name) => WORLD.flags[name];
+  function setFlag(name, value = true) { if (value === undefined || value === null) delete WORLD.flags[name]; else WORLD.flags[name] = value; }
+
+  // ---------- parts of a save ----------
+  // savePart(id, { phase, save() → plain data, load(data, whole save) }):
+  //   phase 'before' — applied before the first location is built (who stands where, what people and machines carry),
+  //   phase 'after' — after it, before the hero's model is made (the hero's place and gear, the clock, the camera)
+  const SAVE_PARTS = [];
+  function savePart(id, part) { SAVE_PARTS.push(Object.assign({ id, phase: 'after' }, part)); }
+  savePart('world', {
+    phase: 'before',
+    save: () => ({ things: WORLD.things, flags: WORLD.flags }),
+    load: (d) => {
+      if (d.things && typeof d.things === 'object') WORLD.things = d.things;
+      if (d.flags && typeof d.flags === 'object') WORLD.flags = d.flags;
+    }
+  });
+  function saveData() {
+    const parts = {};
+    for (const P of SAVE_PARTS) {
+      try { parts[P.id] = JSON.parse(JSON.stringify(P.save())); } catch (e) { console.error('save: part ' + P.id, e); }
+    }
+    return { v: SAVE_V, game: GAME_ID, saved: new Date().toISOString(), loc: MAP ? MAP.id : null, parts };
+  }
+  // a save fits this game and this version of the format
+  const saveFits = (d) => !!d && typeof d === 'object' && d.game === GAME_ID && Number.isFinite(d.v) && d.v <= SAVE_V && !!d.parts && typeof d.parts === 'object';
+  // apply one phase of a save; a part that does not fit is skipped (and said so in the console), the rest still loads
+  function loadSaved(data, phase) {
+    if (!saveFits(data)) return false;
+    for (const P of SAVE_PARTS) {
+      if (P.phase !== phase || data.parts[P.id] === undefined || data.parts[P.id] === null) continue;
+      try { P.load(data.parts[P.id], data); } catch (e) { console.error('load: part ' + P.id, e); }
+    }
+    return true;
+  }
+
+  // ---------- where saves are kept: the browser's storage of this site, per game ----------
+  const KEY = (slot) => 'igry:' + GAME_ID + ':' + slot;
+  const SAVE_SLOTS = ['auto', '1', '2', '3'];
+  function storeRead(slot) {
+    try { const s = localStorage.getItem(KEY(slot)); const d = s ? JSON.parse(s) : null; return saveFits(d) ? d : null; } catch (e) { return null; }
+  }
+  function storeWrite(slot, data) { try { localStorage.setItem(KEY(slot), JSON.stringify(data)); return true; } catch (e) { return false; } }
+  function storeDrop(slot) { try { localStorage.removeItem(KEY(slot)); } catch (e) { /* nothing kept here anyway */ } }
+  // a load asked for before the page reloads: a slot, 'file' (the save waits in the session) or 'new' (start afresh)
+  // (saving by itself stops here: the page is about to go, and closing it must not write the old game over the autosave)
+  function askLoad(what, text) {
+    try { if (text) sessionStorage.setItem(KEY('file'), text); sessionStorage.setItem(KEY('load'), what); } catch (e) { return false; }
+    saving = false;
+    location.reload();
+    return true;
+  }
+  const loadSlot = (slot) => askLoad(slot);
+  function newGame() { storeDrop('auto'); return askLoad('new'); }
+  // a save from a file: checked first; true when it fits and the page is reloading into it
+  function loadText(text) {
+    let d = null;
+    try { d = JSON.parse(text); } catch (e) { return false; }
+    return saveFits(d) ? askLoad('file', text) : false;
+  }
+  function asked() {
+    let what = null, text = null;
+    try { what = sessionStorage.getItem(KEY('load')); text = sessionStorage.getItem(KEY('file')); sessionStorage.removeItem(KEY('load')); sessionStorage.removeItem(KEY('file')); } catch (e) { return undefined; }
+    if (what === 'new') return null;
+    if (what === 'file') { try { const d = JSON.parse(text); return saveFits(d) ? d : undefined; } catch (e) { return undefined; } }
+    if (what) return storeRead(what) || undefined;
+    return undefined;
+  }
+
+  // ---------- booting into a save, and saving by itself ----------
+  // whenReady(game id, start): start(save or null) is called once the page is ready. Which save: the one asked for before a reload
+  // (a slot, a file, or none for a new game), else the page's own snapshot when Claude updates it live, else the autosave.
+  function whenReady(id, start) {
+    GAME_ID = id;
+    let started = false;
+    const go = (d) => { if (started) return; started = true; start(saveFits(d) ? d : null); };
+    setTimeout(() => {
+      const ask = asked();
+      if (ask !== undefined) { go(ask); return; }
+      const h = window.claude && window.claude.hot;
+      if (h && h.ready) h.ready((d) => go(saveFits(d) ? d : storeRead('auto')));
+      else go(h && saveFits(h.data) ? h.data : storeRead('auto'));
+    }, 30);
+  }
+  const SAVE_EVENTS = { saved: [], started: [] };       // saved(slot): a save was written; started(): the game booted (the panel shows them)
+  let saving = false;
+  function saveTo(slot) {
+    const ok = storeWrite(slot, saveData());
+    if (ok) for (const f of SAVE_EVENTS.saved) f(slot);
+    return ok;
+  }
+  function autosave() { if (saving) saveTo('auto'); }
+  // the game calls it once it has booted: from then on it saves by itself — on arriving in a location, once a minute,
+  // when the page is hidden or closed; and Claude's live update of the page keeps the same state
+  function startSaving() {
+    if (saving) return;
+    saving = true;
+    for (const f of SAVE_EVENTS.started) f();
+    try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(saveData); } catch (e) { /* no live updates here */ }
+    hook(LOC_HOOKS.enter, () => autosave(), 95);
+    setInterval(autosave, 60000);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
+    window.addEventListener('pagehide', () => autosave());
+  }
   // ================= the things in a location: each map entry built from the catalog, baked into world space, given an id =================
   // CATALOG says what can stand on a map: CATALOG[type] = { build(def) → { kit, blocks, spots, seats, heights, lamp, … }, name, size, note,
   //   and flags the engine reads: xray (big enough to hide the hero: he shows through it as a silhouette), hug (weeds grow thick along it),
@@ -1842,6 +1977,11 @@ void main(){
   // the current location's things come back from its kept runtime (locations.js)
   function restoreThings(rt) { ({ INST, HEIGHTS, instById, PATH_SEGS, nextId } = rt); }
   function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
+  // a thing's key: its type and place on the map (a part of something — by the key of its whole and its place in it);
+  // the same thing gets the same key every time the location is built, so what it remembers comes back to it (state.js)
+  // (things in the same place — tiles of the meadow — are told apart by their order)
+  const keyOf = (def) => def.parent ? def.parent.key + '/' + def.type + '@' + def.local.join(',') : def.type + '@' + def.at.join(',');
+  let keysUsed = new Map();
   function instantiate(def, parentM) {
     const T = CATALOG[def.type];
     if (!T) throw new Error('no such type in the catalog: ' + def.type);
@@ -1851,9 +1991,13 @@ void main(){
     const yaw0 = Math.atan2(M0[8], M0[10]);
     const { chunks, bb } = bake(built.kit, M0);
     const U = USE[def.type], active = !!U && (!U.active || U.active(def));
+    let key = keyOf(def);
+    const seen = keysUsed.get(key) || 0;
+    keysUsed.set(key, seen + 1);
+    if (seen) key += '#' + seen;
     const inst = {
-      id: def.type === 'meadow' ? 0 : nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
-      sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: {},
+      id: def.type === 'meadow' ? 0 : nextId++, key, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
+      sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: Object.assign({}, memoryOf(MAP.id, key)),
       center: [(bb[0] + bb[3]) / 2, (bb[2] + bb[5]) / 2], leafy: !!(T.leafy && T.leafy(def))
     };
     inst.blocks = (built.blocks || []).map((b) => b.rect ? { poly: [[b.rect[0], b.rect[1]], [b.rect[2], b.rect[1]], [b.rect[2], b.rect[3]], [b.rect[0], b.rect[3]]].map((p) => toWorld2(M0, p)) } : { c: toWorld2(M0, b.c), r: b.r });
@@ -1876,7 +2020,7 @@ void main(){
   // builds every object of the current location (MAP) from scratch; then the engine's modules add theirs (LOC_HOOKS.objects:
   // the walking machines that stand here, the meadow over the lawns)
   function buildWorld() {
-    INST = []; HEIGHTS = []; nextId = 2; instById = new Map();
+    INST = []; HEIGHTS = []; nextId = 2; instById = new Map(); keysUsed = new Map();
     PATH_SEGS = [];
     for (const pl of MAP.paths || []) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
     for (const d of MAP.objects || []) instantiate(d);
@@ -2248,7 +2392,8 @@ void main(){
   // low in the west in the evening — and at night a weaker moon takes over. Everything else that changes with the hour is in
   // DAY_KEYS: the tint of sunlit and shaded parts, how strong the shadows are, how many lamps and windows are lit, morning mist,
   // the colour of the air around the map, how cold it is (breath shows). The game reads DAYP each frame.
-  const DAY = { t: 14, run: false, rate: 1 / 25, goal: null, span: 0, rise: 6.6, set: 18.9, elMax: 0.95, sunOn: 5.9, sunOff: 19.5 };
+  // The calendar counts days from the first (DAY.day): a new one begins whenever the clock passes midnight.
+  const DAY = { day: 1, t: 14, run: false, rate: 1 / 25, goal: null, span: 0, rise: 6.6, set: 18.9, elMax: 0.95, sunOn: 5.9, sunOff: 19.5 };
   const DAY_PRESETS = [{ id: 'morning', name: 'Утро', h: 8 }, { id: 'day', name: 'День', h: 14 }, { id: 'evening', name: 'Вечер', h: 17.75 }, { id: 'night', name: 'Ночь', h: 23.5 }];
   //   hour   sunlit tint          shade tint           shadows lamps windows mist  air (around the map)  cold  saturation
   const DAY_KEYS = [
@@ -2283,11 +2428,22 @@ void main(){
   function dayGoto(h) { const span = ((h - DAY.t) % 24 + 24) % 24; if (span < 0.01) return; DAY.goal = h; DAY.span = span; }
   function daySet(h) { DAY.t = ((h % 24) + 24) % 24; DAY.goal = null; }
   function dayUpdate(dt) {
+    const was = DAY.t;
     if (DAY.goal != null) {
       const left = ((DAY.goal - DAY.t) % 24 + 24) % 24, step = Math.max(2.4, DAY.span / 2.2) * dt;
       if (left <= step || left > 23.999) { DAY.t = DAY.goal; DAY.goal = null; } else DAY.t = (DAY.t + step) % 24;
     } else if (DAY.run) DAY.t = (DAY.t + dt * DAY.rate) % 24;
+    if (was - DAY.t > 12) DAY.day++;      // the clock went round midnight: a new day
   }
+  // the clock in a save: the day, the hour (or the hour it was hurrying to), whether it runs by itself
+  savePart('clock', {
+    save: () => ({ day: DAY.day + (DAY.goal != null && DAY.goal < DAY.t ? 1 : 0), hour: DAY.goal ?? DAY.t, run: DAY.run }),
+    load: (d) => {
+      if (Number.isFinite(d.hour)) daySet(d.hour);
+      if (Number.isFinite(d.day)) DAY.day = Math.max(1, Math.floor(d.day));
+      DAY.run = !!d.run;
+    }
+  });
   // the keys around an hour, blended smoothly (the list wraps round midnight)
   function dayLook(h) {
     const K = DAY_KEYS, n = K.length;
@@ -3282,6 +3438,20 @@ void main(){
     hero.arrived = true;
     if (sp.walk) hero.queue.push({ type: 'path', to: sp.walk, run: false });
   }, 0);
+
+  // ================= the hero in a save: where he stood, which way he looked, what he wore =================
+  // he is put back only where he can stand (not on a height he climbed, not inside something that has moved there since);
+  // the game checks the gear against his things itself (he may have sold the armour)
+  savePart('hero', {
+    save: () => ({ x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip) }),
+    load: (d) => {
+      if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || typeof d.equip[k] === 'string')) equip[k] = d.equip[k];
+      if (Number.isFinite(d.x) && Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) {
+        hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z);
+      }
+      if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
+    }
+  });
   // ================= travel: the hero walks into an exit zone, the screen fades, the next location comes =================
   let travelState = null;     // { exit, t, phase: 'out' | 'in' } while the screen fades
   let stageFade = 0;          // 0…1 darkness drawn over the stage
@@ -3869,6 +4039,8 @@ void main(){
     recenter(); fitStage(); redraw();
   }
   for (const [m, b] of Object.entries(vBtns)) if (b) b.addEventListener('click', () => setView(m));
+  // the camera's distance goes into a save too: the game comes back the way it was left
+  savePart('view', { save: () => ({ mode: viewMode }), load: (d) => { if (vBtns[d.mode] && d.mode !== viewMode) setView(d.mode); } });
   if ($('gridChk')) $('gridChk').addEventListener('change', (e) => { setGrid(e.target.checked); });
   if ($('rawChk')) $('rawChk').addEventListener('change', (e) => { setRaw(e.target.checked); redraw(); });
   // which location: the current one is pressed, another walks the hero to the exit that leads there
@@ -3896,6 +4068,7 @@ void main(){
   if (clockChk) clockChk.addEventListener('change', (e) => { DAY.run = e.target.checked; });
   let clockKey = '';
   function updateClock() {
+    if (clockChk && clockChk.checked !== DAY.run) clockChk.checked = DAY.run;     // a save may have brought the clock running
     const k = fmtHour(DAY.t) + dayPeriod(DAY.goal ?? DAY.t);
     if (k === clockKey) return;
     clockKey = k;
@@ -3939,6 +4112,78 @@ void main(){
     if (a) { const sm = document.createElement('small'); sm.textContent = a.label; tipEl.append(sm); }
     tipEl.style.left = hoverPt.x + 'px'; tipEl.style.top = hoverPt.y + 'px';
     tipEl.hidden = false;
+  }
+  // ================= the saves panel: the autosave, three slots, a file, a new game =================
+  // It fills the page's element with id «saves»; a page without one has no panel (the game still saves by itself).
+  // Loading a save or starting afresh reloads the page into it (world/state.js), so the panel never takes the world apart.
+  const savesEl = $('saves');
+  const SLOT_NAMES = { auto: 'Автосохранение', 1: 'Слот 1', 2: 'Слот 2', 3: 'Слот 3' };
+  // a save in one line: the day and hour in the game, the place, when it was saved
+  function describeSave(d) {
+    if (!d) return 'пусто';
+    const c = d.parts && d.parts.clock, L = LOCATIONS[d.loc];
+    const when = c && Number.isFinite(c.hour) ? `День ${c.day || 1}, ${fmtHour(c.hour)}` : '';
+    let saved = '';
+    try { saved = new Date(d.saved).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { /* no date */ }
+    return [when, L ? (L.short || L.name) : ''].filter(Boolean).join(' · ') + (saved ? ' — сохранено ' + saved : '');
+  }
+  function exportSave() {
+    const d = saveData(), c = d.parts.clock;
+    const blob = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${gameId()}-den-${c ? c.day : 1}-${fmtHour(c ? c.hour : 0).replace(':', '-')}.json`;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file'; fileInput.accept = '.json,application/json'; fileInput.hidden = true;
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (f) f.text().then((t) => { if (!loadText(t)) toast('Этот файл — не сохранение этой игры.'); });
+  });
+  // «start afresh» asks twice: the autosave goes, the slots stay
+  let newArmed = -1e9;
+  const newBtn = button('Начать заново', () => {
+    if (performance.now() - newArmed < 4000) { newGame(); return; }
+    newArmed = performance.now(); newBtn.textContent = 'Точно заново? Нажми ещё раз';
+    setTimeout(() => { newBtn.textContent = 'Начать заново'; }, 4000);
+  });
+  function renderSaves() {
+    if (!savesEl) return;
+    savesEl.textContent = '';
+    const list = document.createElement('ul'); list.className = 'saves-list';
+    for (const slot of SAVE_SLOTS) {
+      const d = storeRead(slot);
+      const li = document.createElement('li');
+      const tx = document.createElement('div'); tx.className = 'saves-tx';
+      const b = document.createElement('b'); b.textContent = SLOT_NAMES[slot];
+      const sp = document.createElement('span'); sp.textContent = describeSave(d);
+      tx.append(b, sp);
+      const acts = document.createElement('div'); acts.className = 'saves-acts';
+      if (slot !== 'auto') acts.append(button('Сохранить', () => { toast(saveTo(slot) ? SLOT_NAMES[slot] + ': сохранено.' : 'Не получилось сохранить: браузер не даёт места.'); }));
+      acts.append(button('Загрузить', () => { if (!loadSlot(slot)) toast('Не получилось загрузить.'); }, '', !d));
+      li.append(tx, acts);
+      list.append(li);
+    }
+    const more = document.createElement('div'); more.className = 'saves-acts saves-more';
+    more.append(button('Скачать в файл', exportSave), button('Открыть файл…', () => fileInput.click()), newBtn);
+    savesEl.append(list, more, fileInput);
+  }
+  SAVE_EVENTS.started.push(renderSaves);
+  SAVE_EVENTS.saved.push(renderSaves);
+  if (savesEl && !document.getElementById('css-saves')) {
+    const st = document.createElement('style'); st.id = 'css-saves';
+    st.textContent = `
+.saves-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line, #c6ccc9); }
+.saves-list li { display: flex; gap: 8px 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line, #c6ccc9); }
+.saves-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.saves-tx span { color: var(--muted, #586067); font-size: 14px; overflow-wrap: anywhere; }
+.saves-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.saves-more { margin-top: 12px; }
+`;
+    document.head.append(st);
   }
   // ================= running a game: the stage gets ready, the frame loop, a handle for tests =================
   // A game's boot builds its first location and the hero, then calls prepareStage() and runFrames():
@@ -5559,7 +5804,7 @@ void main(){
     const m = inst.machine;
     return m.mode === 'waking' ? 'в костюме · заводит' : m.mode === 'parking' ? 'в костюме · глушит' : m.walking ? 'в костюме · шагает' : 'в костюме';
   }
-  // what survives a page update: where each machine stands (the hero is put back outside)
+  // what survives a page update and goes into a save: where each machine stands (the hero is put back outside)
   function machinesHot() { return MACHINES.map((m) => ({ kind: m.kind, n: m.n, loc: m.loc || MAP.id, x: m.x, z: m.z, yaw: m.yaw })); }
   function machinesFromHot(list) {
     makeMachines();
@@ -5571,6 +5816,7 @@ void main(){
       m.feet = [0, 1].map((i) => footPose(m, i, 1));
     }
   }
+  savePart('machines', { phase: 'before', save: machinesHot, load: machinesFromHot });
   // ================= ИБК-3: a heavy walking suit for one person =================
   // Our own design for the yard with birches: a tank-hull cab on short thick legs. The pilot sits low in the cab
   // with his head in the cupola; he gets in from the back through a hatch with a hand wheel and two gas struts,
@@ -6116,6 +6362,8 @@ void main(){
   }
   // a saved inventory back in: only known types, whole positive counts
   const invClean = (list) => Array.isArray(list) ? list.filter((s) => s && ITEM_TYPES[s.t] && s.n > 0).map((s) => ({ t: s.t, n: Math.floor(s.n) })) : [];
+  // the hero's things in a save (people keep theirs in their own part, people.js)
+  savePart('inventory', { phase: 'before', save: () => INV.hero.map((s) => ({ t: s.t, n: s.n })), load: (d) => { INV.hero = invClean(d); invVer++; } });
   const fmtMoney = (n) => n + ' ₽';
   // the order things are listed in: money first, then what can be worn, then the rest by price
   const invSorted = (inv) => inv.slice().sort((a, b) => {
@@ -6719,7 +6967,7 @@ void main(){
   const TALK_HOOKS = { who: [] };
   const TALK_NOW = () => { for (const f of TALK_HOOKS.who) { const p = f(); if (p) return p; } return null; };
 
-  // ---------- what survives a page update ----------
+  // ---------- what survives a page update, and what goes into a save: where each person is, his mode, his things ----------
   function peopleHot() {
     return PEOPLE.map((p) => ({ id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode, inv: p.inv.map((s) => ({ t: s.t, n: s.n })) }));
   }
@@ -6732,6 +6980,7 @@ void main(){
       if (Array.isArray(d.inv)) p.inv = invClean(d.inv);
     }
   }
+  savePart('people', { phase: 'before', save: peopleHot, load: peopleFromHot });
 
   // ---------- the bits of page the people module adds by itself (speech bubbles, the talk panel, the trade window) ----------
   function peopleCss(id, css) {
@@ -6759,6 +7008,12 @@ void main(){
   let talkPending = null;       // the person the hero is walking up to
   const TALK_SEEN = {};
   const talkSeen = (p, id) => (TALK_SEEN[p.id] && TALK_SEEN[p.id][id]) || 0;
+  // what was said to whom goes into a save: first meetings stay first meetings
+  savePart('talks', {
+    phase: 'before',
+    save: () => TALK_SEEN,
+    load: (d) => { for (const [id, seen] of Object.entries(d)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen); }
+  });
   TALK_HOOKS.who.push(() => TALK ? TALK.p : null);
   const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : (v || '');
 
@@ -7695,7 +7950,7 @@ void main(){
     const cx = inst.def.at[0], cz = inst.def.at[1], dx = hero.x - cx, dz = hero.z - cz, dl = Math.hypot(dx, dz) || 1;
     plan({ type: 'path', to: [cx + dx / dl * inst.def.rx * 0.85, cz + dz / dl * inst.def.rz * 0.85] }, { type: 'call', fn: () => { hero.tyaw = yawTo(cx, cz); } }, { type: 'turned' },
       { type: 'act', kind: 'kneel', inst, opts: { cb: () => {
-        inst.dyn.searched = true;
+        remember(inst, { searched: true });
         const [t, text] = FINDS_R[findI++ % FINDS_R.length];
         if (t) invAdd(INV.hero, t, 1);
         toast(t ? text + ' В рюкзак.' : text);
@@ -7877,48 +8132,24 @@ void main(){
   }
 
   // ---------- boot ----------
-  // what survives a page update for someone who has the range open: where the hero stood, his gear, the hour, the view
-  function hotData() {
-    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), hour: DAY.goal ?? DAY.t, clock: DAY.run, view: viewMode,
-      inv: INV.hero.map((s) => ({ t: s.t, n: s.n })), people: peopleHot(), talked: TALK_SEEN };
-  }
-  // things and people come back before the first location is built (people stand where they were left)
-  function applyHotBefore(d) {
-    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return;
-    if (Array.isArray(d.inv)) INV.hero = invClean(d.inv);
-    peopleFromHot(d.people);
-    if (d.talked && typeof d.talked === 'object') for (const [id, seen] of Object.entries(d.talked)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen);
-  }
-  function applyHot(d) {
-    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return false;
-    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || GEAR.some((g) => g.id === d.equip[k] && g.slot === k && hasThing(g.id)))) equip[k] = d.equip[k];
-    if (Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) { hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z); }
-    if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
-    if (Number.isFinite(d.hour)) daySet(d.hour);
-    if (d.clock) { DAY.run = true; $('clockChk').checked = true; }
-    return true;
-  }
-  function boot(hot) {
+  // a save (if there is one: world/state.js) comes in two steps: things, people and machines before the first location is built,
+  // the hero, the clock and the camera after it; then what he wears is checked against what he still has (he may have sold it)
+  function boot(data) {
     const t0 = performance.now();
     buildDecals();
-    applyHotBefore(hot);
-    enterLocation(hot && LOCATIONS[hot.loc] ? hot.loc : 'range', 'start');
-    const resumed = applyHot(hot);
+    loadSaved(data, 'before');
+    enterLocation(data && LOCATIONS[data.loc] ? data.loc : 'range', 'start');
+    if (loadSaved(data, 'after'))
+      for (const k of ['body', 'head', 'hands']) if (equip[k] !== null && !GEAR.some((g) => g.id === equip[k] && g.slot === k && hasThing(g.id))) equip[k] = null;
     setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
     Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });
     GAME_API.bootMs = Math.round(performance.now() - t0);
-    if (resumed && hot.view && vBtns[hot.view] && hot.view !== viewMode) setView(hot.view);
-    try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(hotData); } catch (e) { /* no live updates here */ }
+    startSaving();
     runFrames();
   }
-  let booted = false;
-  const start = (data) => { if (booted) return; booted = true; try { boot(data || {}); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать полигон: ' + e.message; } };
-  setTimeout(() => {
-    const h = window.claude && window.claude.hot;
-    if (h && h.ready) h.ready(start); else start((h && h.data) || {});
-  }, 30);
+  whenReady('poligon', (data) => { try { boot(data); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать полигон: ' + e.message; } });
   // ================= the test range: the modules it is made of, in the order they run =================
   // The engine's core, its library of things, the walking machines and the people, then the range's own modules.
 })();

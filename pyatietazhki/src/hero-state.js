@@ -5,6 +5,7 @@
   import { TEXTS } from '../../engine/src/core/game.js';
   import { toast } from '../../engine/src/core/toast.js';
   import { MAP } from '../../engine/src/world/map.js';
+  import { remember } from '../../engine/src/world/state.js';
   import { CATALOG, USE, byType, localPt } from '../../engine/src/world/instances.js';
   import { armored, equip } from '../../engine/src/hero/model.js';
   import { hangHandY } from '../../engine/src/hero/skeleton.js';
@@ -193,7 +194,7 @@
     const ex = cx + dx / dl * (inst.def.rx * 0.85), ez = cz + dz / dl * (inst.def.rz * 0.85);
     plan({ type: 'path', to: [ex, ez] }, { type: 'call', fn: () => { hero.tyaw = yawTo(cx, cz); } }, { type: 'turned' },
       { type: 'act', kind: 'kneel', inst, opts: { cb: () => {
-        inst.dyn.searched = true;
+        remember(inst, { searched: true });
         let r = findRng(), f = FINDS[FINDS.length - 1];
         for (const x of FINDS) { if (r < x.p) { f = x; break; } r -= x.p; }
         if (f.item) { const it = itemById(f.item); it.count += f.n; itemsChanged(); itemFound(f.item); }
@@ -207,7 +208,7 @@
   ];
   export function goGraffiti(inst) {
     const sp = spotOf(inst, 'front');
-    plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.6, cb: () => { inst.dyn.gi = ((inst.dyn.gi ?? -1) + 1) % GRAFFITI.length; toast(GRAFFITI[inst.dyn.gi]); } } });
+    plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.6, cb: () => { remember(inst, { gi: ((inst.dyn.gi ?? -1) + 1) % GRAFFITI.length }); toast(GRAFFITI[inst.dyn.gi]); } } });
   }
   export function goCans(inst) {
     const sp = spotOf(inst, 'front');
@@ -229,7 +230,7 @@
   ];
   function goPosters(inst) {
     const sp = spotOf(inst, 'side');
-    plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.6, cb: () => { inst.dyn.pi = ((inst.dyn.pi ?? -1) + 1) % POSTERS.length; toast(POSTERS[inst.dyn.pi]); } } });
+    plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.6, cb: () => { remember(inst, { pi: ((inst.dyn.pi ?? -1) + 1) % POSTERS.length }); toast(POSTERS[inst.dyn.pi]); } } });
   }
   function goLock(inst) {
     const sp = spotOf(inst, 'door');

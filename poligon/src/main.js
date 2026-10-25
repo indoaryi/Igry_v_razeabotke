@@ -11,6 +11,7 @@
   import '../../engine/src/render/kit.js';
   import '../../engine/src/render/decals.js';
   import '../../engine/src/world/map.js';
+  import '../../engine/src/world/state.js';
   import '../../engine/src/world/instances.js';
   import '../../engine/src/world/ground.js';
   import '../../engine/src/world/nav.js';
@@ -25,6 +26,7 @@
   import '../../engine/src/fx/fx2d.js';
   import '../../engine/src/render/stage.js';
   import '../../engine/src/ui/hud.js';
+  import '../../engine/src/ui/saves.js';
   import '../../engine/src/core/run.js';
   import '../../engine/src/props/nature.js';
   import '../../engine/src/props/street.js';

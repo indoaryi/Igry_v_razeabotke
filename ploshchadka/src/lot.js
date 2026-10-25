@@ -5,6 +5,7 @@
   import { $ } from '../../engine/src/core/prelude.js';
   import { buildDecals } from '../../engine/src/render/decals.js';
   import { LOCATIONS } from '../../engine/src/world/map.js';
+  import { loadSaved, startSaving, whenReady } from '../../engine/src/world/state.js';
   import { enterLocation } from '../../engine/src/world/locations.js';
   import { buildHero, equip, setHero } from '../../engine/src/hero/model.js';
   import { hero } from '../../engine/src/hero/hero.js';
@@ -41,14 +42,18 @@
   $('aDrink').addEventListener('click', () => { if (hero.drink.on) hero.drink.on = false; else if (!busyAct()) beginDrink(); });
   $('aPunch').addEventListener('click', doPunch);
 
-  function boot() {
+  // a save (if there is one: world/state.js) comes in two steps — before the first location is built and after it
+  function boot(data) {
     const t0 = performance.now();
     buildDecals();
-    enterLocation('lot', 'start');
+    loadSaved(data, 'before');
+    enterLocation(data && LOCATIONS[data.loc] ? data.loc : 'lot', 'start');
+    loadSaved(data, 'after');
     setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
     GAME_API.bootMs = Math.round(performance.now() - t0);
+    startSaving();
     runFrames();
   }
-  setTimeout(() => { try { boot(); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать площадку: ' + e.message; } }, 30);
+  whenReady('ploshchadka', (data) => { try { boot(data); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать площадку: ' + e.message; } });

@@ -5,21 +5,21 @@
   import { toast } from '../../engine/src/core/toast.js';
   import { buildDecals } from '../../engine/src/render/decals.js';
   import { LOCATIONS, MAP } from '../../engine/src/world/map.js';
+  import { loadSaved, startSaving, whenReady } from '../../engine/src/world/state.js';
   import { INST, byType } from '../../engine/src/world/instances.js';
   import { GH, GW } from '../../engine/src/world/ground.js';
-  import { blockedAt } from '../../engine/src/world/nav.js';
-  import { enterLocation, exitAt } from '../../engine/src/world/locations.js';
-  import { DAY, dayGoto, daySet } from '../../engine/src/world/daytime.js';
+  import { enterLocation } from '../../engine/src/world/locations.js';
+  import { dayGoto } from '../../engine/src/world/daytime.js';
   import { buildHero, equip, setHero } from '../../engine/src/hero/model.js';
   import { hero, yawTo } from '../../engine/src/hero/hero.js';
   import { doDefault, doPunch, goSit, plan, walkTo } from '../../engine/src/hero/state.js';
   import { goToLocation } from '../../engine/src/hero/travel.js';
-  import { redraw, setRaw, viewMode } from '../../engine/src/render/stage.js';
-  import { setView, vBtns } from '../../engine/src/ui/hud.js';
+  import { redraw, setRaw } from '../../engine/src/render/stage.js';
+  import { setView } from '../../engine/src/ui/hud.js';
   import { GAME_API, prepareStage, runFrames } from '../../engine/src/core/run.js';
-  import { INV, ITEM_TYPES, MONEY, fmtMoney, invClean, invCount, invGrid, invVer } from '../../engine/src/people/items.js';
-  import { PEOPLE, peopleFromHot, peopleHot, personById, personFollow } from '../../engine/src/people/people.js';
-  import { TALK, TALK_SEEN, talkTo } from '../../engine/src/people/talk.js';
+  import { INV, ITEM_TYPES, MONEY, fmtMoney, invCount, invGrid, invVer } from '../../engine/src/people/items.js';
+  import { PEOPLE, personFollow } from '../../engine/src/people/people.js';
+  import { TALK, talkTo } from '../../engine/src/people/talk.js';
   import { goTrade, openTrade } from '../../engine/src/people/trade.js';
   import { hasThing } from './things.js';
   import { GEAR, doShoot, doThrow, raiseTargets, startDrink, startSmoke, toggleGear } from './play.js';
@@ -111,45 +111,21 @@
   }
 
   // ---------- boot ----------
-  // what survives a page update for someone who has the range open: where the hero stood, his gear, the hour, the view
-  function hotData() {
-    return { loc: MAP.id, x: hero.x, z: hero.z, y: hero.y, yaw: hero.yaw, equip: Object.assign({}, equip), hour: DAY.goal ?? DAY.t, clock: DAY.run, view: viewMode,
-      inv: INV.hero.map((s) => ({ t: s.t, n: s.n })), people: peopleHot(), talked: TALK_SEEN };
-  }
-  // things and people come back before the first location is built (people stand where they were left)
-  function applyHotBefore(d) {
-    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return;
-    if (Array.isArray(d.inv)) INV.hero = invClean(d.inv);
-    peopleFromHot(d.people);
-    if (d.talked && typeof d.talked === 'object') for (const [id, seen] of Object.entries(d.talked)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen);
-  }
-  function applyHot(d) {
-    if (!d || typeof d !== 'object' || !Number.isFinite(d.x)) return false;
-    if (d.equip) for (const k of ['body', 'head', 'hands']) if (k in d.equip && (d.equip[k] === null || GEAR.some((g) => g.id === d.equip[k] && g.slot === k && hasThing(g.id)))) equip[k] = d.equip[k];
-    if (Number.isFinite(d.z) && !(d.y > 0.05) && d.x > 0 && d.x < GW && d.z > 0 && d.z < GH && !blockedAt(d.x, d.z)) { hero.x = d.x; hero.z = d.z; hero.arrived = !!exitAt(hero.x, hero.z); }
-    if (Number.isFinite(d.yaw)) hero.yaw = hero.tyaw = d.yaw;
-    if (Number.isFinite(d.hour)) daySet(d.hour);
-    if (d.clock) { DAY.run = true; $('clockChk').checked = true; }
-    return true;
-  }
-  function boot(hot) {
+  // a save (if there is one: world/state.js) comes in two steps: things, people and machines before the first location is built,
+  // the hero, the clock and the camera after it; then what he wears is checked against what he still has (he may have sold it)
+  function boot(data) {
     const t0 = performance.now();
     buildDecals();
-    applyHotBefore(hot);
-    enterLocation(hot && LOCATIONS[hot.loc] ? hot.loc : 'range', 'start');
-    const resumed = applyHot(hot);
+    loadSaved(data, 'before');
+    enterLocation(data && LOCATIONS[data.loc] ? data.loc : 'range', 'start');
+    if (loadSaved(data, 'after'))
+      for (const k of ['body', 'head', 'hands']) if (equip[k] !== null && !GEAR.some((g) => g.id === equip[k] && g.slot === k && hasThing(g.id))) equip[k] = null;
     setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
     Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });
     GAME_API.bootMs = Math.round(performance.now() - t0);
-    if (resumed && hot.view && vBtns[hot.view] && hot.view !== viewMode) setView(hot.view);
-    try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(hotData); } catch (e) { /* no live updates here */ }
+    startSaving();
     runFrames();
   }
-  let booted = false;
-  const start = (data) => { if (booted) return; booted = true; try { boot(data || {}); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать полигон: ' + e.message; } };
-  setTimeout(() => {
-    const h = window.claude && window.claude.hot;
-    if (h && h.ready) h.ready(start); else start((h && h.data) || {});
-  }, 30);
+  whenReady('poligon', (data) => { try { boot(data); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать полигон: ' + e.message; } });

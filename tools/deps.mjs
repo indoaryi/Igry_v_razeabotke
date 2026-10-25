@@ -2,6 +2,7 @@
 // Проверка модулей игры: кто у кого что берёт и всё ли честно.
 //   node tools/deps.mjs <папка игры>            — сводка; при нарушениях код выхода 1
 //   node tools/deps.mjs <папка игры> --all      — ещё и связи: какой модуль какие имена у каких модулей берёт
+//   node tools/deps.mjs <папка игры> --fix      — дописать недостающие импорты (и export у хозяина имени), убрать лишние
 // Правила:
 //   - движок (engine/) не импортирует ничего из игр: всё игровое приходит к нему через крючки (engine/src/core/game.js);
 //   - ядро движка не импортирует необязательные части — библиотеку предметов (props), шагающие машины (machine) и людей (people):
@@ -13,11 +14,12 @@
 //   - форма модуля простая: импорт — одна строка вида  import { a, b } from '…';  экспорт — слово export перед объявлением.
 import fs from 'fs';
 import path from 'path';
-import { root, walkModules, readModule, GLOBALS } from './lib/modules.mjs';
+import { root, walkModules, readModule, withImports, withExport, GLOBALS } from './lib/modules.mjs';
 
 const args = process.argv.slice(2);
 const game = args.find((a) => !a.startsWith('--')) || 'pyatietazhki';
 const showAll = args.includes('--all');
+const fix = args.includes('--fix');
 const man = JSON.parse(fs.readFileSync(path.join(root, game, 'build.json'), 'utf8'));
 
 const { order, mods, cycles, missing } = walkModules(man.entry, readModule);
@@ -33,6 +35,10 @@ const owner = new Map();
 for (const f of order) for (const n of mods.get(f).top.keys()) { if (owner.has(n)) P.dupes.push(`${n}: ${owner.get(n)} и ${f}`); else owner.set(n, f); }
 let nImports = 0, nExports = 0;
 const usedExports = new Set();
+const want = new Map();               // for --fix: file → { add: Map(name → owner), drop: Set(name) }; owner → names to export
+const wantExport = new Map();
+const wantOf = (f) => { if (!want.has(f)) want.set(f, { add: new Map(), drop: new Set() }); return want.get(f); };
+const exportIn = (f, n) => { if (!wantExport.has(f)) wantExport.set(f, new Set()); wantExport.get(f).add(n); };
 for (const f of order) {
   const m = mods.get(f);
   for (const s of m.form) P.form.push(`${f}:${s}`);
@@ -44,7 +50,7 @@ for (const f of order) {
     for (const n of im.names) {
       nImports++;
       imported.set(n, im.from);
-      if (src && !(src.top.get(n) || {}).exported) P.notExported.push(`${f}:${im.line} ${n} — в ${im.from} нет такого экспорта`);
+      if (src && !(src.top.get(n) || {}).exported) { P.notExported.push(`${f}:${im.line} ${n} — в ${im.from} нет такого экспорта`); if (src.top.has(n)) exportIn(im.from, n); }
       else usedExports.add(im.from + '|' + n);
     }
   }
@@ -53,9 +59,12 @@ for (const f of order) {
     used.add(r.name);
     if (m.top.has(r.name)) continue;
     if (imported.has(r.name)) { if (r.write) P.writes.push(`${f}:${r.line} ${r.name} (хозяин — ${imported.get(r.name)})`); continue; }
-    if (!GLOBALS.has(r.name)) P.unknown.push(`${f}:${r.line} ${r.name}` + (owner.has(r.name) ? `  (есть в ${owner.get(r.name)} — нужен импорт)` : ''));
+    if (!GLOBALS.has(r.name)) {
+      P.unknown.push(`${f}:${r.line} ${r.name}` + (owner.has(r.name) ? `  (есть в ${owner.get(r.name)} — нужен импорт)` : ''));
+      if (owner.has(r.name)) { wantOf(f).add.set(r.name, owner.get(r.name)); if (!mods.get(owner.get(r.name)).top.get(r.name).exported) exportIn(owner.get(r.name), r.name); }
+    }
   }
-  for (const [n, from] of imported) if (!used.has(n)) P.unused.push(`${f}: ${n} (из ${from})`);
+  for (const [n, from] of imported) if (!used.has(n)) { P.unused.push(`${f}: ${n} (из ${from})`); wantOf(f).drop.add(n); }
   for (const [, t] of m.top) if (t.exported) nExports++;
 }
 const uniq = (a) => [...new Set(a)];
@@ -80,5 +89,28 @@ if (showAll) {
     console.log(`  ${f}:`);
     for (const im of m.imports) console.log(`    ← ${im.from}${im.names.length ? ': ' + im.names.join(', ') : ''}`);
   }
+}
+if (fix && (want.size || wantExport.size)) {
+  const pos = (f) => order.indexOf(f);
+  const changed = [];
+  for (const [f, w] of want) {
+    const m = mods.get(f);
+    const by = new Map();
+    for (const im of m.imports) { if (!im.names.length) continue; for (const n of im.names) if (!w.drop.has(n)) { if (!by.has(im.from)) by.set(im.from, new Set()); by.get(im.from).add(n); } }
+    for (const [n, from] of w.add) { if (!by.has(from)) by.set(from, new Set()); by.get(from).add(n); }
+    const plain = m.imports.filter((im) => !im.names.length).map((im) => ({ names: [], from: im.from }));
+    const list = [...plain, ...[...by].sort((a, b) => pos(a[0]) - pos(b[0])).map(([from, names]) => ({ names: [...names], from }))];
+    fs.writeFileSync(path.join(root, f), withImports(f, fs.readFileSync(path.join(root, f), 'utf8'), list));
+    changed.push(`${f}: ${[...w.add.keys()].map((n) => '+' + n).concat([...w.drop].map((n) => '−' + n)).join(' ')}`);
+  }
+  for (const [f, names] of wantExport) {
+    let src = fs.readFileSync(path.join(root, f), 'utf8');
+    const top = mods.get(f).top, lines = new Set([...names].map((n) => top.get(n).stmt));
+    for (const line of lines) { const next = withExport(src, line); if (next) src = next; }
+    fs.writeFileSync(path.join(root, f), src);
+    changed.push(`${f}: export ${[...names].join(', ')}`);
+  }
+  console.log('\nИсправлено (проверь ещё раз):');
+  for (const c of changed) console.log('  ' + c);
 }
 process.exitCode = bad ? 1 : 0;

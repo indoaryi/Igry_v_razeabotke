@@ -9,6 +9,7 @@
   import { M, clamp, ry, tr, wrapA, xf } from '../core/math.js';
   import { bake, screenRect, shadowRect } from '../render/kit.js';
   import { LOC_HOOKS, MAP } from './map.js';
+  import { memoryOf } from './state.js';
   export const CATALOG = {};
   export const USE = {};
   // all of these belong to the current location; locations.js swaps them when the hero walks to another one
@@ -20,6 +21,11 @@
   // the current location's things come back from its kept runtime (locations.js)
   export function restoreThings(rt) { ({ INST, HEIGHTS, instById, PATH_SEGS, nextId } = rt); }
   export function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
+  // a thing's key: its type and place on the map (a part of something — by the key of its whole and its place in it);
+  // the same thing gets the same key every time the location is built, so what it remembers comes back to it (state.js)
+  // (things in the same place — tiles of the meadow — are told apart by their order)
+  const keyOf = (def) => def.parent ? def.parent.key + '/' + def.type + '@' + def.local.join(',') : def.type + '@' + def.at.join(',');
+  let keysUsed = new Map();
   export function instantiate(def, parentM) {
     const T = CATALOG[def.type];
     if (!T) throw new Error('no such type in the catalog: ' + def.type);
@@ -29,9 +35,13 @@
     const yaw0 = Math.atan2(M0[8], M0[10]);
     const { chunks, bb } = bake(built.kit, M0);
     const U = USE[def.type], active = !!U && (!U.active || U.active(def));
+    let key = keyOf(def);
+    const seen = keysUsed.get(key) || 0;
+    keysUsed.set(key, seen + 1);
+    if (seen) key += '#' + seen;
     const inst = {
-      id: def.type === 'meadow' ? 0 : nextId++, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
-      sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: {},
+      id: def.type === 'meadow' ? 0 : nextId++, key, def, type: def.type, T, M0, yaw0, built, chunks, bb, active,
+      sr: screenRect(bb), shr: shadowRect(bb), n: def.n || 0, dyn: Object.assign({}, memoryOf(MAP.id, key)),
       center: [(bb[0] + bb[3]) / 2, (bb[2] + bb[5]) / 2], leafy: !!(T.leafy && T.leafy(def))
     };
     inst.blocks = (built.blocks || []).map((b) => b.rect ? { poly: [[b.rect[0], b.rect[1]], [b.rect[2], b.rect[1]], [b.rect[2], b.rect[3]], [b.rect[0], b.rect[3]]].map((p) => toWorld2(M0, p)) } : { c: toWorld2(M0, b.c), r: b.r });
@@ -54,7 +64,7 @@
   // builds every object of the current location (MAP) from scratch; then the engine's modules add theirs (LOC_HOOKS.objects:
   // the walking machines that stand here, the meadow over the lawns)
   export function buildWorld() {
-    INST = []; HEIGHTS = []; nextId = 2; instById = new Map();
+    INST = []; HEIGHTS = []; nextId = 2; instById = new Map(); keysUsed = new Map();
     PATH_SEGS = [];
     for (const pl of MAP.paths || []) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
     for (const d of MAP.objects || []) instantiate(d);

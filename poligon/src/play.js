@@ -7,6 +7,7 @@
   import { getMesh } from '../../engine/src/render/webgl.js';
   import { decal } from '../../engine/src/render/decals.js';
   import { LOC_HOOKS, MAP } from '../../engine/src/world/map.js';
+  import { remember } from '../../engine/src/world/state.js';
   import { USE, byType, localPt } from '../../engine/src/world/instances.js';
   import { GH, GW } from '../../engine/src/world/ground.js';
   import { equip, rebuildHero } from '../../engine/src/hero/model.js';
@@ -162,7 +163,7 @@
     const cx = inst.def.at[0], cz = inst.def.at[1], dx = hero.x - cx, dz = hero.z - cz, dl = Math.hypot(dx, dz) || 1;
     plan({ type: 'path', to: [cx + dx / dl * inst.def.rx * 0.85, cz + dz / dl * inst.def.rz * 0.85] }, { type: 'call', fn: () => { hero.tyaw = yawTo(cx, cz); } }, { type: 'turned' },
       { type: 'act', kind: 'kneel', inst, opts: { cb: () => {
-        inst.dyn.searched = true;
+        remember(inst, { searched: true });
         const [t, text] = FINDS_R[findI++ % FINDS_R.length];
         if (t) invAdd(INV.hero, t, 1);
         toast(t ? text + ' В рюкзак.' : text);

@@ -7,6 +7,7 @@
   import { groundAt } from '../core/math.js';
   import { GAME, TEXTS } from '../core/game.js';
   import { LOCATIONS, LOC_HOOKS, MAP } from '../world/map.js';
+  import { savePart } from '../world/state.js';
   import { INST, actionsOf, chipOf, nameOf, noteOf } from '../world/instances.js';
   import { GH, GW } from '../world/ground.js';
   import { distToPoly, pointInPoly } from '../world/nav.js';
@@ -14,7 +15,7 @@
   import { ACT, dirOf, driving, hero } from '../hero/hero.js';
   import { doDefault, standUp, walkTo } from '../hero/state.js';
   import { goToLocation, travelState } from '../hero/travel.js';
-  import { fitStage, pickFrac, recenter, redraw, setGrid, setHover, setRaw, setViewMode, stageEl, viewToWorld } from '../render/stage.js';
+  import { fitStage, pickFrac, recenter, redraw, setGrid, setHover, setRaw, setViewMode, stageEl, viewMode, viewToWorld } from '../render/stage.js';
   const hudState = $('hudState'), hudNear = $('hudNear'), tipEl = $('tip');
   const ctxK = $('ctxK'), ctxName = $('ctxName'), ctxNote = $('ctxNote'), ctxActs = $('ctxActs');
   function stateText() {
@@ -55,7 +56,7 @@
   let ctxKey = '', hudKey = '', ctxTimer = 0;
   // the context panel is rebuilt on its next check (after something the player did may have changed what it shows)
   export const refreshContext = () => { ctxKey = ''; };
-  function button(label, fn, cls, off) {
+  export function button(label, fn, cls, off) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : ''); b.textContent = label;
     if (off) b.disabled = true;
@@ -106,6 +107,8 @@
     recenter(); fitStage(); redraw();
   }
   for (const [m, b] of Object.entries(vBtns)) if (b) b.addEventListener('click', () => setView(m));
+  // the camera's distance goes into a save too: the game comes back the way it was left
+  savePart('view', { save: () => ({ mode: viewMode }), load: (d) => { if (vBtns[d.mode] && d.mode !== viewMode) setView(d.mode); } });
   if ($('gridChk')) $('gridChk').addEventListener('change', (e) => { setGrid(e.target.checked); });
   if ($('rawChk')) $('rawChk').addEventListener('change', (e) => { setRaw(e.target.checked); redraw(); });
   // which location: the current one is pressed, another walks the hero to the exit that leads there
@@ -133,6 +136,7 @@
   if (clockChk) clockChk.addEventListener('change', (e) => { DAY.run = e.target.checked; });
   let clockKey = '';
   export function updateClock() {
+    if (clockChk && clockChk.checked !== DAY.run) clockChk.checked = DAY.run;     // a save may have brought the clock running
     const k = fmtHour(DAY.t) + dayPeriod(DAY.goal ?? DAY.t);
     if (k === clockKey) return;
     clockKey = k;

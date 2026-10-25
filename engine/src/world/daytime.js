@@ -4,16 +4,18 @@
   // low in the west in the evening — and at night a weaker moon takes over. Everything else that changes with the hour is in
   // DAY_KEYS: the tint of sunlit and shaded parts, how strong the shadows are, how many lamps and windows are lit, morning mist,
   // the colour of the air around the map, how cold it is (breath shows). The game reads DAYP each frame.
+  // The calendar counts days from the first (DAY.day): a new one begins whenever the clock passes midnight.
   import { $ } from '../core/prelude.js';
   import { FV, RV, S } from '../core/camera.js';
   import { add, clamp, dot, hash2, lerp, lerpV, nrm, scl, smooth, wpx, xf } from '../core/math.js';
   import { GAME } from '../core/game.js';
   import { hex2rgb } from '../render/materials.js';
   import { setSun } from '../render/webgl.js';
+  import { savePart } from './state.js';
   import { shadowRect } from '../render/kit.js';
   import { MAP } from './map.js';
   import { INST } from './instances.js';
-  export const DAY = { t: 14, run: false, rate: 1 / 25, goal: null, span: 0, rise: 6.6, set: 18.9, elMax: 0.95, sunOn: 5.9, sunOff: 19.5 };
+  export const DAY = { day: 1, t: 14, run: false, rate: 1 / 25, goal: null, span: 0, rise: 6.6, set: 18.9, elMax: 0.95, sunOn: 5.9, sunOff: 19.5 };
   export const DAY_PRESETS = [{ id: 'morning', name: 'Утро', h: 8 }, { id: 'day', name: 'День', h: 14 }, { id: 'evening', name: 'Вечер', h: 17.75 }, { id: 'night', name: 'Ночь', h: 23.5 }];
   //   hour   sunlit tint          shade tint           shadows lamps windows mist  air (around the map)  cold  saturation
   const DAY_KEYS = [
@@ -48,11 +50,22 @@
   export function dayGoto(h) { const span = ((h - DAY.t) % 24 + 24) % 24; if (span < 0.01) return; DAY.goal = h; DAY.span = span; }
   export function daySet(h) { DAY.t = ((h % 24) + 24) % 24; DAY.goal = null; }
   export function dayUpdate(dt) {
+    const was = DAY.t;
     if (DAY.goal != null) {
       const left = ((DAY.goal - DAY.t) % 24 + 24) % 24, step = Math.max(2.4, DAY.span / 2.2) * dt;
       if (left <= step || left > 23.999) { DAY.t = DAY.goal; DAY.goal = null; } else DAY.t = (DAY.t + step) % 24;
     } else if (DAY.run) DAY.t = (DAY.t + dt * DAY.rate) % 24;
+    if (was - DAY.t > 12) DAY.day++;      // the clock went round midnight: a new day
   }
+  // the clock in a save: the day, the hour (or the hour it was hurrying to), whether it runs by itself
+  savePart('clock', {
+    save: () => ({ day: DAY.day + (DAY.goal != null && DAY.goal < DAY.t ? 1 : 0), hour: DAY.goal ?? DAY.t, run: DAY.run }),
+    load: (d) => {
+      if (Number.isFinite(d.hour)) daySet(d.hour);
+      if (Number.isFinite(d.day)) DAY.day = Math.max(1, Math.floor(d.day));
+      DAY.run = !!d.run;
+    }
+  });
   // the keys around an hour, blended smoothly (the list wraps round midnight)
   function dayLook(h) {
     const K = DAY_KEYS, n = K.length;
