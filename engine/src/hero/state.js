@@ -2,7 +2,7 @@
   // Who he is (the record, the activities) is in hero.js; the world's step that calls heroStep is in core/run.js.
   // events of the hero other modules listen to: shot() — a round leaves the muzzle (fx2d.js draws it and lands the hit)
   import { M, approach, approachAngle, frameY, tr, wrapA } from '../core/math.js';
-  import { TEXTS, hook } from '../core/game.js';
+  import { GAME, TEXTS, hook } from '../core/game.js';
   import { toast } from '../core/toast.js';
   import { LOC_HOOKS } from '../world/map.js';
   import { savePart } from '../world/state.js';
@@ -142,7 +142,7 @@
 
   // ================= the hero's step (core/run.js calls it first in the world's step) =================
   // what ends his overlays needs from the rest of him: an activity that keeps his hands, the shot event, his pose for a throw
-  const HERO_ENDS = { busy: () => busyAct(), shot: () => { for (const f of HERO_EVENTS.shot) f(); }, rig: () => heroRig(false) };
+  const HERO_ENDS = { busy: () => busyAct(), shot: () => { for (const f of HERO_EVENTS.shot) f(); for (const f of GAME.noise) f(hero.x, hero.z, 'shot', hero); }, rig: () => heroRig(false) };
   export function heroStep(dt) {
     hero.t += dt;
     if (!hero.path.length && !hero.act) runQueue();     // a fresh order starts this very frame

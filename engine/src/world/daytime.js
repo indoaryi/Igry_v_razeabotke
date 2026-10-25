@@ -58,7 +58,9 @@
     if (was - DAY.t > 12) DAY.day++;      // the clock went round midnight: a new day
   }
   // the clock in a save: the day, the hour (or the hour it was hurrying to), whether it runs by itself
+  // (loaded before the first location is built: where people are at that hour depends on it)
   savePart('clock', {
+    phase: 'before',
     save: () => ({ day: DAY.day + (DAY.goal != null && DAY.goal < DAY.t ? 1 : 0), hour: DAY.goal ?? DAY.t, run: DAY.run }),
     load: (d) => {
       if (Number.isFinite(d.hour)) daySet(d.hour);

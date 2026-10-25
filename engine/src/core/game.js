@@ -12,7 +12,8 @@
     drawFx: [],   // f(ctx, k, X, Y): 2D effects of the game's own, drawn over the scene with the engine's
     frame: [],    // f(dt, now): after the stage is drawn: panels and HUD of the game
     state: [],    // f() → text or null: what the hero is busy with, for the chip over the stage (the first that answers wins)
-    context: []   // f() → { inst, mode } or null: what the panel «рядом» is about, before the engine looks for the nearest thing
+    context: [],  // f() → { inst, mode } or null: what the panel «рядом» is about, before the engine looks for the nearest thing
+    noise: []     // f(x, z, kind, source): something loud happened there — a shot, a machine's footfall; people turn to it
   };
   export function hook(list, f, at = 50) {
     const h = (...a) => f(...a);

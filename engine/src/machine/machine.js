@@ -249,6 +249,7 @@
       if (t !== '#' && t !== '_') footprint(m, f);
       if (m.walking && Math.random() < 0.2) hissPuff(m, m.bones || machineBones(m, m), false);     // the hydraulics let off now and then
       for (const h of MACHINE_HOOKS.stomp) h(P, m);
+      for (const f of GAME.noise) f(P[0], P[2], 'stomp', m);
     }
   }
   // press the sole into the painted ground: a darker print with tread bars, a few pixels of the texture updated

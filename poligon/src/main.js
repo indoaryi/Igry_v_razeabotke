@@ -41,6 +41,7 @@
   import '../../engine/src/people/items.js';
   import '../../engine/src/people/look.js';
   import '../../engine/src/people/people.js';
+  import '../../engine/src/people/mind.js';
   import '../../engine/src/people/talk.js';
   import '../../engine/src/people/trade.js';
   import './catalog.js';

@@ -9,6 +9,7 @@
   import { buildGround, ground, setGeometry, setGround } from './ground.js';
   import { NAV, buildNav, navAlloc, navRestore } from './nav.js';
   const LOC_RT = {};
+  export const runtimeOf = (id) => LOC_RT[id] || null;      // a built location's things (INST, instById) while the hero is elsewhere
   function saveRuntime() {
     const rt = MAP && LOC_RT[MAP.id];
     if (!rt) return;

@@ -2,44 +2,50 @@
   // A game adds people with addPerson(def):
   //   { id, name, short (the chip «рядом: …»), note(p) (a line for the context panel), look (hero/look.js), loc, at: [x, z], yaw,
   //     gear: { body, head, hands } (things he wears: hero/look.js WEAR; personWear() changes them), pace (hero/body.js PACE), speed: 1,
-  //     mode: 'post' (default), inv: [{ t, n }] (items.js), trade: { … } (trade.js), dialog: id (talk.js),
-  //     barks: { hello, follow, wait, home, sit, arrive(location), idle, … } (a line, a list to pick from or (p, …) → line) }
+  //     mode: 'post' (default), day: [ … ] (his day, mind.js), on: { shot(p), stomp(p) … } (what he decides when he hears it, mind.js),
+  //     inv: [{ t, n }] (items.js), trade: { … } (trade.js), dialog: id (talk.js),
+  //     barks: { hello, follow, wait, home, sit, arrive(location), idle, shot, stomp, … } (a line, a list to pick from or (p, …) → line) }
   // A person is a body like the hero's (hero/body.js) with a mind of his own; control can pass to him (takeControl): then the player
   // steers him, and the hero becomes a person himself.
-  // What a person has in mind is his mode:
-  //   post — stands at his place, turns his head to the hero, looks round now and then, goes back to his place if he had to step aside;
-  //   follow — keeps a step or two from the hero, runs when left behind, sits beside him on a bench, goes through exits with him;
-  //   wait — stays where he was asked to; home — walks back to his place (through an exit, if it is in another location);
-  //   talk — faces the hero while they talk (talk.js).
+  // What a person has in mind is his mode — an entry of MIND, the catalog of behaviours. The engine's are in mind.js: post (stands at
+  // his place), sit, patrol, away (indoors); follow and wait (the hero's orders: they outrank his day), home (on his way back to his
+  // day), talk (faces the hero, talk.js). A game adds its own: MIND.smoke = { think(p, dt, dh), … }. An entry:
+  //   { think(p, dt, dh) — his step while he is here (dh: how far the hero is), enter(p, place) — he begins it at its place,
+  //     restore(p) — he is put down already at it (a save, a jump of the clock), goal(p, place) → [x, z] where exactly to go for it,
+  //     here(p) → is he at it, note(p) → a line for the panel, pace(p, dh) → how fast he walks meanwhile, after(p, dt, dh) — after
+  //     his step along the path, still: he does not step aside from the hero, order: given by the hero, chat: a word now and then }
   // Every person in the current location has an INST entry: it can be tapped, it shows in the panel «рядом», and the person is drawn
   // from his bones twelve times a second with everything else (GAME.tick → snapshot, GAME.items, GAME.key).
-  import { ID4, approach, approachAngle, clamp, mul, wpx, wrapA, xf } from '../core/math.js';
+  import { ID4, approach, approachAngle, clamp, mul, rng, wpx, wrapA, xf } from '../core/math.js';
   import { GAME, hook } from '../core/game.js';
   import { LOCATIONS, LOC_HOOKS, MAP } from '../world/map.js';
   import { savePart } from '../world/state.js';
   import { INST, groundY, instById, newId } from '../world/instances.js';
   import { GH, GW } from '../world/ground.js';
-  import { NAV, blockedAt, findPath, nearestFree } from '../world/nav.js';
-  import { exitAt } from '../world/locations.js';
+  import { NAV, blockedAt, findPath } from '../world/nav.js';
+  import { exitAt, runtimeOf } from '../world/locations.js';
   import { RIFLE } from '../hero/model.js';
   import { rebuildHero, steerLook } from '../hero/wardrobe.js';
   import { OVERLAYS, PACE, blendOverlays, cycleOf, dressedModel, endOverlays, newBody, settle, speedOf, walkAlong } from '../hero/body.js';
-  import { driving, hero, heroHidden, setHeroBody } from '../hero/hero.js';
+  import { driving, hero, setHeroBody } from '../hero/hero.js';
   import { bodyRig, poseKey, rifleWorld } from '../hero/rig.js';
-  import { seatsOf } from '../hero/state.js';
   import { travelState } from '../hero/travel.js';
   import { VH, VW, lastView, redraw, stageEl } from '../render/stage.js';
   import { INV, invChanged, invClean } from './items.js';
   export const PEOPLE = [];
+  export const MIND = {};
+  // people's whims — when to look round, which word to say — come from their own dice, so they never alter the hero's luck
+  // (a shot's spread, a throw): with the page's dice seeded, as in the checks, people stay the same whatever the hero does
+  export const DICE = rng(Math.floor(Math.random() * 1e9) + 1);
   // acts: f(p, list) — more actions for a person's panel, { label, run, order } (talk and trade add theirs);
   // busy: f() → true while control must not pass to another person (a deal is on the table)
-  export const PEOPLE_HOOKS = { acts: [], busy: [] };
+  export const PEOPLE_HOOKS = { acts: [], busy: [], loaded: [] };     // loaded: f(p) — a person came out of a save (his mind takes note)
   export const personHere = (p) => !!p.inst && p.loc === MAP.id;
   export const personById = (id) => PEOPLE.find((p) => p.id === id);
   // a person is a body (hero/body.js) with a mind: what he has in mind (mode), his place, his words, his things
   export function addPerson(def) {
     const p = Object.assign(newBody({
-      x: def.at[0], z: def.at[1], yaw: def.yaw || 0, tyaw: def.yaw || 0, t: 3 + Math.random() * 10,
+      x: def.at[0], z: def.at[1], yaw: def.yaw || 0, tyaw: def.yaw || 0, t: 3 + DICE() * 10,
       look: def.look, gear: Object.assign({ body: null, head: null, hands: null }, def.gear), pace: def.pace || PACE, speedK: def.speed || 1
     }), mindOf(def));
     PEOPLE.push(p);
@@ -48,8 +54,8 @@
   function mindOf(def) {
     return {
       def, id: def.id, name: def.name, loc: def.loc, home: { loc: def.loc, at: def.at.slice(), yaw: def.yaw || 0 }, mode: def.mode || 'post', prevMode: null,
-      attend: 0, idleT: 3 + Math.random() * 4, replanT: 0, homeT: 0, delay: 0, metT: -1e9, chatT: 30 + Math.random() * 30, bark: null, barkEl: null, arriveT: 0,
-      travel: false, inst: null, bones: null, items: [], snapKey: '',
+      attend: 0, attendTo: null, idleT: 3 + DICE() * 4, replanT: 0, homeT: 0, delay: 0, metT: -1e9, chatT: 30 + DICE() * 30, bark: null, barkEl: null, arriveT: 0,
+      travel: false, away: false, placed: false, planKey: -1, road: -1, restore: false, heard: {}, inst: null, bones: null, items: [], snapKey: '',
       inv: (def.inv || []).map((s) => ({ t: s.t, n: s.n }))
     };
   }
@@ -58,7 +64,7 @@
 
   // ---------- the person in the current location: an entry in INST ----------
   const PERSON_USE = { name: (i) => i.person.name, short: (i) => i.person.def.short || i.person.name, note: (i) => personNote(i.person), acts: (i) => personActs(i.person) };
-  function personInst(p) {
+  export function personInst(p) {
     // ids are per location and only 8 bits: a person keeps the one he got the first time he came to a location
     const ids = p.ids || (p.ids = {});
     if (!ids[MAP.id]) ids[MAP.id] = newId();
@@ -74,24 +80,32 @@
     p.items = [];
     return inst;
   }
-  function dropPersonInst(p) {
+  // his entry goes — from this location's things, or from a location kept while the hero is elsewhere (his day took him away)
+  export function dropPersonInst(p) {
     const i = p.inst; if (!i) return;
-    const k = INST.indexOf(i); if (k >= 0) INST.splice(k, 1);
-    instById.delete(i.id);
+    const rt = p.loc === MAP.id ? { INST, instById } : runtimeOf(p.loc);
+    if (rt) { const k = rt.INST.indexOf(i); if (k >= 0) rt.INST.splice(k, 1); if (rt.instById.get(i.id) === i) rt.instById.delete(i.id); }
     p.inst = null; p.items = [];
   }
-  hook(LOC_HOOKS.objects, () => { for (const p of PEOPLE) if (p.loc === MAP.id && !p.travel && p !== hero) personInst(p); }, 12);
+  hook(LOC_HOOKS.objects, () => { for (const p of PEOPLE) if (p.loc === MAP.id && !p.travel && !p.away && p !== hero) personInst(p); }, 12);
+  // the mode he is in under a talk, for the panel and the orders
+  export const modeOf = (p) => p.mode === 'talk' ? p.prevMode : p.mode;
   function personNote(p) {
-    const own = typeof p.def.note === 'function' ? p.def.note(p) : (p.def.note || '');
-    const m = { follow: 'Идёт за тобой.', wait: 'Ждёт здесь, как ты просил.', home: 'Возвращается на своё место.' }[p.mode === 'talk' ? p.prevMode : p.mode] || '';
-    return [m, own].filter(Boolean).join(' ');
+    const own = p.home.note || (typeof p.def.note === 'function' ? p.def.note(p) : (p.def.note || ''));
+    const M = MIND[modeOf(p)];
+    return [M && M.note ? M.note(p) : '', own].filter(Boolean).join(' ');
   }
-  export const atHome = (p) => p.loc === p.home.loc && Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) < 0.6;
+  // at his place: where his day has him now (p.home), or what the behaviour counts as being there (sitting at the seat, indoors)
+  export function atHome(p) {
+    const M = MIND[modeOf(p)];
+    if (M && M.here) return M.here(p);
+    return p.loc === p.home.loc && Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) < 0.6;
+  }
   function personActs(p) {
     const out = [];
     for (const f of PEOPLE_HOOKS.acts) f(p, out);
     if (p.def.follows !== false) {
-      const m = p.mode === 'talk' ? p.prevMode : p.mode;
+      const m = modeOf(p);
       if (m === 'follow') out.push({ label: 'Жди здесь', run: () => personWait(p), order: 40 });
       else out.push({ label: 'Идём со мной', run: () => personFollow(p), order: 40 });
       if (!atHome(p) && m !== 'home') out.push({ label: 'Ступай на место', run: () => personHome(p), order: 50 });
@@ -104,7 +118,7 @@
   export function personWait(p) { setPersonMode(p, 'wait'); p.path.length = 0; personBark(p, 'wait'); }
   export function personHome(p) { setPersonMode(p, 'home'); p.path.length = 0; personBark(p, 'home'); }
   // walk to a point round the obstacles
-  function personGo(p, to, run = false) {
+  export function personGo(p, to, run = false) {
     const pts = findPath([p.x, p.z], to, NAV.hero);
     p.path = pts ? pts.map((q) => ({ x: q[0], z: q[1] })) : [];
     p.run = run;
@@ -123,91 +137,8 @@
       p.queue.shift();
     }
   }
-  // the hero sat down: take the free seat nearest to him, on his bench or the next one
-  const seatTaken = (st, me) => (hero.seat && hero.seat.inst === st.inst && hero.seat.s === st.s) || PEOPLE.some((q) => q !== me && q.seat && q.seat.inst === st.inst && q.seat.s === st.s);
-  function personSitNear(p) {
-    let best = null, bd = 4.5;
-    for (const inst of INST) {
-      if (!inst.built || !inst.built.seats || !inst.built.seats.length) continue;
-      for (const st of seatsOf(inst)) {
-        if (seatTaken(st, p)) continue;
-        const d = Math.hypot(st.at[0] - hero.x, st.at[1] - hero.z);
-        if (d < bd) { bd = d; best = st; }
-      }
-    }
-    if (!best) return false;
-    p.path.length = 0;
-    p.queue = [{ type: 'path', to: best.front }, { type: 'goto', x: best.front[0], z: best.front[1] }, { type: 'face', yaw: best.yaw }, { type: 'turned' },
-      { type: 'goto', x: best.at[0], z: best.at[1], back: true }, { type: 'sit', seat: best }];
-    return true;
-  }
-  function personStand(p) {
-    if (!p.seat) { p.sitTarget = 0; p.queue = []; return; }
-    p.queue = [{ type: 'stand' }, { type: 'goto', x: p.seat.front[0], z: p.seat.front[1] }];
-  }
-
-  // ---------- what he has in mind ----------
-  const FOLLOW_NEAR = 1.6;
-  function followGoal(p, near) {
-    // a point on a circle round the hero, on our side of him: behind him when he walks away
-    let dx = p.x - hero.x, dz = p.z - hero.z, d = Math.hypot(dx, dz);
-    if (d < 1e-3) { dx = -Math.sin(hero.yaw); dz = -Math.cos(hero.yaw); d = 1; }
-    return nearestFree(clamp(hero.x + dx / d * near, 0.5, GW - 0.5), clamp(hero.z + dz / d * near, 0.5, GH - 0.5), 2, NAV.hero);
-  }
-  function thinkFollow(p, dt, dh) {
-    if (hero.sitTarget === 1 && hero.seat && hero.sit > 0.4) {      // he sits down: so do we, beside him
-      if (!p.seat && !p.queue.length && !p.sitTarget && personSitNear(p)) personBark(p, 'sit');
-      return;
-    }
-    if (p.queue.some((c) => c.type === 'sit')) { p.queue.length = 0; p.path.length = 0; }       // he got up before we sat down
-    if (p.seat || p.sitTarget) { if (!p.queue.length) personStand(p); return; }     // he got up: up we get too
-    if (p.queue.length) return;
-    const near = driving() ? 3.4 : FOLLOW_NEAR;
-    p.replanT -= dt;
-    if ((dh > near + 0.9 || (p.path.length && hero.path.length)) && p.replanT <= 0) {
-      p.replanT = 0.45;
-      const g = followGoal(p, near);
-      if (g && Math.hypot(g[0] - p.x, g[1] - p.z) > 0.25) personGo(p, g, dh > 5 || (hero.run && hero.path.length > 0));
-    }
-    if (p.path.length && dh < near && !hero.path.length) p.path.length = 0;       // close enough, and he stopped: so do we
-  }
-  function thinkHome(p) {
-    if (p.path.length) return;
-    if (p.loc !== p.home.loc) {
-      // home is in another location: walk out through the exit that leads there; once in it, he is home
-      const e = (MAP.exits || []).find((x) => x.to === p.home.loc) || (MAP.exits || [])[0];
-      if (!e) { p.mode = 'wait'; return; }
-      if (Math.hypot(p.x - e.go[0], p.z - e.go[1]) > 0.6) { personGo(p, e.go); return; }
-      dropPersonInst(p);
-      Object.assign(p, { loc: p.home.loc, x: p.home.at[0], z: p.home.at[1], yaw: p.home.yaw, tyaw: p.home.yaw, mode: 'post' });
-      return;
-    }
-    if (Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) > 0.3) { if (!personGo(p, p.home.at)) p.mode = 'post'; return; }
-    p.mode = 'post'; p.tyaw = p.home.yaw;
-  }
-  // standing about: notices the hero, looks round, goes back to his place after stepping aside
-  function thinkIdle(p, dt, dh) {
-    const toHero = Math.atan2(hero.x - p.x, hero.z - p.z), rel = wrapA(toHero - p.yaw);
-    const sees = dh < 4.5 && !heroHidden() && !travelState;
-    if (p.attend > 0 || (sees && dh < 2.4 && !hero.path.length && !p.path.length && !p.sitTarget && Math.abs(rel) > 1.05)) p.tyaw = toHero;
-    if (sees) {
-      p.headTo = Math.abs(rel) < 1.9 ? clamp(rel, -1.05, 1.05) : 0;
-      if (dh < 3 && p.t - p.metT > 90) { p.metT = p.t; personBark(p, 'hello'); }
-    } else {
-      p.idleT -= dt;
-      if (p.idleT <= 0) {
-        p.idleT = 3.5 + Math.random() * 5;
-        p.headTo = Math.random() < 0.35 ? 0 : (Math.random() - 0.5) * 1.7;
-        // now and then a hand goes to the kit on his chest (a radio, a pouch)
-        if (Math.random() < 0.25 && !p.path.length && !p.sitTarget) Object.assign(p.reach, { on: true, t: 0, to: [-0.07, 0.08, 0.25], cb: null, fired: false });
-      }
-    }
-    // stepped aside or pushed off his post: back to it when nobody is around
-    if (p.mode === 'post' && !p.path.length && !atHome(p) && p.loc === p.home.loc) {
-      p.homeT += dt;
-      if (p.homeT > 6 && dh > 2.5) { p.homeT = 0; personGo(p, p.home.at); p.queue = [{ type: 'face', yaw: p.home.yaw }]; }
-    } else p.homeT = 0;
-  }
+  // whether a seat is taken: by the hero or by somebody else (me excepted)
+  export const seatTaken = (st, me) => (hero.seat && hero.seat.inst === st.inst && hero.seat.s === st.s) || PEOPLE.some((q) => q !== me && q.seat && q.seat.inst === st.inst && q.seat.s === st.s);
   // the hero walks right into him: one step aside
   function stepAside(p, dh) {
     if (p.path.length || p.queue.length || p.sit > 0 || p.sitTarget || !hero.path.length || dh > 0.62 || driving()) return;
@@ -217,29 +148,24 @@
     }
   }
 
-  // ---------- the step: his mind first, then the body's step in the same pieces as the hero's (body.js) ----------
+  // ---------- the step: his mind first (MIND), then the body's step in the same pieces as the hero's (body.js) ----------
   const PERSON_ENDS = {};
   function updatePerson(p, dt) {
     p.t += dt;
     if (p.delay > 0) p.delay -= dt;
     p.attend = Math.max(0, p.attend - dt);
+    if (p.attend <= 0) p.attendTo = null;
     const dh = Math.hypot(hero.x - p.x, hero.z - p.z);
-    if (p.mode === 'follow') thinkFollow(p, dt, dh);
-    else if (p.mode === 'home') thinkHome(p);
-    else if (p.mode === 'talk') {
-      // face the hero; sitting on a bench, only the head turns to him
-      const toHero = Math.atan2(hero.x - p.x, hero.z - p.z);
-      p.path.length = 0; p.tyaw = toHero;
-      p.headTo = p.sit > 0 && p.seat ? clamp(wrapA(toHero - p.seat.yaw), -1.05, 1.05) : 0;
-    }
-    if (p.mode === 'post' || p.mode === 'wait') thinkIdle(p, dt, dh);
-    if (!p.inst || p.loc !== MAP.id) return;        // walked out of the location (home through an exit)
-    if (p.mode !== 'talk') stepAside(p, dh);
+    let M = MIND[p.mode] || MIND.post;
+    if (M.think) M.think(p, dt, dh);
+    if (MIND[p.mode] !== M) { M = MIND[p.mode] || MIND.post; if (M.think) M.think(p, dt, dh); }      // a change of mind takes effect this very step
+    if (!p.inst || p.loc !== MAP.id) return;        // walked out of the location (home through an exit), or went indoors
+    if (!M.still) stepAside(p, dh);
     personQueue(p);
     // walking along the path
     const moving = p.path.length > 0 && p.delay <= 0;
-    if (moving) walkAlong(p, speedOf(p) * dt * (p.mode === 'follow' && dh < 1.1 && hero.path.length ? 0.6 : 1), cycleOf(p));
-    if (p.mode === 'follow' && !p.path.length && !p.sitTarget && !p.queue.length && dh < 4) p.tyaw = approachAngle(p.tyaw, Math.atan2(hero.x - p.x, hero.z - p.z), dt * 2);
+    if (moving) walkAlong(p, speedOf(p) * dt * (M.pace ? M.pace(p, dh) : 1), cycleOf(p));
+    if (M.after) M.after(p, dt, dh);
     p.yaw = approachAngle(p.yaw, p.tyaw, dt * (p.path.length ? 15 : p.turn));
     if (p.path.length) p.headTo = 0;
     p.head = approach(p.head, p.headTo, dt * 3);
@@ -251,7 +177,7 @@
     // a word now and then: about the new place, or just like that while walking about together
     if (p.bark) { p.bark.t -= dt; if (p.bark.t <= 0) p.bark = null; }
     if (p.arriveT > 0) { p.arriveT -= dt; if (p.arriveT <= 0) personBark(p, 'arrive', MAP); }
-    if (p.mode === 'follow') { p.chatT -= dt; if (p.chatT <= 0) { p.chatT = 45 + Math.random() * 40; if (!p.bark && !travelState) personBark(p, 'idle'); } }
+    if (M.chat) { p.chatT -= dt; if (p.chatT <= 0) { p.chatT = 45 + DICE() * 40; if (!p.bark && !travelState) personBark(p, 'idle'); } }
   }
   function updatePeople(dt) { for (const p of PEOPLE) if (personHere(p)) updatePerson(p, dt); }
 
@@ -269,8 +195,8 @@
   LOC_HOOKS.enter.push((def, spawnName) => {
     for (const p of PEOPLE) {
       if (p === hero) { p.loc = def.id; continue; }
-      // someone who came here on his own while the hero was away (went home through an exit) gets his entry now
-      if (!p.travel && p.loc === def.id && !p.inst) { personInst(p); continue; }
+      // someone who came here on his own while the hero was away (his day brought him) gets his entry now
+      if (!p.travel && p.loc === def.id && !p.inst && !p.away) { personInst(p); continue; }
       if (!p.travel) continue;
       const sp = def.spawns[spawnName] || def.spawns.start;
       let bx = sp.at[0], bz = sp.at[1];
@@ -300,12 +226,11 @@
   hook(GAME.items, (out) => { for (const p of PEOPLE) if (personHere(p)) { if (!p.items.length) personSnapshot(p); for (const it of p.items) out.push(it); } }, 60);
 
   // ---------- a word over the head ----------
-  function personBark(p, key, ...args) {
+  export function personBark(p, key, ...args) {
     const B = p.def.barks || {}, v = B[key];
-    let text = typeof v === 'function' ? v(p, ...args) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v;
-    if (!text) return;
-    p.bark = { text, t: clamp(1.4 + text.length * 0.055, 2.4, 6) };
+    personSay(p, typeof v === 'function' ? v(p, ...args) : Array.isArray(v) ? v[Math.floor(DICE() * v.length)] : v);
   }
+  export function personSay(p, text) { if (text) p.bark = { text, t: clamp(1.4 + text.length * 0.055, 2.4, 6) }; }
   // the bubble follows the head as the camera moves; hidden while the screen fades or the person is out of view
   function stageFrac(P) {
     const lv = lastView, s = wpx(P);
@@ -362,7 +287,7 @@
   }
   // the body the player leaves becomes a person: the hero the first time gets a mind of his own (HERO_PERSON); his things go with him
   function becomePerson(h, loc, at, yaw) {
-    if (!h.def) Object.assign(h, mindOf(Object.assign({}, HERO_PERSON, { loc, at, yaw })));
+    if (!h.def) Object.assign(h, mindOf(Object.assign({}, HERO_PERSON, { loc, at, yaw })), { placed: true });
     Object.assign(h, { loc, travel: false, inv: INV.hero, model: null, items: [] });
     if (!PEOPLE.includes(h)) PEOPLE.push(h);
   }
@@ -381,16 +306,18 @@
   // (whoever the player steers is not among them: his place, gear and things are the hero's part and the inventory)
   export function peopleHot() {
     return PEOPLE.filter((p) => p !== hero).map((p) => ({
-      id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode,
+      id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode, away: p.away,
       inv: p.inv.map((s) => ({ t: s.t, n: s.n })), gear: Object.assign({}, p.gear)
     }));
   }
+  // a saved person is put down as he was: his mind picks his day up from there (PEOPLE_HOOKS.loaded, mind.js)
   function personFromHot(p, d) {
     if (!LOCATIONS[d.loc] || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return;
-    Object.assign(p, { loc: d.loc, x: d.x, z: d.z, yaw: d.yaw || 0, tyaw: d.yaw || 0, mode: ['post', 'follow', 'wait', 'home'].includes(d.mode) ? d.mode : 'post' });
+    Object.assign(p, { loc: d.loc, x: d.x, z: d.z, yaw: d.yaw || 0, tyaw: d.yaw || 0, mode: MIND[d.mode] && d.mode !== 'talk' ? d.mode : 'post', away: !!d.away, placed: true, restore: true });
     if (Array.isArray(d.inv)) p.inv = invClean(d.inv);
     if (d.gear) for (const k of ['body', 'head', 'hands']) if (k in d.gear && (d.gear[k] === null || typeof d.gear[k] === 'string')) p.gear[k] = d.gear[k];
     p.model = null;
+    for (const f of PEOPLE_HOOKS.loaded) f(p);
   }
   export function peopleFromHot(list) {
     if (!Array.isArray(list)) return;

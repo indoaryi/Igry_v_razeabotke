@@ -1,19 +1,30 @@
   // ================= the second person on the range: warrant officer Somov, testing a sealed protective kit =================
-  // He is the engine's person (engine/src/people): stands by the walking suits, notices the hero, talks, follows, trades.
+  // He is the engine's person (engine/src/people): stands by the walking suits, notices the hero, talks, follows, trades, and has
+  // a day of his own (engine/src/people/mind.js): the suits in the morning, lunch on the bench, the gate after it, the suits again,
+  // the hostel for the night. He turns to shots and to a walking suit's footfalls and has a word about them.
   // His kit is the engine's КЗУ look, built after the player's sketch (camouflage, a sealed helmet with a smoked visor, a respirator,
   // a hose to the life-support box on his back, a radio with a whip antenna).
   import { sparkleAround } from '../../engine/src/fx/fx2d.js';
   import { MONEY } from '../../engine/src/people/items.js';
   import { KZU_LOOK } from '../../engine/src/people/look.js';
-  import { PEOPLE_HOOKS, addPerson, atHome, personFollow, personHome, personWait } from '../../engine/src/people/people.js';
+  import { PEOPLE_HOOKS, addPerson, atHome, modeOf, personFollow, personHome, personWait } from '../../engine/src/people/people.js';
   import { DIALOGS, talkSeen } from '../../engine/src/people/talk.js';
   import { openTrade } from '../../engine/src/people/trade.js';
   import { gearCheck } from './things.js';
-  const modeOf = (p) => p.mode === 'talk' ? p.prevMode : p.mode;
   export const SOMOV = addPerson({
     id: 'somov', name: 'Прапорщик Сомов', short: 'прапорщик Сомов', look: KZU_LOOK, loc: 'range', at: [15.4, 16.9], yaw: -0.1,
     note: 'Испытывает защитный комплект. Говорит через динамик на груди.',
     dialog: 'somov',
+    // his day on the range (the hours are the game's clock)
+    day: [
+      { h: 7.5, do: 'post', at: [15.4, 16.9], yaw: -0.1, note: 'Испытывает защитный комплект у костюмов. Говорит через динамик на груди.' },
+      { h: 12, do: 'sit', near: [9.2, 21.6], note: 'Обеденный перерыв: сидит на лавочке. Есть в шлеме не может, зато отдыхает.', say: 'Обед. Хоть посидеть.' },
+      { h: 12.75, do: 'patrol', points: [[15.6, 22.6], [19.0, 25.6], [16.2, 24.0], [12.6, 24.2]], pause: 5, at: [15.6, 22.6], note: 'Обходит КПП и ворота.', say: 'Пройдусь до ворот.' },
+      { h: 13.75, do: 'post', at: [15.4, 16.9], yaw: -0.1, note: 'Снова у костюмов: испытания до вечера.' },
+      { h: 18, do: 'away', door: 'entrance', near: [2.5, 21.7], note: 'Ушёл в общежитие.', say: 'На сегодня всё. Ужин в восемь.' }
+    ],
+    // what he decides when he hears something: a shot too close — he takes a step away from the firing line
+    on: { shot: (p, src, d) => { if (d < 3 && !p.path.length && !p.sitTarget) { const a = Math.atan2(p.x - src.x, p.z - src.z); p.path = [{ x: p.x + Math.sin(a) * 1.2, z: p.z + Math.cos(a) * 1.2 }]; } } },
     inv: [{ t: MONEY, n: 400 }, { t: 'medkit', n: 2 }, { t: 'stew', n: 3 }, { t: 'filter', n: 4 }, { t: 'battery', n: 6 }, { t: 'grenade', n: 6 }, { t: 'torch', n: 1 }, { t: 'cigs', n: 20 }, { t: 'drink', n: 3 }],
     trade: {
       buy: 0.6, sell: 1,
@@ -30,7 +41,9 @@
       home: ['Пошёл на место.', 'Есть на место.'],
       sit: ['Перекур? Я рядом посижу. Курить всё равно не могу.', 'Посидим.'],
       arrive: (p, loc) => loc.id === 'edge' ? 'Опушка. Тишина, листья — фильтр отдыхает.' : 'Полигон. Родные бочки.',
-      idle: ['Шланг давит на плечо. Терпимо.', 'В шлеме слышно, как сам дышишь.', 'Фильтр сипит — значит, работает.', 'Жарко в нём, как в бане.']
+      idle: ['Шланг давит на плечо. Терпимо.', 'В шлеме слышно, как сам дышишь.', 'Фильтр сипит — значит, работает.', 'Жарко в нём, как в бане.'],
+      shot: ['Не балуй! Мишени — там.', 'Эй! Ствол вниз.', 'Стреляй по мишеням, а не по мне.'],
+      stomp: ['Пошёл! Красиво идёт.', 'Ох и топает. Земля дрожит.', 'Осторожнее с ним, он тяжёлый.']
     }
   });
   // what the hero can ask him, at almost any point of the talk

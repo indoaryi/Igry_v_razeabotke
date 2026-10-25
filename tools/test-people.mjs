@@ -20,7 +20,7 @@ const shot = async (name) => {
   fs.mkdirSync(shotsDir, { recursive: true });
   await G.page.evaluate(() => document.getElementById('stageBox').scrollIntoView({ block: 'start' }));
   const box = await G.page.locator('#stage').boundingBox();
-  await G.page.screenshot({ path: path.join(shotsDir, name), clip: box });
+  await G.page.screenshot({ path: path.join(shotsDir, name), clip: box, timeout: 600000 });
 };
 
 // ---------- a thing of the hero's on somebody else ----------

@@ -19,7 +19,7 @@
   import { inMachine, plan } from '../hero/state.js';
   import { travelState } from '../hero/travel.js';
   import { stageEl } from '../render/stage.js';
-  import { PEOPLE_HOOKS, TALK_HOOKS, peopleCss, personById, personHere } from './people.js';
+  import { DICE, PEOPLE_HOOKS, TALK_HOOKS, peopleCss, personById, personHere } from './people.js';
   export const DIALOGS = {};
   export let TALK = null;              // { p, D, id, node, line, heroLine, busy, wait, next, opts }
   let talkPending = null;       // the person the hero is walking up to
@@ -32,7 +32,7 @@
     load: (d) => { for (const [id, seen] of Object.entries(d)) if (personById(id) && seen && typeof seen === 'object') TALK_SEEN[id] = Object.assign({}, seen); }
   });
   TALK_HOOKS.who.push(() => TALK ? TALK.p : null);
-  export const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : (v || '');
+  export const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(DICE() * v.length)] : (v || '');
 
   export function talkTo(p) {
     const D = DIALOGS[p.def.dialog];

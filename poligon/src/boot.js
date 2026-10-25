@@ -9,7 +9,7 @@
   import { INST, byType } from '../../engine/src/world/instances.js';
   import { GH, GW } from '../../engine/src/world/ground.js';
   import { enterLocation } from '../../engine/src/world/locations.js';
-  import { dayGoto } from '../../engine/src/world/daytime.js';
+  import { DAY, dayGoto, daySet } from '../../engine/src/world/daytime.js';
   import { buildHero, equip, setHero } from '../../engine/src/hero/wardrobe.js';
   import { hero, yawTo } from '../../engine/src/hero/hero.js';
   import { doDefault, doPunch, goSit, plan, walkTo } from '../../engine/src/hero/state.js';
@@ -109,6 +109,8 @@
     { t: 'Ветер, листва, трава', d: 'Кроны качаются волной, травинки гнутся, жёлтые листья падают и ложатся на землю.', go: inEdge(() => { setView('near'); walkTo(4.6, 10.2); }) },
     { t: 'Переход между локациями', d: 'Дорога за ворота ведёт на опушку и обратно; каждая локация помнит, что в ней оставили.', go: () => goToLocation(MAP.id === 'range' ? 'edge' : 'range') },
     { t: 'Второй человек', d: 'Прапорщик Сомов в защитном комплекте по эскизу игрока: замечает героя, поворачивает к нему голову, здоровается, оглядывается.', go: () => somovGo(nearSomov) },
+    { t: 'Распорядок дня', d: 'У прапорщика свой день: утром у костюмов, в полдень обед на лавочке, потом обход КПП, к вечеру — в общежитие. Часы ставятся на без пяти двенадцать: смотри, как он идёт обедать.', go: () => { if (hero === SOMOV) { toast('Сейчас ты — прапорщик, день идёт по твоим приказам. «Управлять другим» вернёт его к своим делам.'); return; } daySet(11.93); DAY.run = true; setView('far'); walkTo(11.6, 20.4); } },
+    { t: 'Слышит выстрелы и шаги', d: 'На выстрел он оборачивается и ворчит; на шаги костюма — провожает его взглядом. Что делать дальше, решает игра: стреляешь рядом — он отходит.', go: inRange(() => { if (hero === SOMOV) { toast('Прапорщик сейчас под твоим управлением — некому слушать.'); return; } if (SOMOV.away || SOMOV.loc !== MAP.id) { toast('Прапорщика нет на месте — поставь часы на день.'); return; } setView('near'); if (!equip.hands) toggleGear(GEAR[3]); plan({ type: 'path', to: [clamp(SOMOV.x + 1.2, 1, GW - 1), clamp(SOMOV.z + 1.6, 1, GH - 1)] }, { type: 'call', fn: doShoot }); }) },
     { t: 'Разговор', d: 'Герой подходит, оба встают лицом друг к другу; в панели — его реплики и твои ответы. Пока говорит, кивает и жестикулирует.', go: () => somovGo(() => talkTo(SOMOV)) },
     { t: 'Спутник', d: '«Идём со мной»: держится в паре шагов, отстав, догоняет бегом, садится рядом на лавочку, переходит с героем на опушку и обратно.', go: () => somovGo(() => { personFollow(SOMOV); const b = MAP.id === 'range' ? firstOf('bench') : null; if (b) goSit(b); }) },
     { t: 'Обмен и торговля', d: 'Свои вещи на его, разница — рублями. Сигареты, банки и гранаты тратятся, находки из бурьяна можно продать.', go: () => somovGo(() => goTrade(SOMOV)) },
