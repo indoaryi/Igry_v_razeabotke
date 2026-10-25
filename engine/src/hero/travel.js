@@ -1,14 +1,19 @@
   // ================= travel: the hero walks into an exit zone, the screen fades, the next location comes =================
-  let travelState = null;     // { exit, t, phase: 'out' | 'in' } while the screen fades
-  let stageFade = 0;          // 0…1 darkness drawn over the stage
+  import { toast } from '../core/toast.js';
+  import { MAP } from '../world/map.js';
+  import { enterLocation, exitAt } from '../world/locations.js';
+  import { hero } from './hero.js';
+  import { walkTo } from './state.js';
+  export let travelState = null;     // { exit, t, phase: 'out' | 'in' } while the screen fades
+  export let stageFade = 0;          // 0…1 darkness drawn over the stage
   // walk to the exit that leads to another location (the location buttons under the stage use this)
-  function goToLocation(id) {
+  export function goToLocation(id) {
     if (id === MAP.id || travelState) return;
     const e = (MAP.exits || []).find((x) => x.to === id);
     if (!e) return;
     walkTo(e.go[0], e.go[1]);
   }
-  function updateTravel(dt) {
+  export function updateTravel(dt) {
     const T = travelState;
     if (T) {
       T.t += dt;

@@ -2,8 +2,15 @@
   // He is the engine's person (engine/src/people): stands by the walking suits, notices the hero, talks, follows, trades.
   // His kit is the engine's КЗУ look, built after the player's sketch (camouflage, a sealed helmet with a smoked visor, a respirator,
   // a hose to the life-support box on his back, a radio with a whip antenna).
+  import { sparkleAround } from '../../engine/src/fx/fx2d.js';
+  import { MONEY } from '../../engine/src/people/items.js';
+  import { KZU_LOOK } from '../../engine/src/people/look.js';
+  import { PEOPLE_HOOKS, addPerson, atHome, personFollow, personHome, personWait } from '../../engine/src/people/people.js';
+  import { DIALOGS, talkSeen } from '../../engine/src/people/talk.js';
+  import { openTrade } from '../../engine/src/people/trade.js';
+  import { gearCheck } from './things.js';
   const modeOf = (p) => p.mode === 'talk' ? p.prevMode : p.mode;
-  const SOMOV = addPerson({
+  export const SOMOV = addPerson({
     id: 'somov', name: 'Прапорщик Сомов', short: 'прапорщик Сомов', look: KZU_LOOK, loc: 'range', at: [15.4, 16.9], yaw: -0.1,
     note: 'Испытывает защитный комплект. Говорит через динамик на груди.',
     dialog: 'somov',

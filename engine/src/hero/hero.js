@@ -1,13 +1,16 @@
   // ================= the hero: who he is — where he stands, what his hands are doing, the activities he can be busy with =================
   // His orders and his step are in state.js, how he is drawn in rig.js; this record is what both read.
+  import { smooth } from '../core/math.js';
+  import { armored } from './model.js';
+  import { plantY, poseIdle } from './skeleton.js';
   const DIR8 = [
     { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
     { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
   ];
-  const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
+  export const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
   // overlays (smoke, drink, punch, shoot, thr, reach) are things he does with his hands while standing, walking or sitting:
   // on — wanted, w — how far the pose has blended in, t — time since it began
-  const hero = {
+  export const hero = {
     x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
     sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
     smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
@@ -15,21 +18,21 @@
     talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
     vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
   };
-  const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
-  const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
-  const standHips = (D) => plantY(poseIdle(0, D), D);
-  const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
-  const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
+  export const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
+  export const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
+  export const standHips = (D) => plantY(poseIdle(0, D), D);
+  export const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
+  export const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
   // the thing he sits in or drives: an instance with .ride = { hides(), focus() → world point, canTravel(), state() → text }
-  const driving = () => !!(hero.inside && hero.vehicle);
-  const heroHidden = () => !!(hero.inside && hero.vehicle && hero.vehicle.ride && hero.vehicle.ride.hides());
+  export const driving = () => !!(hero.inside && hero.vehicle);
+  export const heroHidden = () => !!(hero.inside && hero.vehicle && hero.vehicle.ride && hero.vehicle.ride.hides());
 
   // ---------- activities: each owns the hero for a while and says where his hips are ----------
   // ACT[kind] = { update(a, dt), ctx(a) → pose context or null, base(a, D) → hips matrix or null, state(a) → text,
   //   first: the stage it starts in, leave(a) → label of the button that ends it (or null), quiet: true — it does not take
   //   over the context panel, handsFree(a): his hands are free meanwhile (he may shoot or smoke), hands(a): where his hands hold on }
   // The engine has the plain ones; a game adds its own (swings, ladders…), the walking machines add 'board'.
-  const ACT = {
+  export const ACT = {
     // kneel down, do something with his hands (a.cb at the bottom), get up
     kneel: {
       update(a, dt) {

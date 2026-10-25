@@ -4,8 +4,17 @@
   // low in the west in the evening — and at night a weaker moon takes over. Everything else that changes with the hour is in
   // DAY_KEYS: the tint of sunlit and shaded parts, how strong the shadows are, how many lamps and windows are lit, morning mist,
   // the colour of the air around the map, how cold it is (breath shows). The game reads DAYP each frame.
-  const DAY = { t: 14, run: false, rate: 1 / 25, goal: null, span: 0, rise: 6.6, set: 18.9, elMax: 0.95, sunOn: 5.9, sunOff: 19.5 };
-  const DAY_PRESETS = [{ id: 'morning', name: 'Утро', h: 8 }, { id: 'day', name: 'День', h: 14 }, { id: 'evening', name: 'Вечер', h: 17.75 }, { id: 'night', name: 'Ночь', h: 23.5 }];
+  import { $ } from '../core/prelude.js';
+  import { FV, RV, S } from '../core/camera.js';
+  import { add, clamp, dot, hash2, lerp, lerpV, nrm, scl, smooth, wpx, xf } from '../core/math.js';
+  import { GAME } from '../core/game.js';
+  import { hex2rgb } from '../render/materials.js';
+  import { setSun } from '../render/webgl.js';
+  import { shadowRect } from '../render/kit.js';
+  import { MAP } from './map.js';
+  import { INST } from './instances.js';
+  export const DAY = { t: 14, run: false, rate: 1 / 25, goal: null, span: 0, rise: 6.6, set: 18.9, elMax: 0.95, sunOn: 5.9, sunOff: 19.5 };
+  export const DAY_PRESETS = [{ id: 'morning', name: 'Утро', h: 8 }, { id: 'day', name: 'День', h: 14 }, { id: 'evening', name: 'Вечер', h: 17.75 }, { id: 'night', name: 'Ночь', h: 23.5 }];
   //   hour   sunlit tint          shade tint           shadows lamps windows mist  air (around the map)  cold  saturation
   const DAY_KEYS = [
     [0.0, [0.38, 0.45, 0.68], [0.26, 0.31, 0.5], 0.45, 1, 0.22, 0.05, '#1a2232', 1, 0.5],
@@ -23,9 +32,9 @@
     [23.5, [0.39, 0.46, 0.69], [0.27, 0.32, 0.51], 0.45, 1, 0.3, 0.03, '#1b2333', 1, 0.5]
   ];
   // what the hour looks like right now (filled by dayFrame)
-  const DAYP = { h: 14, sunTint: [1, 1, 1], shadeTint: [1, 1, 1], shadowK: 1, lamps: 0, windows: 0, mist: 0, sky: null, cold: 0, night: 0, moon: false, dir: [0, 1, 0] };
+  export const DAYP = { h: 14, sunTint: [1, 1, 1], shadeTint: [1, 1, 1], shadowK: 1, lamps: 0, windows: 0, mist: 0, sky: null, cold: 0, night: 0, moon: false, dir: [0, 1, 0] };
   let dayStageRGB = null, dayDark = false;
-  function dayReadStage() {
+  export function dayReadStage() {
     const box = $('stageBox'); if (!box) return;
     box.style.backgroundColor = '';
     const m = getComputedStyle(box).backgroundColor.match(/\d+(\.\d+)?/g);
@@ -33,12 +42,12 @@
     dayDark = !!dayStageRGB && (dayStageRGB[0] + dayStageRGB[1] + dayStageRGB[2]) / 3 < 0.4;
     DAYP.skyCss = null;
   }
-  const fmtHour = (h) => { const m = Math.floor(((h % 24) + 24) % 24 * 60 + 1e-6); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
-  function dayPeriod(h = DAY.t) { return h >= 5 && h < 11 ? 'morning' : h >= 11 && h < 16.5 ? 'day' : h >= 16.5 && h < 21 ? 'evening' : 'night'; }
+  export const fmtHour = (h) => { const m = Math.floor(((h % 24) + 24) % 24 * 60 + 1e-6); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  export function dayPeriod(h = DAY.t) { return h >= 5 && h < 11 ? 'morning' : h >= 11 && h < 16.5 ? 'day' : h >= 16.5 && h < 21 ? 'evening' : 'night'; }
   // the clock: running by itself, or hurrying forward to an hour that was picked
-  function dayGoto(h) { const span = ((h - DAY.t) % 24 + 24) % 24; if (span < 0.01) return; DAY.goal = h; DAY.span = span; }
-  function daySet(h) { DAY.t = ((h % 24) + 24) % 24; DAY.goal = null; }
-  function dayUpdate(dt) {
+  export function dayGoto(h) { const span = ((h - DAY.t) % 24 + 24) % 24; if (span < 0.01) return; DAY.goal = h; DAY.span = span; }
+  export function daySet(h) { DAY.t = ((h % 24) + 24) % 24; DAY.goal = null; }
+  export function dayUpdate(dt) {
     if (DAY.goal != null) {
       const left = ((DAY.goal - DAY.t) % 24 + 24) % 24, step = Math.max(2.4, DAY.span / 2.2) * dt;
       if (left <= step || left > 23.999) { DAY.t = DAY.goal; DAY.goal = null; } else DAY.t = (DAY.t + step) % 24;
@@ -86,7 +95,7 @@
     }
     return k;
   }
-  const dayLamps = [];      // lamps lit this frame: world point of the bulb, its glow — for the halos and moths in the 2D layer
+  export const dayLamps = [];      // lamps lit this frame: world point of the bulb, its glow — for the halos and moths in the 2D layer
   function dayLightsFor(rect) {
     const L = [];
     dayLamps.length = 0;
@@ -112,7 +121,7 @@
   }
   // once a frame before the scene is drawn: the light of this hour in this location → the renderer
   let daySunKey = '';
-  function dayFrame(rect, timeSec) {
+  export function dayFrame(rect, timeSec) {
     const h = DAY.t, look = dayLook(h), src = dayLightDir(h, MAP);
     Object.assign(DAYP, look, { h, dir: src.dir, moon: src.moon });
     DAYP.night = clamp((0.8 - (look.sunTint[0] + look.sunTint[1] + look.sunTint[2]) / 3) / 0.3, 0, 1);
@@ -130,4 +139,4 @@
       win: [look.windows, timeSec, DAYP.night, 0], mist: look.mist, mistCol: lerpV([0.84, 0.86, 0.88], [0.72, 0.76, 0.86], DAYP.night), time: timeSec
     });
   }
-  function dayKey() { return DAY.t.toFixed(3) + (DAYP.lamps > 0 ? '|' + dayLamps.map((l) => l.k.toFixed(2)).join(',') : ''); }
+  export function dayKey() { return DAY.t.toFixed(3) + (DAYP.lamps > 0 ? '|' + dayLamps.map((l) => l.k.toFixed(2)).join(',') : ''); }

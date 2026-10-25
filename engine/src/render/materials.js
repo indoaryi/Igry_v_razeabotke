@@ -1,5 +1,6 @@
   // ================= colours =================
-  function hex2rgb(h) { return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255]; }
+  import { clamp } from '../core/math.js';
+  export function hex2rgb(h) { return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255]; }
   function rgb2hsl([r, g, b]) {
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
     if (mx === mn) return [0, 0, l];
@@ -26,7 +27,7 @@
     ].flat());
   }
   let matSerial = 0;
-  function mat(hex, o = {}) {
+  export function mat(hex, o = {}) {
     return {
       a: makeRamp(hex), b: makeRamp(o.b || hex), pat: o.pat || 0, key: ++matSerial,
       p: Float32Array.from(o.p || [0, 0, 0, 0]), r: Float32Array.from(o.r || [0, 0, 0, 0]),
@@ -35,8 +36,8 @@
       w: o.wind ? Float32Array.from(o.wind) : null      // [sway m, 1 / height m, speed, flutter share]
     };
   }
-  const hexRGB = (h) => hex2rgb(h).map((v) => Math.round(v * 255));
-  const COL = {
+  export const hexRGB = (h) => hex2rgb(h).map((v) => Math.round(v * 255));
+  export const COL = {
     skin: '#c48d6c', beard: '#9a958d', hair: '#6b6762', leather: '#34261f', tank: '#d9d3c6', cargo: '#62645c',
     belt: '#1d1d1f', metal: '#8e9093', boot: '#29292b', lace: '#8f8f8f', steel: '#676b6f', rust: '#6f5a44',
     yellow: '#c99a2e', rubber: '#2b2b2d', olive: '#504c3c', green: '#3ad86a', red: '#d23a2a', gun: '#3c3a30',
@@ -45,6 +46,6 @@
   };
 
   // painted metal with rust patches and chips (o: rustCol, rf — patches per metre, rt — how rare, spec)
-  const paint = (hex, o = {}) => mat(hex, { pat: 38, b: o.rustCol || '#7c4c33', p: [o.rf || 6, o.rt ?? 0.9, 0, 0], noise: 0.05, grain: 60, spec: o.spec ?? 0.35, gloss: 14 });
+  export const paint = (hex, o = {}) => mat(hex, { pat: 38, b: o.rustCol || '#7c4c33', p: [o.rf || 6, o.rt ?? 0.9, 0, 0], noise: 0.05, grain: 60, spec: o.spec ?? 0.35, gloss: 14 });
   // one flat tone of the palette; tone 4 glows (lamps, lenses)
-  const flat = (hex, idx) => mat(hex, { pat: 10, p: [idx, 0, 0, 0] });
+  export const flat = (hex, idx) => mat(hex, { pat: 10, p: [idx, 0, 0, 0] });

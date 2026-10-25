@@ -1,20 +1,35 @@
   // ================= stage: camera, culling, rendering, compositing =================
-  const stageEl = $('stage');
+  import { $ } from '../core/prelude.js';
+  import { FPS, HH, HW, S, TOCAM } from '../core/camera.js';
+  import { ID4, M, add, alongPlusY, clamp, dot, lerpV, nrm, scl, smooth, sub, tr, wpx, xf, xfDir } from '../core/math.js';
+  import { GAME, hook } from '../core/game.js';
+  import { TGT_STAGE, depthOf, pickAt, render3D, resetDrawCalls } from './webgl.js';
+  import { rectsHit } from './kit.js';
+  import { LOC_HOOKS } from '../world/map.js';
+  import { INST, instById } from '../world/instances.js';
+  import { G, GH, GW } from '../world/ground.js';
+  import { dayFrame, dayKey } from '../world/daytime.js';
+  import { CIG_LEN, HC, HERO, RIFLE_MUZZLE, RIFLE_PORT, gearVer } from '../hero/model.js';
+  import { hero, heroHidden } from '../hero/hero.js';
+  import { heroList, heroRig, rifleWorld } from '../hero/rig.js';
+  import { stageFade } from '../hero/travel.js';
+  import { drawFx, drawStars, last, shakeNow } from '../fx/fx2d.js';
+  export const stageEl = $('stage');
   const sctx = stageEl.getContext('2d');
-  const scene = document.createElement('canvas');
+  export const scene = document.createElement('canvas');
   const scx = scene.getContext('2d');
-  const layer = document.createElement('canvas');
+  export const layer = document.createElement('canvas');
   const lcx = layer.getContext('2d');
-  let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
-  let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
+  export let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
+  export let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
   // how other modules steer the stage: a fresh picture on the next frame, the camera back on the hero at once,
   // the zoom ('near' | 'far' | 'all'), 3D without pixels, the cell grid, the thing under the mouse
-  const redraw = () => { lastKey = ''; };
-  const recenter = () => { camX = null; };
-  function setViewMode(m) { viewMode = m; }
-  function setRaw(on) { raw = !!on; }
-  function setGrid(on) { showGrid = !!on; }
-  function setHover(id) { hoverId = id; }
+  export const redraw = () => { lastKey = ''; };
+  export const recenter = () => { camX = null; };
+  export function setViewMode(m) { viewMode = m; }
+  export function setRaw(on) { raw = !!on; }
+  export function setGrid(on) { showGrid = !!on; }
+  export function setHover(id) { hoverId = id; }
   // how far the camera may go and what the overview shows; both depend on the location (see fitWorldBounds)
   let CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
   let WORLD_B = { x0: -2130, x1: 2130, y0: -1140, y1: HH * (GW + GH) + 20 };
@@ -26,7 +41,7 @@
   }
   // a new location: its own camera limits, the camera jumps to the hero, the picture is drawn afresh
   hook(LOC_HOOKS.enter, () => { fitWorldBounds(); camX = null; lastKey = ''; }, 0);
-  function fitStage() {
+  export function fitStage() {
     const cssW = stageEl.clientWidth || 600, dpr = window.devicePixelRatio || 1;
     const desk = cssW >= 700;
     const want = viewMode === 'near' ? (desk ? 2 : 1.45) : (desk ? 1.25 : 0.8);
@@ -43,7 +58,7 @@
     }
   }
   function heroScreen(rig) { return wpx(xf(rig.B.chest, [0, 0, 0])); }
-  function itemsFor(inst) {
+  export function itemsFor(inst) {
     if (!inst.items) {
       const big = !!(inst.T && inst.T.xray);
       inst.items = inst.chunks.map((c) => ({ mesh: c.mesh, model: ID4, mat: c.mat, id: inst.id, flags: c.flags, fade: c.fade, shadow: c.shadow, xr: big || !!c.mat.xr }));
@@ -51,7 +66,7 @@
     return inst.items;
   }
   // moving parts the game and the engine's modules draw this frame (GAME.items)
-  function dynItems() { const out = []; for (const f of GAME.items) f(out); return out; }
+  export function dynItems() { const out = []; for (const f of GAME.items) f(out); return out; }
   function buildLists(rect, rig) {
     const main = [], shadow = [], occ = [];
     for (const inst of INST) {
@@ -72,7 +87,7 @@
     for (const f of GAME.tick) f();
     return true;
   }
-  function drawStage(dt, clock) {
+  export function drawStage(dt, clock) {
     snapshotTick(clock);
     const rig = heroRig(true);
     const hs = heroHidden() && hero.vehicle ? wpx(hero.vehicle.ride.focus()) : heroScreen(rig);
@@ -181,12 +196,12 @@
     }
   }
   // stage pixel (fractions of the canvas) → world art px
-  function viewToWorld(fx, fy) {
+  export function viewToWorld(fx, fy) {
     const lv = lastView; if (!lv) return [0, 0];
     if (lv.over) return [lv.ox + fx * lv.v.w / lv.sc, lv.oy + fy * lv.v.h / lv.sc];
     return [lv.ox + fx * VW, lv.oy + fy * VH];
   }
-  function pickFrac(fx, fy) {
+  export function pickFrac(fx, fy) {
     const lv = lastView; if (!lv) return null;
     const pk = pickAt(TGT_STAGE, lv.v, fx * lv.v.w, fy * lv.v.h);
     return instById.get(pk.id) || null;

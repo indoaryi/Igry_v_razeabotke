@@ -1,7 +1,15 @@
   // ================= portrait and icons =================
+  import { $ } from '../../engine/src/core/prelude.js';
+  import { RV, S, TOCAM } from '../../engine/src/core/camera.js';
+  import { frameY, mul, nrm, ry, xf } from '../../engine/src/core/math.js';
+  import { GAME, hook } from '../../engine/src/core/game.js';
+  import { TGT_SMALL, render3D } from '../../engine/src/render/webgl.js';
+  import { HC, HERO, PROPS, RIFLE, buildHero, equip, gearVer, setHero } from '../../engine/src/hero/model.js';
+  import { buildPose, evalBones } from '../../engine/src/hero/skeleton.js';
+  import { heroList, q } from '../../engine/src/hero/rig.js';
   const portraitCtx = $('portrait').getContext('2d');
   let portraitKey = '', portraitVisible = true;
-  const portraitStale = () => { portraitKey = ''; };     // gear changed: draw the portrait afresh
+  export const portraitStale = () => { portraitKey = ''; };     // gear changed: draw the portrait afresh
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { for (const e of es) portraitVisible = e.isIntersecting; }).observe($('portrait'));
   hook(GAME.frame, (dt, now) => { if (portraitVisible) drawPortrait(now / 1000); }, 10);
   function drawPortrait(time) {
@@ -15,7 +23,7 @@
     portraitCtx.clearRect(0, 0, 116, 172);
     render3D(TGT_SMALL, { w: 116, h: 172, ax: 58, ay: 154, s: S }, { main: heroList(B, pose) }, false, portraitCtx, 0, 0);
   }
-  function iconCanvas(id) {
+  export function iconCanvas(id) {
     const cv = document.createElement('canvas'); cv.width = 32; cv.height = 32;
     const ctx = cv.getContext('2d');
     const saveHero = HERO;

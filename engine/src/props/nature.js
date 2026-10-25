@@ -1,6 +1,17 @@
   // ================= library: nature — trees, bushes, weed patches, the meadow that grows over every lawn =================
   // leaf clumps: p = [share of turning leaves, leaves per metre, edge zone where leaves thin out, leaf radius in cells], r.x = how solid the inside is
-  const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.dens || 11, o.cut || 0.42, o.rr || 0.44], r: [o.solid ?? 0.7, 0, 0, 0], noise: 0.04, grain: 30, wind: o.wind || [0.05, 1 / 8, 1.25, 0.35] }), { fade: true, fl: 4 });
+  import { RV, SQ2 } from '../core/camera.js';
+  import { M, add, basis, clamp, dot, fbm, lerp, lerpV, nrm, rng, ry, sc3, scl, smooth, sub, tr, vnoise } from '../core/math.js';
+  import { hook } from '../core/game.js';
+  import { flat, mat } from '../render/materials.js';
+  import { ellipsoid, loft } from '../render/meshes.js';
+  import { rawMesh } from '../render/webgl.js';
+  import { Kit } from '../render/kit.js';
+  import { LOC_HOOKS, MAP, groundType } from '../world/map.js';
+  import { CATALOG, INST, instantiate, pathDist } from '../world/instances.js';
+  import { GH, GW } from '../world/ground.js';
+  import { pointInPoly } from '../world/nav.js';
+  export const leafMat = (hex, aut, autHex, o = {}) => Object.assign(mat(hex, { pat: 35, b: autHex, p: [aut, o.dens || 11, o.cut || 0.42, o.rr || 0.44], r: [o.solid ?? 0.7, 0, 0, 0], noise: 0.04, grain: 30, wind: o.wind || [0.05, 1 / 8, 1.25, 0.35] }), { fade: true, fl: 4 });
   // a clump whose normals lean towards the outside of the whole crown, so the crown reads as one lit mass rather than a pile of balls
   function clumpRaw(v, out, yaw, w, small) {
     const base = lumpMesh(v, small), c = Math.cos(yaw), sn = Math.sin(yaw);
@@ -19,7 +30,7 @@
 
   // ---------- trees, bushes, tall grass ----------
   // a lumpy clump of leaves: an ellipsoid pushed out by a few bulges, with a flatter underside (8 shapes)
-  function lumpMesh(v, small) {
+  export function lumpMesh(v, small) {
     return rawMesh((small ? 'lumpS' : 'lump') + v, () => {
       const m = small ? ellipsoid(1, 0.8, 1, { seg: 6, rings: 4 }) : ellipsoid(1, 0.8, 1, { seg: 8, rings: 5 });
       const R = rng(700 + v * 13), P = m.pos, Nn = m.nrm, bumps = [];
@@ -37,7 +48,7 @@
   }
   // h height · bole clear trunk · r0 trunk radius · w crown half-width · up how steeply limbs climb (0 flat … 1 upright) · limbs first-order limbs ·
   // cl clump radius range · per clumps per twig · dens leaves per metre · droop how much twigs hang · stems trunks from one root
-  const TREE = {
+  export const TREE = {
     ash: { h: 8.6, bole: 2.4, r0: 0.21, w: 3.0, up: 0.55, limbs: 5, cl: [0.38, 0.68], per: 2.6, dens: 11, leaf: '#3f6b2d', aut: '#a9a23f', af: 0.06, bark: '#6c625a', solid: 0.62 },
     maple: { h: 6.8, bole: 1.5, r0: 0.18, w: 3.1, up: 0.42, limbs: 5, cl: [0.38, 0.66], per: 2.6, dens: 9, leaf: '#4b7f30', aut: '#c99a35', af: 0.08, bark: '#5f564d', stems: 2, solid: 0.66 },
     birch: { h: 8.4, bole: 2.4, r0: 0.14, w: 2.0, up: 0.74, limbs: 5, cl: [0.28, 0.48], per: 2.6, dens: 15, leaf: '#5d8c36', aut: '#c9b545', af: 0.1, bark: '#e3e0d8', birch: true, droop: 0.55, solid: 0.5 },
@@ -217,7 +228,7 @@
     return { kit: k, blocks: [], spots: [{ kind: 'grass', at: [0, 0], yaw: 0 }] };
   }
   // ---------- the meadow: grass tufts over every lawn and rough cell, a 6 × 6 m tile per instance ----------
-  const tuftMat = (hex, dryHex, dry) => Object.assign(mat(hex, { pat: 39, b: dryHex, p: [0, 0, dry, 0], noise: 0, thin: true, wind: [0.04, 1 / 0.6, 2.1, 0.45] }), { fl: 1, noShadow: true });
+  export const tuftMat = (hex, dryHex, dry) => Object.assign(mat(hex, { pat: 39, b: dryHex, p: [0, 0, dry, 0], noise: 0, thin: true, wind: [0.04, 1 / 0.6, 2.1, 0.45] }), { fl: 1, noShadow: true });
   const MEADOW = {
     lawn: tuftMat('#5a8732', '#a8a45c', 0.04), lush: tuftMat('#4f7c2e', '#a8a45c', 0.07),
     rough: tuftMat('#52752e', '#b4a65c', 0.2), dry: tuftMat('#7c8440', '#c4b168', 0.55)

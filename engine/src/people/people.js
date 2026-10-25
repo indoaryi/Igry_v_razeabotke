@@ -10,11 +10,25 @@
   //   talk — faces the hero while they talk (talk.js).
   // Every person in the current location has an INST entry: it can be tapped, it shows in the panel «рядом», and the person is drawn
   // from his bones twelve times a second with everything else (GAME.tick → snapshot, GAME.items, GAME.key).
-  const PEOPLE = [];
-  const PEOPLE_HOOKS = { acts: [] };         // f(p, list): more actions for a person's panel, { label, run, order } (talk and trade add theirs)
-  const personHere = (p) => !!p.inst && p.loc === MAP.id;
-  const personById = (id) => PEOPLE.find((p) => p.id === id);
-  function addPerson(def) {
+  import { ID4, approach, approachAngle, clamp, groundAt, smooth, wpx, wrapA, xf } from '../core/math.js';
+  import { GAME, hook } from '../core/game.js';
+  import { LOCATIONS, LOC_HOOKS, MAP } from '../world/map.js';
+  import { INST, groundY, instById, newId } from '../world/instances.js';
+  import { GH, GW } from '../world/ground.js';
+  import { NAV, blockedAt, findPath, nearestFree } from '../world/nav.js';
+  import { buildPose, evalBones } from '../hero/skeleton.js';
+  import { driving, hero, heroHidden } from '../hero/hero.js';
+  import { PXV, q, wq } from '../hero/rig.js';
+  import { seatsOf } from '../hero/state.js';
+  import { travelState } from '../hero/travel.js';
+  import { VH, VW, lastView, stageEl } from '../render/stage.js';
+  import { invClean } from './items.js';
+  import { buildPerson } from './look.js';
+  export const PEOPLE = [];
+  export const PEOPLE_HOOKS = { acts: [] };         // f(p, list): more actions for a person's panel, { label, run, order } (talk and trade add theirs)
+  export const personHere = (p) => !!p.inst && p.loc === MAP.id;
+  export const personById = (id) => PEOPLE.find((p) => p.id === id);
+  export function addPerson(def) {
     const p = {
       def, id: def.id, name: def.name, loc: def.loc, x: def.at[0], z: def.at[1], y: 0, yaw: def.yaw || 0, tyaw: def.yaw || 0,
       home: { loc: def.loc, at: def.at.slice(), yaw: def.yaw || 0 }, mode: def.mode || 'post', prevMode: null,
@@ -60,7 +74,7 @@
     const m = { follow: 'Идёт за тобой.', wait: 'Ждёт здесь, как ты просил.', home: 'Возвращается на своё место.' }[p.mode === 'talk' ? p.prevMode : p.mode] || '';
     return [m, own].filter(Boolean).join(' ');
   }
-  const atHome = (p) => p.loc === p.home.loc && Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) < 0.6;
+  export const atHome = (p) => p.loc === p.home.loc && Math.hypot(p.x - p.home.at[0], p.z - p.home.at[1]) < 0.6;
   function personActs(p) {
     const out = [];
     for (const f of PEOPLE_HOOKS.acts) f(p, out);
@@ -74,9 +88,9 @@
   }
 
   // ---------- orders ----------
-  function personFollow(p) { setPersonMode(p, 'follow'); p.replanT = 0; personBark(p, 'follow'); }
-  function personWait(p) { setPersonMode(p, 'wait'); p.path.length = 0; personBark(p, 'wait'); }
-  function personHome(p) { setPersonMode(p, 'home'); p.path.length = 0; personBark(p, 'home'); }
+  export function personFollow(p) { setPersonMode(p, 'follow'); p.replanT = 0; personBark(p, 'follow'); }
+  export function personWait(p) { setPersonMode(p, 'wait'); p.path.length = 0; personBark(p, 'wait'); }
+  export function personHome(p) { setPersonMode(p, 'home'); p.path.length = 0; personBark(p, 'home'); }
   // walk to a point round the obstacles
   function personGo(p, to, run = false) {
     const pts = findPath([p.x, p.z], to, NAV.hero);
@@ -319,14 +333,14 @@
   }
   hook(GAME.frame, drawBarks);
   // who the hero is talking to (talk.js answers; without it nobody)
-  const TALK_HOOKS = { who: [] };
+  export const TALK_HOOKS = { who: [] };
   const TALK_NOW = () => { for (const f of TALK_HOOKS.who) { const p = f(); if (p) return p; } return null; };
 
   // ---------- what survives a page update ----------
-  function peopleHot() {
+  export function peopleHot() {
     return PEOPLE.map((p) => ({ id: p.id, loc: p.loc || MAP.id, x: p.x, z: p.z, yaw: p.yaw, mode: p.mode === 'talk' ? (p.prevMode || 'post') : p.mode, inv: p.inv.map((s) => ({ t: s.t, n: s.n })) }));
   }
-  function peopleFromHot(list) {
+  export function peopleFromHot(list) {
     if (!Array.isArray(list)) return;
     for (const d of list) {
       const p = d && personById(d.id);
@@ -337,7 +351,7 @@
   }
 
   // ---------- the bits of page the people module adds by itself (speech bubbles, the talk panel, the trade window) ----------
-  function peopleCss(id, css) {
+  export function peopleCss(id, css) {
     if (document.getElementById(id)) return;
     const st = document.createElement('style'); st.id = id; st.textContent = css;
     document.head.append(st);

@@ -1,4 +1,15 @@
   // ================= moving object parts as draw items =================
+  import { I4, ID4, M, lerpV, nrm, rx, sc3, tr, wpx } from '../../engine/src/core/math.js';
+  import { GAME, hook } from '../../engine/src/core/game.js';
+  import { flat, mat } from '../../engine/src/render/materials.js';
+  import { box, cyl } from '../../engine/src/render/meshes.js';
+  import { getMesh } from '../../engine/src/render/webgl.js';
+  import { byType, localPt } from '../../engine/src/world/instances.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { BALL_MAT, BALL_MESH } from '../../engine/src/hero/rig.js';
+  import { SW, UNIT_LINE } from './catalog.js';
+  import { carLightItems } from './catalog2.js';
+  import { pigeonItems } from './pigeons.js';
   const SEAT_MAT = mat('#8b5c38', { pat: 37, b: '#6f4a2e', p: [0.1, 0, 0, 0], noise: 0.08, grain: 50 });
   const CHAIN_MAT = Object.assign(flat('#45474b', 1), { fl: 1 });
   const CAN_MATS = ['#c8352c', '#2f7d3c', '#d1b04a', '#8a96a2'].map((h) => mat(h, { pat: 47, b: '#e7e4dc', p: [0.02, 0.035, 0.085, 0.1], noise: 0.03, spec: 0.8, gloss: 10 }));

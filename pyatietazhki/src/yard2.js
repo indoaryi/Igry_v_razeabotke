@@ -4,6 +4,9 @@
   // a sidewalk with a curb along the right edge — that sidewalk is where the asphalt from the first yard comes in.
   // Map: the main house along the top-left edge (facade at x = 2, facing +x), the far house along the top-right edge,
   // apron x 2…3.9, parking x 3.9…8.6, lawn x 8.6…26.75, curb at 26.75, sidewalk x 26.75…30.
+  import { clamp, xf } from '../../engine/src/core/math.js';
+  import { INST, byType, instantiate } from '../../engine/src/world/instances.js';
+  import { MEADOW_AUTUMN } from './catalog2.js';
   const Y2_BIRCHES = [[24.4, 3.4, 14, 501], [25.0, 14.4, 13, 502], [24.1, 25.2, 14, 503], [25.7, 28.9, 11, 504], [11.6, 4.2, 12, 505], [10.1, 27.4, 12.5, 506], [17.2, 25.8, 10, 507]];
   function yard2Leaves(x, z) {
     let d = 0.3;
@@ -14,7 +17,7 @@
     if (x < 3.9) d *= 0.5;
     return clamp(d, 0, 1);
   }
-  const YARD2 = {
+  export const YARD2 = {
     id: 'yard2', name: 'Двор с берёзами', short: 'С берёзами', photo: 'yard2',
     photoAlt: 'Исходная фотография: осенний двор, золотые берёзы, тропинка через газон к машинам у белой пятиэтажки, ржавый железный гараж справа',
     size: [30, 30],

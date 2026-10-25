@@ -3,6 +3,11 @@
   // whatever the game keeps — is made the first time the hero comes and kept, so going back is instant and things stay
   // where they were left (a parked machine, cans on the ground, footprints).
   // Walking into an exit is the hero's business (hero/travel.js): this module only switches.
+  import { setSun, uploadGround } from '../render/webgl.js';
+  import { LOCATIONS, LOC_HOOKS, MAP, setMap } from './map.js';
+  import { HEIGHTS, INST, PATH_SEGS, buildWorld, instById, nextId, restoreThings } from './instances.js';
+  import { buildGround, ground, setGeometry, setGround } from './ground.js';
+  import { NAV, buildNav, navAlloc, navRestore } from './nav.js';
   const LOC_RT = {};
   function saveRuntime() {
     const rt = MAP && LOC_RT[MAP.id];
@@ -27,7 +32,7 @@
     if (def.afterRuntime) def.afterRuntime();
   }
   // switch to a location; LOC_HOOKS.enter puts the hero (or the machine he drives) at one of its spawns and lets everyone settle in
-  function enterLocation(id, spawnName) {
+  export function enterLocation(id, spawnName) {
     const from = MAP && LOC_RT[MAP.id] ? MAP : null;
     if (from) { for (const f of LOC_HOOKS.leave) f(from); saveRuntime(); }
     const def = LOCATIONS[id];
@@ -39,4 +44,4 @@
     for (const f of LOC_HOOKS.enter) f(def, spawnName);
     saveRuntime();
   }
-  const exitAt = (x, z) => (MAP.exits || []).find((e) => x >= e.rect[0] && x <= e.rect[2] && z >= e.rect[1] && z <= e.rect[3]);
+  export const exitAt = (x, z) => (MAP.exits || []).find((e) => x >= e.rect[0] && x <= e.rect[2] && z >= e.rect[1] && z <= e.rect[3]);

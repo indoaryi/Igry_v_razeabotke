@@ -1,4 +1,10 @@
   // ================= library: cars — one builder, a few body shapes =================
+  import { M, rz, tr } from '../core/math.js';
+  import { mat } from '../render/materials.js';
+  import { cyl, loft } from '../render/meshes.js';
+  import { Kit } from '../render/kit.js';
+  import { addDecal, decalOn } from '../render/decals.js';
+  import { CATALOG } from '../world/instances.js';
   addDecal('plate', 0.52, 0.12, (g, w, h) => {
     g.fillStyle = '#1b1b1d'; g.fillRect(0, 0, w, h); g.fillStyle = '#f3f2ee'; g.fillRect(1, 1, w - 2, h - 2);
     g.fillStyle = '#2a2a2c'; for (const x of [3, 6, 9, 12, 15, 18]) g.fillRect(x, 3, 2, h - 6);

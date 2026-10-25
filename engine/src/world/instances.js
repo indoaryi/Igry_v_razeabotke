@@ -6,18 +6,21 @@
   // The engine's library (engine/src/props) and the game fill it.
   // USE says what the player can do with a type: USE[type] = { name(inst), note(inst), acts(inst) → [{ label, run, off }], active(def) }.
   // Only types with a USE answer taps; an instance may carry its own .use (the walking machines do).
-  const CATALOG = {};
-  const USE = {};
+  import { M, clamp, ry, tr, wrapA, xf } from '../core/math.js';
+  import { bake, screenRect, shadowRect } from '../render/kit.js';
+  import { LOC_HOOKS, MAP } from './map.js';
+  export const CATALOG = {};
+  export const USE = {};
   // all of these belong to the current location; locations.js swaps them when the hero walks to another one
-  let INST = [];
-  let HEIGHTS = [];      // walkable raised areas (porches, steps)
-  let nextId = 2;        // object ids are written into an 8-bit picking buffer, so each location numbers its own from 2
+  export let INST = [];
+  export let HEIGHTS = [];      // walkable raised areas (porches, steps)
+  export let nextId = 2;        // object ids are written into an 8-bit picking buffer, so each location numbers its own from 2
   // an id for something that joins the current location later (a person walking in, a machine)
-  const newId = () => nextId++;
+  export const newId = () => nextId++;
   // the current location's things come back from its kept runtime (locations.js)
-  function restoreThings(rt) { ({ INST, HEIGHTS, instById, PATH_SEGS, nextId } = rt); }
-  function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
-  function instantiate(def, parentM) {
+  export function restoreThings(rt) { ({ INST, HEIGHTS, instById, PATH_SEGS, nextId } = rt); }
+  export function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
+  export function instantiate(def, parentM) {
     const T = CATALOG[def.type];
     if (!T) throw new Error('no such type in the catalog: ' + def.type);
     const built = T.build(def);
@@ -46,11 +49,11 @@
     for (const ch of built.children || []) instantiate(Object.assign({}, ch, { parent: inst }), M0);
     return inst;
   }
-  const byType = (t) => INST.filter((i) => i.type === t);
-  let instById = new Map();
+  export const byType = (t) => INST.filter((i) => i.type === t);
+  export let instById = new Map();
   // builds every object of the current location (MAP) from scratch; then the engine's modules add theirs (LOC_HOOKS.objects:
   // the walking machines that stand here, the meadow over the lawns)
-  function buildWorld() {
+  export function buildWorld() {
     INST = []; HEIGHTS = []; nextId = 2; instById = new Map();
     PATH_SEGS = [];
     for (const pl of MAP.paths || []) for (let i = 0; i < pl.length - 1; i++) PATH_SEGS.push([pl[i], pl[i + 1]]);
@@ -60,8 +63,8 @@
     for (const i of INST) if (i.id) instById.set(i.id, i);
   }
   // distance from a point to the nearest trodden path of the map
-  let PATH_SEGS = [];
-  function pathDist(x, z) {
+  export let PATH_SEGS = [];
+  export function pathDist(x, z) {
     let best = 99;
     for (const [a, b] of PATH_SEGS) {
       const ex = b[0] - a[0], ez = b[1] - a[1], u = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez), 0, 1);
@@ -69,17 +72,17 @@
     }
     return Math.sqrt(best);
   }
-  const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
+  export const groundY = (x, z) => { let y = 0; for (const h of HEIGHTS) if (x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1) y = Math.max(y, h.y); return y; };
   // a point in an instance's own frame → world
-  const localPt = (inst, p) => xf(inst.M0, p);
+  export const localPt = (inst, p) => xf(inst.M0, p);
   // what the player sees and can do with a thing
   const useOf = (inst) => inst.use || USE[inst.type] || null;
-  function nameOf(inst) {
+  export function nameOf(inst) {
     const U = useOf(inst);
     if (U && U.name) return typeof U.name === 'function' ? U.name(inst) : U.name;
     return CATALOG[inst.type] ? CATALOG[inst.type].name : inst.type;
   }
-  function noteOf(inst) { const U = useOf(inst); return U && U.note ? (typeof U.note === 'function' ? U.note(inst) : U.note) : ''; }
+  export function noteOf(inst) { const U = useOf(inst); return U && U.note ? (typeof U.note === 'function' ? U.note(inst) : U.note) : ''; }
   // the name in the chip over the stage («рядом: …»): lower case, unless the thing gives its own (a person keeps his surname capitalised)
-  function chipOf(inst) { const U = useOf(inst); return U && U.short ? (typeof U.short === 'function' ? U.short(inst) : U.short) : nameOf(inst).toLowerCase(); }
-  function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }
+  export function chipOf(inst) { const U = useOf(inst); return U && U.short ? (typeof U.short === 'function' ? U.short(inst) : U.short) : nameOf(inst).toLowerCase(); }
+  export function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }

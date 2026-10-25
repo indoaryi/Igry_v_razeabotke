@@ -3,6 +3,18 @@
   //   toast · hudState, hudNear, hudClock (chips over the stage) · tip (hover tooltip) · ctxK, ctxName, ctxNote, ctxActs (what is near and what to do)
   //   vNear, vFar, vAll (zoom) · gridChk, rawChk · locSeg (one button per location) · todSeg, clockChk (time of day)
   // (the line for the player, «toast», is in core/toast.js: lower modules speak through it too)
+  import { $ } from '../core/prelude.js';
+  import { groundAt } from '../core/math.js';
+  import { GAME, TEXTS } from '../core/game.js';
+  import { LOCATIONS, LOC_HOOKS, MAP } from '../world/map.js';
+  import { INST, actionsOf, chipOf, nameOf, noteOf } from '../world/instances.js';
+  import { GH, GW } from '../world/ground.js';
+  import { distToPoly, pointInPoly } from '../world/nav.js';
+  import { DAY, DAY_PRESETS, dayGoto, dayPeriod, fmtHour } from '../world/daytime.js';
+  import { ACT, dirOf, driving, hero } from '../hero/hero.js';
+  import { doDefault, standUp, walkTo } from '../hero/state.js';
+  import { goToLocation, travelState } from '../hero/travel.js';
+  import { fitStage, pickFrac, recenter, redraw, setGrid, setHover, setRaw, setViewMode, stageEl, viewToWorld } from '../render/stage.js';
   const hudState = $('hudState'), hudNear = $('hudNear'), tipEl = $('tip');
   const ctxK = $('ctxK'), ctxName = $('ctxName'), ctxNote = $('ctxNote'), ctxActs = $('ctxActs');
   function stateText() {
@@ -42,7 +54,7 @@
   }
   let ctxKey = '', hudKey = '', ctxTimer = 0;
   // the context panel is rebuilt on its next check (after something the player did may have changed what it shows)
-  const refreshContext = () => { ctxKey = ''; };
+  export const refreshContext = () => { ctxKey = ''; };
   function button(label, fn, cls, off) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : ''); b.textContent = label;
@@ -50,7 +62,7 @@
     b.addEventListener('click', fn);
     return b;
   }
-  function updateContext(dt) {
+  export function updateContext(dt) {
     ctxTimer -= dt;
     if (ctxTimer > 0) return;
     ctxTimer = 0.2;
@@ -81,15 +93,15 @@
     if (cx.mode === 'pilot') { acts.forEach((a, i) => ctxActs.append(button(a.label, () => { a.run(); ctxKey = ''; }, i === 0 ? 'main' : ''))); return; }
     acts.forEach((a, i) => ctxActs.append(button(a.label, () => { hero.focus = inst; a.run(); ctxKey = ''; }, i === 0 ? 'main' : '', a.off)));
   }
-  function updateHud() {
+  export function updateHud() {
     const s = stateText();
     if (s === hudKey || !hudState) return;
     hudKey = s;
     hudState.textContent = s;
   }
   // zoom: close, the usual distance, the whole location
-  const vBtns = { near: $('vNear'), far: $('vFar'), all: $('vAll') };
-  function setView(m) {
+  export const vBtns = { near: $('vNear'), far: $('vFar'), all: $('vAll') };
+  export function setView(m) {
     setViewMode(m); for (const [m2, b2] of Object.entries(vBtns)) if (b2) b2.setAttribute('aria-pressed', String(m2 === m));
     recenter(); fitStage(); redraw();
   }
@@ -120,7 +132,7 @@
   }
   if (clockChk) clockChk.addEventListener('change', (e) => { DAY.run = e.target.checked; });
   let clockKey = '';
-  function updateClock() {
+  export function updateClock() {
     const k = fmtHour(DAY.t) + dayPeriod(DAY.goal ?? DAY.t);
     if (k === clockKey) return;
     clockKey = k;
@@ -148,7 +160,7 @@
     hoverPt = { fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height, x: e.clientX - r.left, y: e.clientY - r.top };
   });
   stageEl.addEventListener('pointerleave', () => { hoverPt = null; setHover(0); if (tipEl) tipEl.hidden = true; stageEl.classList.remove('over'); });
-  function updateHover(dt) {
+  export function updateHover(dt) {
     hoverT -= dt;
     if (!hoverPt || hoverT > 0) return;
     hoverT = 0.08;

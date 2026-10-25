@@ -1,6 +1,13 @@
   // ================= library: buildings — a five-storey block, an entrance, a substation, a metal garage =================
   // Shared by the games: each is built once in its own local frame (origin on the ground, +z its front) and baked into the world.
   // signs and plates they wear
+  import { M, len, lerpV, rng, rx, ry, rz, sc3, sub, tr } from '../core/math.js';
+  import { flat, mat, paint } from '../render/materials.js';
+  import { box, cyl, ellipsoid, polyMesh, torus } from '../render/meshes.js';
+  import { rawMesh } from '../render/webgl.js';
+  import { Kit } from '../render/kit.js';
+  import { SANS, addDecal, decalOn, outlinedText, scribble } from '../render/decals.js';
+  import { CATALOG } from '../world/instances.js';
   addDecal('tagSub', 1.3, 0.55, (g, w, h) => { scribble(g, 4, 6, w - 10, h - 16, '#1a1a1c', 53, 2); });
   addDecal('hazard', 0.42, 0.36, (g, w, h) => {
     g.fillStyle = '#1b1b1d'; g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w, h); g.lineTo(0, h); g.closePath(); g.fill();

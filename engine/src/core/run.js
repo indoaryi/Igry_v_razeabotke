@@ -2,6 +2,22 @@
   // A game's boot builds its first location and the hero, then calls prepareStage() and runFrames():
   //   buildDecals(); enterLocation('start-id', 'start'); setHero(buildHero(equip)); prepareStage(); runFrames();
   // window.__game is the handle tests and tools use (tools/shoot.mjs, tools/probe.mjs); a game may add its own names to it.
+  import { GAME } from './game.js';
+  import { updateToast } from './toast.js';
+  import { drawCalls } from '../render/webgl.js';
+  import { LOCATIONS, MAP } from '../world/map.js';
+  import { INST, byType } from '../world/instances.js';
+  import { ground } from '../world/ground.js';
+  import { findPath } from '../world/nav.js';
+  import { enterLocation } from '../world/locations.js';
+  import { DAY, DAYP, dayReadStage, daySet, dayUpdate } from '../world/daytime.js';
+  import { equip } from '../hero/model.js';
+  import { ACT, hero } from '../hero/hero.js';
+  import { doDefault, goSit, heroStep, standUp, turn, walkTo } from '../hero/state.js';
+  import { goToLocation, travelState, updateTravel } from '../hero/travel.js';
+  import { updateFx } from '../fx/fx2d.js';
+  import { VH, VW, drawStage, fitStage, kDev, lastView, layer, pickFrac, recenter, redraw, scene, stageEl, viewToWorld } from '../render/stage.js';
+  import { setView, updateClock, updateContext, updateHover, updateHud } from '../ui/hud.js';
   let stageVisible = true;
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { for (const e of es) stageVisible = e.isIntersecting; }).observe(stageEl);
   function viewRect() {
@@ -9,7 +25,7 @@
     return lv.over ? [lv.ox, lv.oy, lv.ox + lv.v.w / lv.sc, lv.oy + lv.v.h / lv.sc] : [lv.ox, lv.oy, lv.ox + VW, lv.oy + VH];
   }
   // size the stage to the page and follow it; read the page's colours for the air round the map
-  function prepareStage() {
+  export function prepareStage() {
     fitStage();
     dayReadStage();
     if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', dayReadStage); }
@@ -24,7 +40,7 @@
     updateTravel(dt);
     updateToast(dt);
   }
-  const GAME_API = window.__game = {
+  export const GAME_API = window.__game = {
     hero, equip, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
     travel: () => travelState, walkTo, doDefault, goSit, standUp, turn, ACT, viewToWorld, pickFrac, findPath, stage: stageEl, scene, layer,
     setView: (m) => setView(m),
@@ -47,4 +63,4 @@
     } catch (err) { console.error(err); }
     requestAnimationFrame(frame);
   }
-  function runFrames() { framePrev = performance.now(); requestAnimationFrame(frame); }
+  export function runFrames() { framePrev = performance.now(); requestAnimationFrame(frame); }

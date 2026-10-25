@@ -1,6 +1,19 @@
   // ================= what the hero does in the yards: the playground, the shed, the cars, the weeds =================
   // The engine has the hero himself (engine/src/hero/state.js): walking, orders, sitting, kneeling, looking, the overlays.
   // Here are the yards' own activities and what each kind of thing offers (USE).
+  import { M, add, approach, clamp, lerp, lerpV, rng, rx, ry, smooth, tr } from '../../engine/src/core/math.js';
+  import { TEXTS } from '../../engine/src/core/game.js';
+  import { toast } from '../../engine/src/core/toast.js';
+  import { MAP } from '../../engine/src/world/map.js';
+  import { CATALOG, USE, byType, localPt } from '../../engine/src/world/instances.js';
+  import { armored, equip } from '../../engine/src/hero/model.js';
+  import { hangHandY } from '../../engine/src/hero/skeleton.js';
+  import { ACT, hero, lerpM, standHips, yawTo } from '../../engine/src/hero/hero.js';
+  import { beginDrink, beginSmoke, busyAct, goSit, goSpot, inMachine, noArmor, plan, spotOf, startShoot } from '../../engine/src/hero/state.js';
+  import { SL, SW, TW } from './catalog.js';
+  import { itemById, itemFound, itemsChanged } from './inventory.js';
+  import { ballThrow, resetCans } from './dyn.js';
+  import { PIGEONS } from './pigeons.js';
   TEXTS.nothingNear = 'Подойди к чему-нибудь или нажми на предмет во дворе. Нажатие на землю — просто идти.';
   const leaveBtn = (label) => (a) => a.stage === 'dismount' || a.stage === 'drop' || a.stage === 'down' ? null : label;
 
@@ -112,10 +125,10 @@
       state: (a) => a.stage === 'top' ? 'на башне' : a.stage === 'climb' ? 'лезет на башню' : 'спускается'
     }
   });
-  const onTower = () => hero.act && hero.act.kind === 'tower' && hero.act.stage === 'top';
+  export const onTower = () => hero.act && hero.act.kind === 'tower' && hero.act.stage === 'top';
 
   // ---------- what he may do with his hands: the game's rules over the engine's overlays ----------
-  function startSmoke() {
+  export function startSmoke() {
     const it = itemById('cigs');
     if (inMachine()) return false;
     if (equip.head === 'helmet') { toast('В шлеме не покуришь. Сними шлем в снаряжении.'); return false; }
@@ -126,7 +139,7 @@
     beginSmoke();
     return true;
   }
-  function startDrink() {
+  export function startDrink() {
     const it = itemById('atom');
     if (inMachine()) return false;
     if (equip.head === 'helmet') { toast('Через шлем не попьёшь. Сними шлем в снаряжении.'); return false; }
@@ -139,27 +152,27 @@
   }
 
   // ---------- what the hero can do with each object ----------
-  function goSwing(inst) {
+  export function goSwing(inst) {
     if (noArmor('Детские качели силовую броню не выдержат.')) return;
     const sp = spotOf(inst, 'swing');
     plan(...goSpot(sp), { type: 'act', kind: 'swing', inst, opts: { spot: sp } });
   }
-  function goBar(inst) {
+  export function goBar(inst) {
     const sp = spotOf(inst, 'bar');
     if (!inst.def.seat && inst.type === 'swing') toast('Сиденья давно нет. Зато можно подтянуться.');
     plan(...goSpot(sp), { type: 'act', kind: 'hang', inst, opts: { bar: inst.built.bar, reps: 5, count: 0, pull: 0, after: () => toast(armored() ? 'Пять раз в броне. Сервоприводы помогают.' : 'Пять раз. Неплохо для курильщика.') } });
   }
-  function goSlide(inst) {
+  export function goSlide(inst) {
     if (noArmor('Горка под силовой бронёй сложится.')) return;
     const sp = spotOf(inst, 'ladder');
     plan(...goSpot(sp), { type: 'act', kind: 'slide', inst });
   }
-  function goTower(inst) {
+  export function goTower(inst) {
     if (noArmor('В силовой броне в детскую башню не пролезть.')) return;
     const sp = spotOf(inst, 'ladder');
     plan(...goSpot(sp), { type: 'act', kind: 'tower', inst });
   }
-  function goThrow(inst) {
+  export function goThrow(inst) {
     const sp = spotOf(inst, 'throw');
     const rim = localPt(inst, inst.built.rim);
     plan(...goSpot(sp), { type: 'call', fn: () => { hero.tyaw = yawTo(rim[0], rim[2]); } }, { type: 'turned' }, ballThrow(inst), { type: 'waitThrow' });
@@ -173,7 +186,7 @@
     { p: 0.16, msg: 'Только репейник на штанах.' }
   ];
   let findRng = rng(2026);
-  function goSearch(inst) {
+  export function goSearch(inst) {
     if (inst.dyn.searched) { toast(TEXTS.searched); return; }
     // walk to the nearest edge of the patch
     const cx = inst.def.at[0], cz = inst.def.at[1], dx = hero.x - cx, dz = hero.z - cz, dl = Math.hypot(dx, dz) || 1;
@@ -192,20 +205,20 @@
     '«Здесь был Вася». Вася, судя по всему, был здесь часто.',
     '«В+К» в сердечке. Интересно, что с ними стало.'
   ];
-  function goGraffiti(inst) {
+  export function goGraffiti(inst) {
     const sp = spotOf(inst, 'front');
     plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.6, cb: () => { inst.dyn.gi = ((inst.dyn.gi ?? -1) + 1) % GRAFFITI.length; toast(GRAFFITI[inst.dyn.gi]); } } });
   }
-  function goCans(inst) {
+  export function goCans(inst) {
     const sp = spotOf(inst, 'front');
     if (inst.dyn.cans.every((c) => c.state === 'up')) { toast('Банки и так стоят. Можно стрелять.'); return; }
     plan(...goSpot(sp), { type: 'reach', to: [-0.08, 0.62, 0.42], cb: () => { resetCans(inst); toast('Банки снова на крыше.'); } }, { type: 'waitReach' });
   }
-  function goSubstation(inst) {
+  export function goSubstation(inst) {
     const sp = spotOf(inst, 'door');
     plan(...goSpot(sp), { type: 'reach', to: [-0.12, 0.05, 0.5], cb: () => toast('Заперто. «Не влезай — убьёт». Логично.') }, { type: 'waitReach' });
   }
-  function goDoor(inst) {
+  export function goDoor(inst) {
     const sp = spotOf(inst, 'door');
     plan(...goSpot(sp), { type: 'reach', to: [-0.2, 0.1, 0.46], cb: () => toast(MAP.intercom || 'Домофон пищит, но никто не открывает.') }, { type: 'waitReach' });
   }
@@ -226,7 +239,7 @@
     const sp = spotOf(inst, 'side');
     plan(...goSpot(sp), { type: 'act', kind: 'look', inst, opts: { dur: 1.4, cb: () => toast(inst.def.look || 'Чья-то машина.') } });
   }
-  function carAlarm(inst, why) {
+  export function carAlarm(inst, why) {
     if (inst.dyn.alarm > 0) return;
     inst.dyn.alarm = 9;
     for (const b of PIGEONS) b.scare = true;
@@ -283,7 +296,7 @@
   for (const t of ['swing', 'pullbar', 'slide', 'platform', 'hoop', 'towers', 'garage', 'substation', 'grass', 'bench', 'entrance', 'metalgarage', 'car'])
     USE[t] = { name: yardName, note: yardNote, acts: yardActs };
   USE.swing.active = (def) => !def.plain;
-  function doShoot() {
+  export function doShoot() {
     if (inMachine()) return;
     if (equip.hands !== 'rifle') { toast('Сначала возьми винтовку в снаряжении.'); return; }
     if (hero.shoot.on) return;

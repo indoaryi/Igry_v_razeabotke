@@ -1,21 +1,25 @@
   // ================= navigation: a quarter-metre grid, A* with 8 neighbours, then string pulling =================
   // one grid per walker size: the hero, and big walking machines (their own body is left out while one is driven)
+  import { SQ2 } from '../core/camera.js';
+  import { clamp } from '../core/math.js';
+  import { INST } from './instances.js';
+  import { GH, GW } from './ground.js';
   const NR = 4;
   let NWX = 120, NWZ = 120;
   const HERO_R = 0.24;
-  const NAV = { hero: { r: HERO_R, b: null, skip: null }, big: { r: 0.62, b: null, skip: null } };
+  export const NAV = { hero: { r: HERO_R, b: null, skip: null }, big: { r: 0.62, b: null, skip: null } };
   let navB = null;            // the hero's grid
-  function navAlloc() {
+  export function navAlloc() {
     NWX = GW * NR; NWZ = GH * NR;
     for (const g of Object.values(NAV)) g.b = new Uint8Array(NWX * NWZ);
     navB = NAV.hero.b;
   }
   // the current location's walk grids come back from its kept runtime (locations.js)
-  function navRestore(rt) {
+  export function navRestore(rt) {
     NWX = GW * NR; NWZ = GH * NR;
     NAV.hero.b = rt.navHero; NAV.big.b = rt.navBig; navB = NAV.hero.b;
   }
-  function pointInPoly(x, z, poly) {
+  export function pointInPoly(x, z, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       const [xi, zi] = poly[i], [xj, zj] = poly[j];
@@ -23,7 +27,7 @@
     }
     return inside;
   }
-  function distToPoly(x, z, poly) {
+  export function distToPoly(x, z, poly) {
     let best = Infinity;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       const [ax, az] = poly[j], [bx, bz] = poly[i];
@@ -32,7 +36,7 @@
     }
     return best;
   }
-  function buildNav(g = NAV.hero) {
+  export function buildNav(g = NAV.hero) {
     const nb = g.b, R_ = g.r;
     nb.fill(0);
     for (let j = 0; j < NWZ; j++) for (let i = 0; i < NWX; i++) {
@@ -54,8 +58,8 @@
     }
   }
   const cellOf = (x, z) => [clamp(Math.floor(x * NR), 0, NWX - 1), clamp(Math.floor(z * NR), 0, NWZ - 1)];
-  const blockedAt = (x, z, g = NAV.hero) => { const [i, j] = cellOf(x, z); return g.b[j * NWX + i] === 1; };
-  function nearestFree(x, z, maxR = 3, g = NAV.hero) {
+  export const blockedAt = (x, z, g = NAV.hero) => { const [i, j] = cellOf(x, z); return g.b[j * NWX + i] === 1; };
+  export function nearestFree(x, z, maxR = 3, g = NAV.hero) {
     if (!blockedAt(x, z, g)) return [x, z];
     for (let r = 1; r <= maxR * NR; r++) {
       let best = null, bd = Infinity;
@@ -75,7 +79,7 @@
     return true;
   }
   // binary heap keyed by f
-  function findPath(from, to, grid = NAV.hero) {
+  export function findPath(from, to, grid = NAV.hero) {
     let s = from, g = to;
     const navB = grid.b;
     if (blockedAt(s[0], s[1], grid)) { const f2 = nearestFree(s[0], s[1], 1.5, grid); if (!f2) return null; s = f2; }

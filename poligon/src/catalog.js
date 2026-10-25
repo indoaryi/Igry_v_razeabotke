@@ -1,6 +1,12 @@
   // ================= the test range's own things: targets, a watchtower, a container, barrels, concrete blocks, a sign, a guard booth =================
   // Everything else on the range (houses, trees, grass, cars, the lamp post, benches) comes from the engine's library (engine/src/props),
   // the walking suits from engine/src/machine. Local frame: origin on the ground at the anchor, +z is the front.
+  import { M, ry, rz, tr } from '../../engine/src/core/math.js';
+  import { mat, paint } from '../../engine/src/render/materials.js';
+  import { cyl, ellipsoid } from '../../engine/src/render/meshes.js';
+  import { Kit } from '../../engine/src/render/kit.js';
+  import { SANS, addDecal, decalOn, outlinedText } from '../../engine/src/render/decals.js';
+  import { CATALOG } from '../../engine/src/world/instances.js';
 
   // ---------- pictures ----------
   addDecal('tgtRings', 0.5, 0.62, (g, w, h) => {
@@ -43,7 +49,7 @@
 
   // ---------- a pop-up target: a plywood plate on a hinge at its foot; a hit knocks it backwards ----------
   // The plate is drawn every frame from inst.dyn (see play.js), so it can fall; the stand is baked.
-  const TGT = { hinge: 0.36, w: 0.27, h: 0.36 };      // hinge height, plate half width and half height
+  export const TGT = { hinge: 0.36, w: 0.27, h: 0.36 };      // hinge height, plate half width and half height
   function buildTarget(o) {
     const k = new Kit(o.seed || 701);
     const wood = mat('#8a6a46', { pat: 37, b: '#6f5235', p: [0.09, 1, 0, 0], noise: 0.1, grain: 50 });

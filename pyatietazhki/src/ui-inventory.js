@@ -1,13 +1,23 @@
   // ================= inventory UI =================
+  import { $ } from '../../engine/src/core/prelude.js';
+  import { toast } from '../../engine/src/core/toast.js';
+  import { equip, rebuildHero } from '../../engine/src/hero/model.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { busyAct } from '../../engine/src/hero/state.js';
+  import { sparkleAround } from '../../engine/src/fx/fx2d.js';
+  import { redraw } from '../../engine/src/render/stage.js';
+  import { ITEMS, ITEM_HOOKS, isOn } from './inventory.js';
+  import { onTower, startDrink, startSmoke } from './hero-state.js';
+  import { portraitStale } from './ui-portrait.js';
   const statsEl = $('stats'), itemsEl = $('items');
-  const icons = {};
+  export const icons = {};
   function renderStats() {
     const armor = (equip.body === 'jacket' ? 1 : equip.body === 'armor' ? 8 : 0) + (equip.head === 'helmet' ? 3 : 0);
     const spd = equip.body === 'armor' ? 85 : 100, dmg = equip.hands === 'rifle' ? 12 : 3;
     const rows = [['Броня', armor, armor / 11 * 100], ['Скорость', spd + '%', spd], ['Урон', dmg, dmg / 12 * 100]];
     statsEl.innerHTML = rows.map(([n, v, w]) => `<div class="stat"><div class="stat-row"><span>${n}</span><b>${v}</b></div><div class="bar"><i style="width:${Math.round(w)}%"></i></div></div>`).join('');
   }
-  function renderItems() {
+  export function renderItems() {
     if (!itemsEl.children.length) {
       for (const it of ITEMS) {
         const b = document.createElement('button');
@@ -41,11 +51,11 @@
   }
   ITEM_HOOKS.changed.push(renderItems);
   ITEM_HOOKS.found.push(flashItem);
-  function setGear() {
+  export function setGear() {
     rebuildHero(); redraw(); portraitStale();
     renderItems(); sparkleAround();
   }
-  function onItem(it) {
+  export function onItem(it) {
     if (it.id === 'cigs') { if (hero.smoke.on) hero.smoke.on = false; else startSmoke(); renderItems(); return; }
     if (it.id === 'atom') { if (hero.drink.on) hero.drink.on = false; else startDrink(); renderItems(); return; }
     if (hero.inside || (hero.act && hero.act.kind === 'board')) { toast('В костюме не переоденешься — места нет.'); return; }

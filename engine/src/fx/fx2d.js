@@ -1,9 +1,20 @@
   // ================= 2D effects (in world art pixels) =================
-  const smokeP = [], fx = [], hits = [], leavesP = [];
+  import { reduceMotion } from '../core/camera.js';
+  import { add, clamp, hash2, lerp, nrm, rng, wpx } from '../core/math.js';
+  import { GAME, hook } from '../core/game.js';
+  import { rectsHit } from '../render/kit.js';
+  import { LOC_HOOKS, MAP, groundType } from '../world/map.js';
+  import { INST, pathDist } from '../world/instances.js';
+  import { GH, GW } from '../world/ground.js';
+  import { DAYP, dayLamps } from '../world/daytime.js';
+  import { SMOKE_INTRO, smokeLoop } from '../hero/skeleton.js';
+  import { hero, heroHidden } from '../hero/hero.js';
+  import { HERO_EVENTS } from '../hero/state.js';
+  export const smokeP = [], fx = [], hits = [], leavesP = [];
   // screen shake in art pixels: heavy footfalls, engines starting
   let shakeT = 0, shakeA = 0;
-  function shake(a, t) { shakeA = Math.max(shakeA, a); shakeT = Math.max(shakeT, t); }
-  function shakeNow(axis = 0) { if (shakeT <= 0 || reduceMotion) return 0; return (hash2(Math.floor(performance.now() / 45), axis, 7) - 0.5) * 2 * shakeA; }
+  export function shake(a, t) { shakeA = Math.max(shakeA, a); shakeT = Math.max(shakeT, t); }
+  export function shakeNow(axis = 0) { if (shakeT <= 0 || reduceMotion) return 0; return (hash2(Math.floor(performance.now() / 45), axis, 7) - 0.5) * 2 * shakeA; }
   let wispT = 0, puffT = 0, leafT = 0, stepPh = 0, breathT = 2;
   // smoke and dust are pixel puffs that grow, drift with the wind and thin out by dithering
   const PUFF = {
@@ -35,8 +46,8 @@
     puffCache.set(key, c);
     return c;
   }
-  const puff = (o) => smokeP.push(Object.assign({ age: 0, seed: Math.random() * 6.28, a: 0.9, r0: 0.6, r1: 3, drag: 0.6, rise: 0, tone: 'white' }, o));
-  const last = { tip: null, mouth: null, fistL: null, fistR: null, face: [0, 1], muzzle: null, port: null, portDir: [1, 0], canTop: null, glows: [], root: null, chest: null, flame: false, aim2d: [1, 0] };
+  export const puff = (o) => smokeP.push(Object.assign({ age: 0, seed: Math.random() * 6.28, a: 0.9, r0: 0.6, r1: 3, drag: 0.6, rise: 0, tone: 'white' }, o));
+  export const last = { tip: null, mouth: null, fistL: null, fistR: null, face: [0, 1], muzzle: null, port: null, portDir: [1, 0], canTop: null, glows: [], root: null, chest: null, flame: false, aim2d: [1, 0] };
   // a shot at hero.aimAt: a target { pos, state: 'up' while it can be hit, onHit(away, hx, hy) } — the game says what a hit does
   function fireShot() {
     if (!last.muzzle) return;
@@ -59,11 +70,11 @@
   HERO_EVENTS.shot.push(fireShot);
   // a new location starts with clean air: no smoke, sparks, bullet marks or falling leaves from the last one
   hook(LOC_HOOKS.enter, () => { smokeP.length = 0; fx.length = 0; hits.length = 0; leavesP.length = 0; }, 0);
-  function sparkleAround() {
+  export function sparkleAround() {
     if (!last.chest) return;
     for (let i = 0; i < 14; i++) fx.push({ k: 'spark', x: last.chest[0] + (Math.random() - 0.5) * 40, y: last.chest[1] + (Math.random() - 0.5) * 60, vx: 0, vy: -10 - Math.random() * 20, g: 0, life: 0.35 + Math.random() * 0.3, white: true });
   }
-  function updateFx(dt, view) {
+  export function updateFx(dt, view) {
     const sm = hero.smoke;
     if (sm.on && sm.w > 0.95 && sm.t > SMOKE_INTRO && last.tip) {
       const st = smokeLoop(sm.t - SMOKE_INTRO + 0.5);
@@ -203,7 +214,7 @@
   }
   // stars over the dark air round the map (they stay put in the world and twinkle)
   let STARS = null;
-  function drawStars(ctx, ox, oy, w, h) {
+  export function drawStars(ctx, ox, oy, w, h) {
     if (DAYP.night < 0.35) return;
     if (!STARS) { const R = rng(1977); STARS = []; for (let i = 0; i < 160; i++) STARS.push([R() * 4400 - 2200, R() * 1500 - 900, R(), R()]); }
     const t = performance.now() / 1000, a = clamp((DAYP.night - 0.35) / 0.4, 0, 1);
@@ -215,9 +226,9 @@
       ctx.fillRect(x, y, 1, 1);
     }
   }
-  function px(ctx, x, y, k, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k))); }
+  export function px(ctx, x, y, k, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k))); }
   // draw effects; X/Y map world art px to the target canvas, k is the size of one art pixel there
-  function drawFx(ctx, k, ox, oy) {
+  export function drawFx(ctx, k, ox, oy) {
     const X = (x) => x - ox, Y = (y) => y - oy;
     for (const [x, y] of hits) px(ctx, X(x), Y(y), k, 'rgba(40,28,22,0.85)');
     for (const l of leavesP) { px(ctx, X(l.x), Y(l.y), k, l.col); if (Math.sin(l.ph) > 0) px(ctx, X(l.x + 1), Y(l.y), k, l.col); }

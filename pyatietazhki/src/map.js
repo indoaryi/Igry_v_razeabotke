@@ -1,8 +1,10 @@
   // ================= locations: the first yard =================
   // Ground, one character per 1 m cell (row = z, column = x):
   //   .  lawn    ,  rough grass and weeds    :  trodden earth    #  asphalt    _  concrete apron
+  import { xf } from '../../engine/src/core/math.js';
+  import { INST, byType, instantiate } from '../../engine/src/world/instances.js';
   const GROUND_KEY = { '.': 'газон', ',': 'бурьян, некошеная трава', ':': 'вытоптанная земля', '#': 'асфальт', '_': 'бетонная отмостка' };
-  const YARD1 = {
+  export const YARD1 = {
     id: 'yard1', name: 'Двор у пятиэтажек', short: 'У пятиэтажек', photo: 'yard1',
     photoAlt: 'Исходная фотография: заросший двор, качели, горка, гараж с граффити, подстанция, игровой комплекс с красными крышами и пятиэтажки за деревьями',
     size: [30, 30],

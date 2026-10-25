@@ -4,6 +4,12 @@
   // stepping on the tread of the right calf (the suit parks on its right knee) and the ledge of the engine block.
   // Faded olive paint, chipped to rust on the edges, mud on the legs. Sizes in metres; +x is the suit's left.
   // ---------- the combat suit: stencils and plates ----------
+  import { M, alongPlusY, len, lerpV, rx, ry, rz, sc3, sub, tr } from '../core/math.js';
+  import { flat, mat } from '../render/materials.js';
+  import { box, cyl, ellipsoid, facets, lineMesh, torus } from '../render/meshes.js';
+  import { DECALS, SANS, addDecal, decal, outlinedText } from '../render/decals.js';
+  import { CATALOG } from '../world/instances.js';
+  import { MACHINE_KINDS } from './machine.js';
   addDecal('sNum', 0.4, 0.32, (g, w, h) => { outlinedText(g, '07', 0, 0, 'bold 21px ' + SANS, '#ebe8de', null, 0); });
   addDecal('sName', 0.56, 0.12, (g, w, h) => { outlinedText(g, 'ИБК-3', 1, 0, 'bold 8px ' + SANS, '#ebe8de', null, 0); });
   addDecal('sHatch', 0.5, 0.12, (g, w, h) => { outlinedText(g, 'ЛЮК', 1, 0, 'bold 8px ' + SANS, '#ebe8de', null, 0); g.fillStyle = '#ebe8de'; g.fillRect(18, 3, 6, 2); g.fillRect(22, 2, 1, 4); g.fillRect(23, 3, 1, 2); });

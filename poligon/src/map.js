@@ -1,6 +1,9 @@
   // ================= the test range: two locations that between them show everything the engine can do =================
   // Ground, one character per 1 m cell (row = z, column = x):  .  lawn   ,  weeds   :  trodden earth   #  asphalt   _  concrete
   // The ground here is painted from rectangles (later ones win), not typed out row by row: the range is 36 × 28 m.
+  import { clamp, xf } from '../../engine/src/core/math.js';
+  import { LOCATIONS } from '../../engine/src/world/map.js';
+  import { byType, instantiate } from '../../engine/src/world/instances.js';
   function groundFrom(W, H, base, rects) {
     const g = [];
     for (let z = 0; z < H; z++) {

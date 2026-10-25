@@ -1,4 +1,32 @@
   // ================= the game's locations =================
+  import { $ } from '../../engine/src/core/prelude.js';
+  import { S, reduceMotion } from '../../engine/src/core/camera.js';
+  import { GAME, hook } from '../../engine/src/core/game.js';
+  import { TGT_SMALL, render3D } from '../../engine/src/render/webgl.js';
+  import { buildDecals } from '../../engine/src/render/decals.js';
+  import { LOCATIONS, MAP } from '../../engine/src/world/map.js';
+  import { INST, byType } from '../../engine/src/world/instances.js';
+  import { GH, GW } from '../../engine/src/world/ground.js';
+  import { blockedAt } from '../../engine/src/world/nav.js';
+  import { enterLocation, exitAt } from '../../engine/src/world/locations.js';
+  import { DAY, daySet } from '../../engine/src/world/daytime.js';
+  import { HERO, buildHero, equip, setHero } from '../../engine/src/hero/model.js';
+  import { buildPose, evalBones } from '../../engine/src/hero/skeleton.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { heroList } from '../../engine/src/hero/rig.js';
+  import { goSit } from '../../engine/src/hero/state.js';
+  import { viewMode } from '../../engine/src/render/stage.js';
+  import { vBtns } from '../../engine/src/ui/hud.js';
+  import { GAME_API, prepareStage, runFrames } from '../../engine/src/core/run.js';
+  import { MACHINE_HOOKS, machinesFromHot, machinesHot } from '../../engine/src/machine/machine.js';
+  import { YARD1 } from './map.js';
+  import { YARD2 } from './yard2.js';
+  import { ITEMS, itemById } from './inventory.js';
+  import { PIGEONS } from './pigeons.js';
+  import { carAlarm, doShoot, goBar, goCans, goDoor, goGraffiti, goSearch, goSlide, goSubstation, goSwing, goThrow, goTower, startDrink, startSmoke } from './hero-state.js';
+  import { iconCanvas } from './ui-portrait.js';
+  import { icons, onItem, renderItems, setGear } from './ui-inventory.js';
+  import { CARDS, buildLegend, drawPlan, planEl, renderCards } from './ui-breakdown.js';
   LOCATIONS.yard1 = YARD1;
   LOCATIONS.yard2 = YARD2;
   // a heavy machine stamping past parked cars sets their alarms off

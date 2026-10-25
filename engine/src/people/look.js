@@ -5,9 +5,15 @@
   // A piece is a function (put, D, C) that puts parts on bones: put(bone, key, () => mesh, offset in bone space, material, group).
   // The key names the mesh (it is cached by it), so it has to change whenever the shape does. Parts that share a bone, a material and
   // a group are merged into one mesh: the fully kitted soldier is ~7500 triangles in about fifty draws. Groups let an icon show one piece alone.
+  import { ID4, M, alongMinusY, alongPlusY, len, rng, rx, ry, rz, sub, tr } from '../core/math.js';
+  import { COL, mat } from '../render/materials.js';
+  import { box, capsule, cyl, ellipsoid, facets, loft, smoothPath, tube, tubeAlong } from '../render/meshes.js';
+  import { rawMesh, upload } from '../render/webgl.js';
+  import { mergeRaw } from '../render/kit.js';
+  import { HC, dims, torsoMesh } from '../hero/model.js';
   const PERSON_PIECES = {};
   const PERSON_MODELS = new Map();
-  function buildPerson(look) {
+  export function buildPerson(look) {
     let model = PERSON_MODELS.get(look.id);
     if (model) return model;
     const D = Object.assign(dims(!!look.armor), look.dims || {}, { armor: !!look.armor });
@@ -206,7 +212,7 @@
     put('neck', 'kzu:neck', () => capsule(0.12, 0.07, 0.074), tr(0, 0.07, -0.006), K.rubber);
   };
   // the whole kit, ready to wear
-  const KZU_LOOK = {
+  export const KZU_LOOK = {
     id: 'kzu', armor: true, seed: 4711,
     dims: { sx: 0.226, shY: 0.256, hipX: 0.1, chestY: 0.185, neckY: 0.325, upper: 0.285, fore: 0.3, thigh: 0.425, shin: 0.395, sole: -0.1 },
     pieces: ['kzuSuit', 'kzuNeck', 'kzuVest', 'kzuPads', 'kzuBelt', 'kzuGloves', 'kzuBoots', 'kzuHelmet', 'kzuPack']

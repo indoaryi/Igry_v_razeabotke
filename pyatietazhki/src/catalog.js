@@ -2,6 +2,13 @@
   // Local frame: origin on the ground at the object's anchor, +z is the object's front.
   // Everything else the yards stand on (houses, trees, cars, benches…) comes from the engine's library (engine/src/props).
   // ---------- concrete shed with graffiti ----------
+  import { M, add, lerpV, rx, ry, rz, tr } from '../../engine/src/core/math.js';
+  import { flat, mat, paint } from '../../engine/src/render/materials.js';
+  import { ellipsoid, lineMesh, loft, pyramid, torus } from '../../engine/src/render/meshes.js';
+  import { getMesh } from '../../engine/src/render/webgl.js';
+  import { Kit } from '../../engine/src/render/kit.js';
+  import { decalOn } from '../../engine/src/render/decals.js';
+  import { CATALOG } from '../../engine/src/world/instances.js';
   function buildGarage(o) {
     const k = new Kit(19);
     const body = mat('#d6d4cc', { pat: 33, b: '#c6c3ba', p: [2.3, 0.28, 9, 0], noise: 0.05, grain: 40 });
@@ -24,7 +31,7 @@
   }
 
   // ---------- playground complex: two towers, a bridge, climbing bars ----------
-  const TW = { A: { cx: -1.45, hs: 0.55, deck: 0.9, post: 2.7, roof: 2.62 }, B: { cx: 1.7, hs: 0.6, deck: 1.3, post: 3.72, roof: 3.7 } };
+  export const TW = { A: { cx: -1.45, hs: 0.55, deck: 0.9, post: 2.7, roof: 2.62 }, B: { cx: 1.7, hs: 0.6, deck: 1.3, post: 3.72, roof: 3.7 } };
   function buildTowers(o) {
     const k = new Kit(23), R = k.R;
     const green = paint('#3f8f46', { rf: 8 }), yellow = paint('#e3be35', { rf: 8 }), red = paint('#c4463a', { rf: 5, rt: 0.86 }), orange = paint('#e2692b'), blue = paint('#3d6db3');
@@ -79,10 +86,10 @@
   }
 
   // ---------- A-frame swing (with a seat) or a bare frame (used as a pull-up bar) ----------
-  const SW = { BAR: 2.3, CH: 1.72, HALF: 1.2, SPL: 0.78, PIV: 0.22 };
-  const SWING_W = Math.sqrt(9.8 / SW.CH);      // how fast a swing swings: the pendulum of its chains
+  export const SW = { BAR: 2.3, CH: 1.72, HALF: 1.2, SPL: 0.78, PIV: 0.22 };
+  export const SWING_W = Math.sqrt(9.8 / SW.CH);      // how fast a swing swings: the pendulum of its chains
   // a line one metre down from its origin, stretched into the swing chains and the pigeons' legs
-  const UNIT_LINE = () => getMesh('unitLine', () => lineMesh([[[0, 0, 0], [0, -1, 0]]]));
+  export const UNIT_LINE = () => getMesh('unitLine', () => lineMesh([[[0, 0, 0], [0, -1, 0]]]));
   function buildSwing(o) {
     const k = new Kit(o.seed || 29);
     const pm = paint(o.color || '#4f8a46', { rt: 0.86 });
@@ -116,7 +123,7 @@
     return { kit: k, blocks: [{ rect: [-1.4, -0.75, -1.2, 0.75] }, { c: [1.15, 0], r: 0.1 }], spots: [{ kind: 'bar', at: [0, 0.05], yaw: 0 }], bar: BAR };
   }
   // ---------- metal slide ----------
-  const SL = { top: 1.25, z0: -0.55, z1: 1.55, run: 2.0, low: 0.3, lad0: -1.8, lad1: -1.02 };
+  export const SL = { top: 1.25, z0: -0.55, z1: 1.55, run: 2.0, low: 0.3, lad0: -1.8, lad1: -1.02 };
   function buildSlide(o) {
     const k = new Kit(37);
     const fm = paint('#5c9358'), steel = mat('#b8bdc1', { noise: 0.03, spec: 0.7, gloss: 14 });

@@ -1,6 +1,10 @@
   // ================= hero model =================
-  const HC = [0, 0.085, 0.012];   // head centre, head-bone space
-  function dims(armor) {
+  import { I4, M, alongMinusY, alongPlusY, len, rx, ry, rz, sub, tr } from '../core/math.js';
+  import { COL, mat } from '../render/materials.js';
+  import { box, capsule, cyl, ellipsoid, loft, tube } from '../render/meshes.js';
+  import { getMesh } from '../render/webgl.js';
+  export const HC = [0, 0.085, 0.012];   // head centre, head-bone space
+  export function dims(armor) {
     const D = { w: 1.06, d: 1.05, l: 1.08, belly: 0.008, sx: 0.2, shY: 0.245, hipX: 0.095, spineY: 0.06, chestY: 0.18, neckY: 0.315, headY: 0.076,
       upper: 0.28, fore: 0.295, thigh: 0.42, shin: 0.39, sole: -0.088, armor: !!armor };
     if (armor) Object.assign(D, { sx: 0.25, shY: 0.27, hipX: 0.11, chestY: 0.19, neckY: 0.335, upper: 0.29, fore: 0.31, thigh: 0.44, shin: 0.41, sole: -0.13 });
@@ -13,7 +17,7 @@
   ];
   const headMesh = (inf, from) => loft(HEAD_R.filter((r) => r[0] >= from).map((r) => ({ a: r[0], hu: r[1] + inf, hv: r[2] + inf, cv: r[3] })),
     { seg: 16, exp: from < -0.2 ? 2.4 : 2.7, capA: from < -0.2, capAAt: -0.132, capBAt: 0.12 + inf });
-  const mouthC = (D) => [0, D.neckY + D.headY + HC[1] - 0.045, HC[2] + 0.1];
+  export const mouthC = (D) => [0, D.neckY + D.headY + HC[1] - 0.045, HC[2] + 0.1];
   // torso profile in chest space: y, half width, half depth, z offset, belly factor
   const TORSO = [
     [-0.34, 0.168, 0.105, 0.0, 0.3], [-0.27, 0.162, 0.108, 0.006, 0.6], [-0.17, 0.152, 0.11, 0.012, 1],
@@ -27,18 +31,18 @@
     }
     return y < TORSO[0][0] ? TORSO[0] : TORSO[TORSO.length - 1];
   }
-  function torsoMesh(D, inf, hem) {
+  export function torsoMesh(D, inf, hem) {
     const ringOf = (r) => ({ a: r[0], hu: r[1] * D.w + inf, hv: r[2] * D.d + inf, cv: r[3] + r[4] * D.belly });
     const rings = [ringOf(torsoAt(hem))];
     for (const r of TORSO) if (r[0] > hem + 1e-4) rings.push(ringOf(r));
     return loft(rings, { seg: 16, exp: 2.5, capAAt: hem - 0.012, capBAt: 0.312 });
   }
   const frontZ = (D, y, inf) => { const r = torsoAt(y); return r[2] * D.d + inf + r[3] + r[4] * D.belly; };
-  const backZ = (D, y, inf) => { const r = torsoAt(y); return r[3] + r[4] * D.belly - (r[2] * D.d + inf); };
+  export const backZ = (D, y, inf) => { const r = torsoAt(y); return r[3] + r[4] * D.belly - (r[2] * D.d + inf); };
   const ARMOR_T = [[-0.13, 0.205, 0.152, 0.0], [-0.03, 0.25, 0.18, 0.02], [0.08, 0.29, 0.2, 0.03], [0.18, 0.305, 0.19, 0.02], [0.26, 0.28, 0.17, 0.0], [0.32, 0.2, 0.13, -0.01], [0.35, 0.12, 0.1, -0.01]];
 
   // rifle geometry in rifle space: grip at origin, +Z to the muzzle, +Y up (scope side)
-  const RIFLE_MUZZLE = [0, 0.065, 0.64], RIFLE_PORT = [-0.04, 0.06, 0.09];
+  export const RIFLE_MUZZLE = [0, 0.065, 0.64], RIFLE_PORT = [-0.04, 0.06, 0.09];
   function rifleParts() {
     const out = [];
     const put = (key, fn, off, m) => out.push({ mesh: getMesh('rf' + key, fn), off, mat: m });
@@ -63,7 +67,7 @@
     put('sight', () => box(0.006, 0.025, 0.012), tr(0, 0.12, 0.38), blk);
     return out;
   }
-  function buildHero(eq) {
+  export function buildHero(eq) {
     const armor = eq.body === 'armor', helmet = eq.head === 'helmet', jacket = eq.body === 'jacket';
     const D = dims(armor);
     const parts = [];
@@ -207,22 +211,22 @@
     return { parts, D, armor, helmet, jacket };
   }
   // props
-  const RIFLE = rifleParts();
-  const CIG_LEN = 0.085;
-  const PROPS = {
+  export const RIFLE = rifleParts();
+  export const CIG_LEN = 0.085;
+  export const PROPS = {
     cig: { mesh: getMesh('cig', () => capsule(CIG_LEN, 0.011, 0.011, { seg: 6 })), mat: mat('#ece8df', { noise: 0 }) },
     tip: { mesh: getMesh('tip', () => ellipsoid(0.012, 0.012, 0.012, { seg: 6, rings: 4 })) },
     pack: { mesh: getMesh('pack', () => box(0.028, 0.044, 0.011)), mat: mat(COL.purple, { pat: 22, b: COL.gold, p: [0.024, 0.04, 0.022, 0], noise: 0.02 }) },
     can: { mesh: getMesh('can', () => cyl(0.033, 0.033, 0.165, 14)), mat: mat(COL.can, { pat: 21, b: '#1b1b1d', p: [0.108, 0.134, 0.07, 0.022], r: [0.158, 0, 0, 0], noise: 0.04, spec: 1, gloss: 8 }) }
   };
-  const TIP_DIM = mat('#c4471f', { pat: 10, p: [1, 0, 0, 0] });
-  const TIP_HOT = mat('#e8742c', { pat: 10, p: [4, 0, 0, 0] });
+  export const TIP_DIM = mat('#c4471f', { pat: 10, p: [1, 0, 0, 0] });
+  export const TIP_HOT = mat('#e8742c', { pat: 10, p: [4, 0, 0, 0] });
 
   // what the hero wears and holds: body 'tank' (default) | 'jacket' | 'armor', head null | 'helmet', hands null | 'rifle'.
   // The game sets it and calls rebuildHero() when it changes (gearVer++ makes the stage redraw); setHero(model) puts a model in place
   // as it is (at boot, or for a moment to draw the portrait in other gear).
-  const equip = { body: null, head: null, hands: null };
-  let HERO = null, gearVer = 0;
-  const armored = () => equip.body === 'armor';
-  function setHero(model) { HERO = model; }
-  function rebuildHero() { HERO = buildHero(equip); gearVer++; }
+  export const equip = { body: null, head: null, hands: null };
+  export let HERO = null, gearVer = 0;
+  export const armored = () => equip.body === 'armor';
+  export function setHero(model) { HERO = model; }
+  export function rebuildHero() { HERO = buildHero(equip); gearVer++; }

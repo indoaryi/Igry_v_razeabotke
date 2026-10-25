@@ -6,6 +6,14 @@
   // A tap on a thing puts one of it in the deal, a tap on it in the deal takes it back. The deal goes through when what the hero gives
   // is worth at least what he takes; the person pays the difference back in money as far as he has it.
   // PEOPLE_HOOKS.traded: f(p, give, take) after a deal — the game takes off sold clothes, refreshes its panels.
+  import { GAME, hook } from '../core/game.js';
+  import { NAV, nearestFree } from '../world/nav.js';
+  import { equip } from '../hero/model.js';
+  import { hero, yawTo } from '../hero/hero.js';
+  import { plan } from '../hero/state.js';
+  import { INV, ITEM_TYPES, MONEY, fmtMoney, invAdd, invCount, invSorted, invTake, itemIcon } from './items.js';
+  import { PEOPLE_HOOKS, peopleCss, personHere } from './people.js';
+  import { TALK, endTalk, lineOf, personSays } from './talk.js';
   PEOPLE_HOOKS.traded = [];
   let DEAL = null;              // { p, give: Map(t → n), take: Map(t → n), note }
   const tradeBuy = (p, t) => ITEM_TYPES[t].money ? 1 : Math.max(1, Math.round(ITEM_TYPES[t].price * (p.def.trade.buy ?? 0.6)));
@@ -21,7 +29,7 @@
     const change = Math.max(0, give - take);
     return { give, take, short: Math.max(0, take - give), change, payBack: Math.min(change, cashHim), cashHero, cashHim };
   }
-  function openTrade(p) {
+  export function openTrade(p) {
     if (!p.def.trade) return;
     if (TALK && TALK.p !== p) endTalk();
     DEAL = { p, give: new Map(), take: new Map(), note: tradeLine(p, 'open'), bad: false, back: document.activeElement };
@@ -39,7 +47,7 @@
     if (back && back.focus && document.contains(back)) back.focus();
   }
   // walk up to him first, like for a talk, then open the window
-  function goTrade(p) {
+  export function goTrade(p) {
     if (TALK && TALK.p === p) { openTrade(p); return; }
     const d = Math.hypot(hero.x - p.x, hero.z - p.z), k = 1.2 / (d || 1);
     if (d < 2.4 || (hero.sit > 0 && d < 3)) { if (!(hero.sit > 0)) hero.tyaw = yawTo(p.x, p.z); openTrade(p); return; }

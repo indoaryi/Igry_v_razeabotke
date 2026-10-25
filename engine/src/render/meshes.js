@@ -1,5 +1,6 @@
   // ================= meshes =================
-  function loft(rings, o = {}) {
+  import { add, cross, dot, len, lerpV, nrm, scl, sub } from '../core/math.js';
+  export function loft(rings, o = {}) {
     const seg = o.seg || 12, ex = o.exp || 2, ax = o.axis || 'y';
     const map = ax === 'y' ? (u, a, v) => [u, a, v] : (u, a, v) => [u, v, a];
     const axisVec = ax === 'y' ? [0, 1, 0] : [0, 0, 1];
@@ -39,7 +40,7 @@
     }
     return { pos: P.flat(), nrm: Nn.map(nrm).flat(), idx: I };
   }
-  function ellipsoid(ex_, ey_, ez_, o = {}) {
+  export function ellipsoid(ex_, ey_, ez_, o = {}) {
     const K = o.rings || 8, rings = [];
     const lo = o.half ? 0 : -Math.PI / 2, hi = Math.PI / 2;
     for (let k = o.half ? 0 : 1; k < K; k++) {
@@ -48,7 +49,7 @@
     }
     return loft(rings, { seg: o.seg || 12, exp: o.exp || 2, capA: !o.half, capAAt: -ey_, capBAt: ey_ });
   }
-  function capsule(L, r1, r2, o = {}) {
+  export function capsule(L, r1, r2, o = {}) {
     const rings = [], K = 3;
     for (let k = 1; k <= K; k++) { const ph = -Math.PI / 2 + (Math.PI / 2) * (k / (K + 1)); rings.push({ a: -L + r2 * Math.sin(ph), hu: r2 * Math.cos(ph), hv: r2 * Math.cos(ph) }); }
     rings.push({ a: -L, hu: r2, hv: r2 });
@@ -57,8 +58,8 @@
     return loft(rings, { seg: o.seg || 10, exp: o.exp || 2, capAAt: -L - r2, capBAt: r1 });
   }
   // cylinder along +Y from 0 to L with flat caps
-  const cyl = (r1, r2, L, seg = 12) => loft([{ a: 0, hu: r1, hv: r1 }, { a: L, hu: r2, hv: r2 }], { seg, capAAt: 0, capBAt: L });
-  function box(hx, hy, hz) {
+  export const cyl = (r1, r2, L, seg = 12) => loft([{ a: 0, hu: r1, hv: r1 }, { a: L, hu: r2, hv: r2 }], { seg, capAAt: 0, capBAt: L });
+  export function box(hx, hy, hz) {
     const P = [], Nn = [], I = [], h = [hx, hy, hz];
     const F = [
       [[1, 0, 0], [0, 0, -1], [0, 1, 0]], [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
@@ -72,9 +73,9 @@
     }
     return { pos: P, nrm: Nn, idx: I };
   }
-  const tube = (rs, seg = 14, exp = 2.2) => loft(rs, { seg, exp, capA: false, capB: false });
+  export const tube = (rs, seg = 14, exp = 2.2) => loft(rs, { seg, exp, capA: false, capB: false });
   // flat-shaded convex polygons (each listed counter-clockwise seen from outside)
-  function polyMesh(polys) {
+  export function polyMesh(polys) {
     const P = [], Nn = [], I = [];
     for (const poly of polys) {
       const n = nrm(cross(sub(poly[1], poly[0]), sub(poly[2], poly[0])));
@@ -86,7 +87,7 @@
   }
   // a faceted solid for armour and hulls: a stack of chamfered rectangles along the axis ('y' or 'z'), flat-shaded.
   // ring: { a: position along the axis, x0..x1 across, b0..b1 along the other axis (z for 'y', y for 'z'), c: corner chamfer }
-  function facets(rings, o = {}) {
+  export function facets(rings, o = {}) {
     const ax = o.axis || 'y';
     const pt = (r, u, v) => ax === 'y' ? [u, r.a, v] : [u, v, r.a];
     const P = [], Nn = [], I = [];
@@ -120,7 +121,7 @@
   }
   // a point on a hull ring at angle t round it (π/2 straight ahead along +z, 0 to +x): a superellipse that can be
   // deeper or shallower and squarer or rounder in front (hf, exF) than behind (hb, exB); hv / ex serve both halves
-  function hullPoint(r, t) {
+  export function hullPoint(r, t) {
     const c = Math.cos(t), s = Math.sin(t), fr = s >= 0;
     const e = 2 / ((fr ? r.exF : r.exB) ?? r.ex ?? 2.2), d = (fr ? r.hf : r.hb) ?? r.hv;
     return [(r.cx || 0) + r.hu * Math.sign(c) * Math.pow(Math.abs(c), e), r.y, r.cz + d * Math.sign(s) * Math.pow(Math.abs(s), e)];
@@ -132,7 +133,7 @@
   // The vertices of each ring are spread so that the edges of the opening run along them: the opening's outline is smooth.
   // Returns raw meshes: hull (outside, without the opening), cavity (inside, facing in), jamb (the cut through the wall),
   // shell / shellIn / shellEdge (the hatch: outer skin a little proud of the hull, inner skin, its rim) and loop (points round the opening).
-  function splitHull(rings, o) {
+  export function splitHull(rings, o) {
     const n = o.seg || 32, op = o.open, m = op.m, wall = o.wall ?? 0.05, dOut = o.out ?? 0.006, dIn = o.shellIn ?? 0.04;
     const K = rings.length, P = [];
     for (let k = 0; k < K; k++) {
@@ -218,7 +219,7 @@
     return { hull, cavity, jamb, shell, shellIn, shellEdge, loop: loopIdx.map(([k, i]) => P[k][i]), loopN: loopIdx.map(([k, i]) => N[k][i]), P, N };
   }
   // a round tube along a polyline (seals, hoses, cables); closed joins the ends
-  function tubeAlong(pts, r, seg = 6, closed = false) {
+  export function tubeAlong(pts, r, seg = 6, closed = false) {
     const P = [], Nn = [], I = [], L = pts.length;
     const tan = pts.map((p, i) => nrm(sub(pts[closed ? (i + 1) % L : Math.min(i + 1, L - 1)], pts[closed ? (i - 1 + L) % L : Math.max(i - 1, 0)])));
     let ref = Math.abs(tan[0][1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
@@ -238,7 +239,7 @@
     return { pos: P, nrm: Nn, idx: I };
   }
   // a smooth curve through points (Catmull-Rom), n steps per span
-  function smoothPath(pts, n = 6) {
+  export function smoothPath(pts, n = 6) {
     const out = [];
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[Math.max(i - 1, 0)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(i + 2, pts.length - 1)];
@@ -251,12 +252,12 @@
     return out;
   }
   // four-sided roof: base rectangle at y = 0, apex at (0, h, 0)
-  function pyramid(hw, hd, h) {
+  export function pyramid(hw, hd, h) {
     const A = [0, h, 0], a = [-hw, 0, hd], b = [hw, 0, hd], c = [hw, 0, -hd], d = [-hw, 0, -hd];
     return polyMesh([[a, b, A], [b, c, A], [c, d, A], [d, a, A], [d, c, b, a]]);
   }
   // ring in the xz plane (basketball rim)
-  function torus(R, r, n = 20, m = 6) {
+  export function torus(R, r, n = 20, m = 6) {
     const P = [], Nn = [], I = [];
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
@@ -272,13 +273,13 @@
     return { pos: P, nrm: Nn, idx: I };
   }
   // 1-px lines (wires, nets, railings): pairs of points
-  function lineMesh(segs) {
+  export function lineMesh(segs) {
     const P = [], Nn = [], I = [];
     for (const [a, b] of segs) { const i = P.length / 3; P.push(...a, ...b); Nn.push(0, 1, 0, 0, 1, 0); I.push(i, i + 1); }
     return { pos: P, nrm: Nn, idx: I, lines: true };
   }
   // a sagging wire between two points
-  function catenary(a, b, sag, n = 14) {
+  export function catenary(a, b, sag, n = 14) {
     const pts = [];
     for (let i = 0; i <= n; i++) { const t = i / n; const p = lerpV(a, b, t); p[1] -= sag * 4 * t * (1 - t); pts.push(p); }
     const segs = []; for (let i = 0; i < n; i++) segs.push([pts[i], pts[i + 1]]);

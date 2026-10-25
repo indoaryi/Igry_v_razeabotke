@@ -1,0 +1,29 @@
+  // ================= the empty lot: the modules it is made of, in the order they run =================
+  // Only the engine's core and one module of the game — if this builds and the hero walks, the engine stands on its own.
+  import '../../engine/src/core/prelude.js';
+  import '../../engine/src/core/camera.js';
+  import '../../engine/src/core/math.js';
+  import '../../engine/src/core/game.js';
+  import '../../engine/src/core/toast.js';
+  import '../../engine/src/render/materials.js';
+  import '../../engine/src/render/meshes.js';
+  import '../../engine/src/render/webgl.js';
+  import '../../engine/src/render/kit.js';
+  import '../../engine/src/render/decals.js';
+  import '../../engine/src/world/map.js';
+  import '../../engine/src/world/instances.js';
+  import '../../engine/src/world/ground.js';
+  import '../../engine/src/world/nav.js';
+  import '../../engine/src/world/locations.js';
+  import '../../engine/src/world/daytime.js';
+  import '../../engine/src/hero/model.js';
+  import '../../engine/src/hero/skeleton.js';
+  import '../../engine/src/hero/hero.js';
+  import '../../engine/src/hero/rig.js';
+  import '../../engine/src/hero/state.js';
+  import '../../engine/src/hero/travel.js';
+  import '../../engine/src/fx/fx2d.js';
+  import '../../engine/src/render/stage.js';
+  import '../../engine/src/ui/hud.js';
+  import '../../engine/src/core/run.js';
+  import './lot.js';

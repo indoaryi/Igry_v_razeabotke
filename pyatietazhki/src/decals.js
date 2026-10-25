@@ -1,5 +1,6 @@
   // ================= decals of the first yard: graffiti on the shed, the lines on the backboard =================
   // garage front: a blue piece, a buffed-over stencil, scribbled tags and a heart
+  import { SANS, addDecal, drips, heart, outlinedText, scribble } from '../../engine/src/render/decals.js';
   addDecal('grafFront', 4.9, 2.0, (g, w, h) => {
     g.fillStyle = '#ecebe5'; g.fillRect(150, 16, 104, 50);
     g.fillStyle = '#dcdad2'; g.fillRect(150, 62, 104, 4);

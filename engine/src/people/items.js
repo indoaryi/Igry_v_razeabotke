@@ -4,15 +4,19 @@
   //   money: true (the money itself: one unit is worth 1), gear: { slot: 'body' | 'head' | 'hands' } (the hero can wear it: equip[slot] = id),
   //   icon: () => ({ list: [draw items], at: [x, y, z] the point that lands in the middle, zoom }) — a small 3D model, drawn once into a canvas.
   // An inventory is an array of { t: type id, n: count }. The hero's is INV.hero; each person keeps his own in p.inv.
-  const ITEM_TYPES = {};
-  const MONEY = 'rub';
-  const INV = { hero: [] };
-  let invVer = 0;                 // changes whenever any inventory does: panels redraw on it
-  function itemType(id, def) { ITEM_TYPES[id] = Object.assign({ id, stack: true, price: 0 }, def); return ITEM_TYPES[id]; }
+  import { S } from '../core/camera.js';
+  import { mul } from '../core/math.js';
+  import { TGT_SMALL, render3D } from '../render/webgl.js';
+  import { buildPose, evalBones } from '../hero/skeleton.js';
+  export const ITEM_TYPES = {};
+  export const MONEY = 'rub';
+  export const INV = { hero: [] };
+  export let invVer = 0;                 // changes whenever any inventory does: panels redraw on it
+  export function itemType(id, def) { ITEM_TYPES[id] = Object.assign({ id, stack: true, price: 0 }, def); return ITEM_TYPES[id]; }
   const invFind = (inv, t) => inv.find((s) => s.t === t);
-  const invCount = (inv, t) => { const s = invFind(inv, t); return s ? s.n : 0; };
-  function invAdd(inv, t, n = 1) { if (!(n > 0)) return; const s = invFind(inv, t); if (s) s.n += n; else inv.push({ t, n }); invVer++; }
-  function invTake(inv, t, n = 1) {
+  export const invCount = (inv, t) => { const s = invFind(inv, t); return s ? s.n : 0; };
+  export function invAdd(inv, t, n = 1) { if (!(n > 0)) return; const s = invFind(inv, t); if (s) s.n += n; else inv.push({ t, n }); invVer++; }
+  export function invTake(inv, t, n = 1) {
     const s = invFind(inv, t);
     if (!s || s.n < n) return false;
     s.n -= n;
@@ -21,17 +25,17 @@
     return true;
   }
   // a saved inventory back in: only known types, whole positive counts
-  const invClean = (list) => Array.isArray(list) ? list.filter((s) => s && ITEM_TYPES[s.t] && s.n > 0).map((s) => ({ t: s.t, n: Math.floor(s.n) })) : [];
-  const fmtMoney = (n) => n + ' ₽';
+  export const invClean = (list) => Array.isArray(list) ? list.filter((s) => s && ITEM_TYPES[s.t] && s.n > 0).map((s) => ({ t: s.t, n: Math.floor(s.n) })) : [];
+  export const fmtMoney = (n) => n + ' ₽';
   // the order things are listed in: money first, then what can be worn, then the rest by price
-  const invSorted = (inv) => inv.slice().sort((a, b) => {
+  export const invSorted = (inv) => inv.slice().sort((a, b) => {
     const A = ITEM_TYPES[a.t], B = ITEM_TYPES[b.t];
     return (B.money ? 2 : B.gear ? 1 : 0) - (A.money ? 2 : A.gear ? 1 : 0) || B.price - A.price || A.name.localeCompare(B.name);
   });
 
   // ---------- icons: each type's little model, drawn once by the engine's own renderer (so the icons are pixel art too) ----------
   const ICONS = new Map();
-  function itemIcon(t, size = 32) {
+  export function itemIcon(t, size = 32) {
     const key = t + '|' + size;
     let master = ICONS.get(key);
     if (!master) {
@@ -48,7 +52,7 @@
     return cv;
   }
   // an icon of some parts of a figure (a jacket, a helmet): the figure stands with its arms out, only those groups are drawn
-  function figureIcon(model, groups, yaw, zoom, anchor) {
+  export function figureIcon(model, groups, yaw, zoom, anchor) {
     const c = { t: 0, phase: 0, walkW: 0, runW: 0, sitW: 0, smokeW: 0, drinkW: 0, punchW: 0, shootW: 0, throwW: 0, reachW: 0, talkW: 0 };
     const pose = buildPose(c, model.D, false), D = model.D;
     pose.p.lHand = [D.sx + 0.34, D.shY - 0.4, 0.05]; pose.p.rHand = [-D.sx - 0.34, D.shY - 0.4, 0.05];
@@ -57,11 +61,11 @@
     return { list, at: anchor(B), zoom };
   }
   // a single prop: parts = [{ mesh, model, mat }] already placed; the camera looks at `at`
-  const propIcon = (parts, zoom, at = [0, 0, 0]) => ({ list: parts, at, zoom });
+  export const propIcon = (parts, zoom, at = [0, 0, 0]) => ({ list: parts, at, zoom });
 
   // ---------- a grid of things for a page: a button per type with its icon, name and a state line; rebuilt when invVer changes ----------
   // opts: { inv: () => the inventory, state(t, n) → text, pressed(t) → bool, tap(t), hide(t) → bool (money is usually shown apart), icon: size in px (40) }
-  function invGrid(el, opts) {
+  export function invGrid(el, opts) {
     let ver = -1;
     const rows = new Map();
     function refresh(force) {

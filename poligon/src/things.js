@@ -1,5 +1,15 @@
   // ================= the range's things: what the hero carries, what the warrant officer trades, their little models for icons =================
   // Item types are the engine's (engine/src/people/items.js); each has a price in roubles and a small 3D model the engine draws as an icon.
+  import { RV, TOCAM } from '../../engine/src/core/camera.js';
+  import { ID4, M, frameY, mul, nrm, rx, ry, rz, tr, xf } from '../../engine/src/core/math.js';
+  import { flat, mat } from '../../engine/src/render/materials.js';
+  import { box, cyl, ellipsoid, torus } from '../../engine/src/render/meshes.js';
+  import { getMesh } from '../../engine/src/render/webgl.js';
+  import { decal } from '../../engine/src/render/decals.js';
+  import { HC, PROPS, RIFLE, buildHero, equip, rebuildHero } from '../../engine/src/hero/model.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { redraw } from '../../engine/src/render/stage.js';
+  import { INV, MONEY, figureIcon, invCount, itemType, propIcon } from '../../engine/src/people/items.js';
   const thingMat = (hex, o) => mat(hex, Object.assign({ noise: 0.06, grain: 50 }, o || {}));
   const THING_M = {
     note: thingMat('#a7b28c', { noise: 0.12, grain: 90 }), note2: thingMat('#c4b07c', { noise: 0.12, grain: 90 }),
@@ -61,9 +71,9 @@
 
   // the hero starts with this; everything else he finds, buys or swaps
   INV.hero = [{ t: MONEY, n: 150 }, { t: 'jacket', n: 1 }, { t: 'armor', n: 1 }, { t: 'helmet', n: 1 }, { t: 'rifle', n: 1 }, { t: 'cigs', n: 12 }, { t: 'drink', n: 2 }, { t: 'grenade', n: 3 }];
-  const hasThing = (t) => invCount(INV.hero, t) > 0;
+  export const hasThing = (t) => invCount(INV.hero, t) > 0;
   // a deal took away something he was wearing: off it comes
-  function gearCheck() {
+  export function gearCheck() {
     let changed = false;
     for (const slot of ['body', 'head', 'hands']) if (equip[slot] && !hasThing(equip[slot])) { equip[slot] = null; changed = true; }
     if (!equip.hands) hero.shoot.on = false;

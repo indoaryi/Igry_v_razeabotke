@@ -1,4 +1,13 @@
   // ================= moving parts of objects: swing seats, cans on the shed, the basketball =================
+  import { add, approach, len, nrm, scl, sub, wpx, xf } from '../../engine/src/core/math.js';
+  import { GAME, hook } from '../../engine/src/core/game.js';
+  import { toast } from '../../engine/src/core/toast.js';
+  import { LOC_HOOKS } from '../../engine/src/world/map.js';
+  import { byType, localPt } from '../../engine/src/world/instances.js';
+  import { armored } from '../../engine/src/hero/model.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { fx } from '../../engine/src/fx/fx2d.js';
+  import { SWING_W } from './catalog.js';
   function initDyn() {
     for (const s of byType('swing')) if (s.def.seat) Object.assign(s.dyn, { theta: 0, amp: 0.04, ph: 0, occupied: false });
     const g = byType('garage')[0];
@@ -20,7 +29,7 @@
     else { hero.aimAt = null; setTimeout(() => toast('Все банки сбиты! Расставить их можно у сарая.'), 500); }
   }
   // throwing the basketball: the order for the hero's queue, with what happens to the ball when he grabs, lets go or is called away
-  function ballThrow(inst) {
+  export function ballThrow(inst) {
     return {
       type: 'throw', inst,
       grab: () => { inst.dyn.ball.state = 'held'; },
@@ -31,7 +40,7 @@
       }
     };
   }
-  function resetCans(g) { for (const c of g.dyn.cans) { c.state = 'up'; c.pos = localPt(g, c.slot); c.rot = 0; c.v = [0, 0, 0]; } }
+  export function resetCans(g) { for (const c of g.dyn.cans) { c.state = 'up'; c.pos = localPt(g, c.slot); c.rot = 0; c.v = [0, 0, 0]; } }
   function updateDyn(dt) {
     for (const s of byType('swing')) if (s.def.seat) {
       const d = s.dyn;

@@ -6,15 +6,28 @@
   //   An option without `to` ends the conversation after the hero's line.
   // talkTo(p) walks the hero up to the person, turns them to face each other and opens the panel in place of the panel «рядом».
   // Walking away, the location changing or «Уйти» ends it. talkSeen(p, node) tells how often a node was said (first meeting or not).
-  const DIALOGS = {};
-  let TALK = null;              // { p, D, id, node, line, heroLine, busy, wait, next, opts }
+  import { $ } from '../core/prelude.js';
+  import { S, reduceMotion } from '../core/camera.js';
+  import { clamp, lerpV, mul, wpx, xf } from '../core/math.js';
+  import { GAME, hook } from '../core/game.js';
+  import { TGT_SMALL, render3D } from '../render/webgl.js';
+  import { NAV, nearestFree } from '../world/nav.js';
+  import { buildPose, evalBones } from '../hero/skeleton.js';
+  import { hero, yawTo } from '../hero/hero.js';
+  import { inMachine, plan } from '../hero/state.js';
+  import { travelState } from '../hero/travel.js';
+  import { stageEl } from '../render/stage.js';
+  import { buildPerson } from './look.js';
+  import { PEOPLE_HOOKS, TALK_HOOKS, peopleCss, personHere } from './people.js';
+  export const DIALOGS = {};
+  export let TALK = null;              // { p, D, id, node, line, heroLine, busy, wait, next, opts }
   let talkPending = null;       // the person the hero is walking up to
-  const TALK_SEEN = {};
-  const talkSeen = (p, id) => (TALK_SEEN[p.id] && TALK_SEEN[p.id][id]) || 0;
+  export const TALK_SEEN = {};
+  export const talkSeen = (p, id) => (TALK_SEEN[p.id] && TALK_SEEN[p.id][id]) || 0;
   TALK_HOOKS.who.push(() => TALK ? TALK.p : null);
-  const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : (v || '');
+  export const lineOf = (v, p) => typeof v === 'function' ? v(p) : Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : (v || '');
 
-  function talkTo(p) {
+  export function talkTo(p) {
     const D = DIALOGS[p.def.dialog];
     if (!D || !personHere(p) || (TALK && TALK.p === p)) return;
     if (inMachine()) return;
@@ -52,7 +65,7 @@
     if (node.run) node.run(T.p);
     if (TALK === T) renderTalk();
   }
-  function personSays(p, line) { Object.assign(p.talk, { on: true, t: 0, dur: clamp(0.8 + line.length * 0.035, 1.2, 4.5) }); }
+  export function personSays(p, line) { Object.assign(p.talk, { on: true, t: 0, dur: clamp(0.8 + line.length * 0.035, 1.2, 4.5) }); }
   function chooseOpt(o) {
     const T = TALK; if (!T || T.busy) return;
     const said = lineOf(o.say, T.p);
@@ -68,7 +81,7 @@
       if (to) goNode(to); else endTalk();
     };
   }
-  function endTalk() {
+  export function endTalk() {
     const T = TALK; if (!T) return;
     TALK = null;
     const p = T.p;

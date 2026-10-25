@@ -1,6 +1,14 @@
   // ================= hero rig: pose context → bones → draw list =================
-  const q = (t) => Math.floor(t * FPS) / FPS;
-  const wq = (w) => Math.round(w * 8) / 8;
+  import { FPS, S, UV } from '../core/camera.js';
+  import { M, add, alongMinusY, alongPlusY, frameY, groundAt, invRigid, lerpV, mul, nrm, rotOnly, rx, scl, smooth, sub, tr, wpx, xf, xfDir } from '../core/math.js';
+  import { mat } from '../render/materials.js';
+  import { ellipsoid } from '../render/meshes.js';
+  import { getMesh } from '../render/webgl.js';
+  import { CIG_LEN, HC, HERO, PROPS, RIFLE, TIP_DIM, TIP_HOT, backZ, equip } from './model.js';
+  import { buildPose, evalBones } from './skeleton.js';
+  import { ACT, hero } from './hero.js';
+  export const q = (t) => Math.floor(t * FPS) / FPS;
+  export const wq = (w) => Math.round(w * 8) / 8;
   function heroCtx(quant) {
     const Q = quant ? q : (t) => t, W = quant ? wq : (w) => w;
     let a = hero.act ? ACT[hero.act.kind].ctx(hero.act) : null;
@@ -18,8 +26,8 @@
       talkW: W(hero.talk.w), talkT: Q(hero.talk.t), act: a
     };
   }
-  const PXV = S * UV[1];   // screen px per metre of height
-  function heroRig(quant) {
+  export const PXV = S * UV[1];   // screen px per metre of height
+  export function heroRig(quant) {
     const c = heroCtx(quant), D = HERO.D;
     const pose = buildPose(c, D, equip.hands === 'rifle');
     const base = hero.act ? ACT[hero.act.kind].base(hero.act, D) : null;
@@ -39,7 +47,7 @@
     }
     return { c, pose, B, base, root, yaw };
   }
-  function rifleWorld(rifle, B, D) {
+  export function rifleWorld(rifle, B, D) {
     if (!rifle) return null;
     if (rifle.mode === 'hands') return M(B.chest, tr(...rifle.g), frameY(rifle.u, rifle.d));
     if (rifle.mode === 'back') {
@@ -48,9 +56,9 @@
     }
     return hero.seat ? hero.seat.rifleM : null;
   }
-  const BALL_MESH = () => getMesh('ball', () => ellipsoid(0.12, 0.12, 0.12, { seg: 12, rings: 8 }));
-  const BALL_MAT = mat('#d9692b', { pat: 41, p: [0.007, 0.085, 0, 0], noise: 0.03, grain: 60 });
-  function heroList(B, pose, opts = {}) {
+  export const BALL_MESH = () => getMesh('ball', () => ellipsoid(0.12, 0.12, 0.12, { seg: 12, rings: 8 }));
+  export const BALL_MAT = mat('#d9692b', { pat: 41, p: [0.007, 0.085, 0, 0], noise: 0.03, grain: 60 });
+  export function heroList(B, pose, opts = {}) {
     const out = [];
     const want = opts.groups;
     for (const pt of HERO.parts) {

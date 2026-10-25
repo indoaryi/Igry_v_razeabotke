@@ -1,9 +1,27 @@
   // ================= what the hero does on the range: targets, the tower, a training grenade, gear, and what each thing offers =================
+  import { M, add, clamp, lerpV, rx, scl, sub, tr, wpx, xf } from '../../engine/src/core/math.js';
+  import { GAME, TEXTS, hook } from '../../engine/src/core/game.js';
+  import { toast } from '../../engine/src/core/toast.js';
+  import { mat } from '../../engine/src/render/materials.js';
+  import { box, ellipsoid } from '../../engine/src/render/meshes.js';
+  import { getMesh } from '../../engine/src/render/webgl.js';
+  import { decal } from '../../engine/src/render/decals.js';
+  import { LOC_HOOKS, MAP } from '../../engine/src/world/map.js';
+  import { USE, byType, localPt } from '../../engine/src/world/instances.js';
+  import { GH, GW } from '../../engine/src/world/ground.js';
+  import { equip, rebuildHero } from '../../engine/src/hero/model.js';
+  import { ACT, hero, yawTo } from '../../engine/src/hero/hero.js';
+  import { beginDrink, beginSmoke, busyAct, goSit, goSpot, inMachine, plan, spotOf, walkTo } from '../../engine/src/hero/state.js';
+  import { fx, puff, shake, sparkleAround } from '../../engine/src/fx/fx2d.js';
+  import { redraw } from '../../engine/src/render/stage.js';
+  import { INV, invAdd, invTake } from '../../engine/src/people/items.js';
+  import { TGT } from './catalog.js';
+  import { hasThing } from './things.js';
   TEXTS.nothingNear = 'Подойди к чему-нибудь или нажми на предмет. Нажатие на землю — просто идти.';
 
   // ---------- gear: what he has in his pack (things.js) he can put on; cigarettes, cans and grenades get used up ----------
   Object.assign(equip, { body: 'jacket', head: null, hands: 'rifle' });
-  const GEAR = [
+  export const GEAR = [
     { id: 'jacket', slot: 'body', label: 'Куртка' }, { id: 'armor', slot: 'body', label: 'Броня' },
     { id: 'helmet', slot: 'head', label: 'Шлем' }, { id: 'rifle', slot: 'hands', label: 'Винтовка' }
   ];
@@ -13,7 +31,7 @@
     grenade: 'Учебные гранаты кончились. Ещё есть у прапорщика Сомова.'
   };
   const useUp = (t) => { if (invTake(INV.hero, t, 1)) return true; toast(OUT_OF[t]); return false; };
-  function toggleGear(g) {
+  export function toggleGear(g) {
     if (!hasThing(g.id)) { toast('Этого у тебя нет — продал или обменял.'); return; }
     if (hero.inside || (hero.act && ACT[hero.act.kind].vehicle)) { toast('В костюме не переоденешься — места нет.'); return; }
     if (g.id === 'armor' && equip.body !== 'armor' && busyAct()) { toast('Броня сюда не влезет. Сначала слезь.'); return; }
@@ -23,13 +41,13 @@
     rebuildHero(); redraw();
     sparkleAround();
   }
-  function startSmoke() {
+  export function startSmoke() {
     if (inMachine()) return;
     if (equip.head === 'helmet') { toast('В шлеме не покуришь. Сними шлем.'); return; }
     if (busyAct()) { toast(TEXTS.handsBusy); return; }
     if (!hero.smoke.on && useUp('cigs')) beginSmoke();
   }
-  function startDrink() {
+  export function startDrink() {
     if (inMachine()) return;
     if (equip.head === 'helmet') { toast('Через шлем не попьёшь. Сними шлем.'); return; }
     if (busyAct()) { toast(TEXTS.handsBusy); return; }
@@ -56,7 +74,7 @@
     if (next) hero.aimAt = next.dyn.target;
     else { hero.aimAt = null; setTimeout(() => toast('Все мишени лежат! Подойди к любой, чтобы поднять.'), 500); }
   }
-  function raiseTargets() {
+  export function raiseTargets() {
     for (const t of byType('target')) { t.dyn.target.state = 'up'; t.dyn.v = -2.5; }
     toast('Мишени подняты. Огневой рубеж — бетонная полоса.');
   }
@@ -65,7 +83,7 @@
     if (standingTargets().length === byType('target').length) { toast('Мишени и так стоят. Можно стрелять.'); return; }
     plan(...goSpot(sp), { type: 'reach', to: [-0.06, 0.1, 0.5], cb: raiseTargets }, { type: 'waitReach' });
   }
-  function doShoot() {
+  export function doShoot() {
     if (inMachine()) return;
     if (equip.hands !== 'rifle') { toast('Сначала возьми винтовку в снаряжении.'); return; }
     if (hero.shoot.on) return;
@@ -80,7 +98,7 @@
   // ---------- a training grenade: the engine's throw with a prop of our own; it flies, lands, puffs dust ----------
   const GRENADE = { mesh: () => getMesh('grenade', () => ellipsoid(0.04, 0.055, 0.04, { seg: 10, rings: 6 })), mat: mat('#4e5a3a', { pat: 23, p: [60, 0, 0, 0], noise: 0.05, spec: 0.3, gloss: 14 }) };
   let grenade = null;        // { pos, v, state: 'fly' | 'rest', t }
-  function doThrow() {
+  export function doThrow() {
     if (inMachine()) return;
     if (busyAct() || hero.sit > 0 || hero.sitTarget) { toast(TEXTS.handsBusy); return; }
     if (hero.thr.on || !useUp('grenade')) return;

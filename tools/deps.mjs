@@ -1,134 +1,84 @@
 #!/usr/bin/env node
-// Проверка связей между частями кода игры: кто чьи имена берёт.
-//   node tools/deps.mjs <папка игры>            — сводка: движок → игра (должно быть пусто), неизвестные имена, порядок склейки
-//   node tools/deps.mjs <папка игры> --all      — ещё и полный список: какая часть какие имена берёт у каких частей
-// Части склеиваются в одну функцию (см. build.mjs), поэтому все имена верхнего уровня общие.
-// Движок (всё, что лежит в engine/) не должен брать имён у игры: всё игровое приходит к нему через крючки (см. engine/src/core/game.js).
-// Внутри движка ядро не должно брать имён у необязательных частей — библиотеки предметов (engine/src/props), шагающих машин
-// (engine/src/machine) и людей (engine/src/people): игра может их не подключать (как пустая площадка ploshchadka/).
+// Проверка модулей игры: кто у кого что берёт и всё ли честно.
+//   node tools/deps.mjs <папка игры>            — сводка; при нарушениях код выхода 1
+//   node tools/deps.mjs <папка игры> --all      — ещё и связи: какой модуль какие имена у каких модулей берёт
+// Правила:
+//   - движок (engine/) не импортирует ничего из игр: всё игровое приходит к нему через крючки (engine/src/core/game.js);
+//   - ядро движка не импортирует необязательные части — библиотеку предметов (props), шагающие машины (machine) и людей (people):
+//     игра может их не подключать (как пустая площадка ploshchadka/);
+//   - импорты без кругов: модуль берёт только у тех, кто запускается раньше; ответ «наверх» идёт через крючки;
+//   - каждое имя модуля — своё, импортированное или встроенное в браузер; импортированное имя есть в экспорте модуля-источника;
+//   - в импортированное имя не пишут (менять чужую переменную — только функцией её хозяина);
+//   - импорт без нужды не держат; имена верхнего уровня разные во всей игре (сборка склеивает модули в один скрипт);
+//   - форма модуля простая: импорт — одна строка вида  import { a, b } from '…';  экспорт — слово export перед объявлением.
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
+import { root, walkModules, readModule, GLOBALS } from './lib/modules.mjs';
 
-const require = createRequire(import.meta.url);
-let acorn;
-try { acorn = require('acorn'); } catch { acorn = createRequire('/opt/npm-tools/node_modules/')('acorn'); }
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const game = args.find((a) => !a.startsWith('--')) || 'pyatietazhki';
 const showAll = args.includes('--all');
 const man = JSON.parse(fs.readFileSync(path.join(root, game, 'build.json'), 'utf8'));
 
-// names the browser gives every page
-const BROWSER = new Set(['window', 'document', 'navigator', 'location', 'performance', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia',
-  'getComputedStyle', 'ResizeObserver', 'IntersectionObserver', 'MutationObserver', 'Image', 'ImageData', 'OffscreenCanvas', 'HTMLCanvasElement', 'HTMLElement', 'Element', 'Node', 'Event',
-  'CustomEvent', 'KeyboardEvent', 'PointerEvent', 'localStorage', 'sessionStorage', 'indexedDB', 'AudioContext', 'webkitAudioContext', 'OfflineAudioContext', 'alert', 'confirm', 'prompt',
-  'devicePixelRatio', 'innerWidth', 'innerHeight', 'scrollTo', 'getSelection', 'Path2D', 'DOMParser', 'XMLSerializer', 'FileReader', 'createImageBitmap', 'screen', 'history', 'customElements', 'visualViewport']);
-const GLOBALS = new Set([...Object.getOwnPropertyNames(globalThis), ...BROWSER, 'undefined', 'NaN', 'Infinity', 'arguments', 'eval']);
-
-// ---- one part: the names it declares at the top, everything it binds anywhere, and every name it reads or writes ----
-function analyse(file) {
-  const src = fs.readFileSync(path.join(root, file), 'utf8');
-  const ast = acorn.parse('(function(){\n' + src + '\n})', { ecmaVersion: 'latest', locations: true, allowReturnOutsideFunction: true });
-  const body = ast.body[0].expression.body.body;
-  const top = new Map();              // name → { kind, line }
-  const bound = new Set();            // every name bound anywhere in the part (params, locals, top)
-  const refs = [];                    // { name, line, now } — now: runs while the page loads (not inside a function)
-  const addPat = (p, into) => {
-    if (!p) return;
-    if (p.type === 'Identifier') into(p.name, p);
-    else if (p.type === 'ObjectPattern') for (const q of p.properties) addPat(q.type === 'RestElement' ? q.argument : q.value, into);
-    else if (p.type === 'ArrayPattern') for (const q of p.elements) addPat(q, into);
-    else if (p.type === 'RestElement') addPat(p.argument, into);
-    else if (p.type === 'AssignmentPattern') addPat(p.left, into);
-  };
-  for (const st of body) {
-    if (st.type === 'FunctionDeclaration' || st.type === 'ClassDeclaration') top.set(st.id.name, { kind: st.type === 'FunctionDeclaration' ? 'function' : 'class', line: st.loc.start.line - 1 });
-    else if (st.type === 'VariableDeclaration') for (const d of st.declarations) addPat(d.id, (n, node) => top.set(n, { kind: st.kind, line: node.loc.start.line - 1 }));
-  }
-  const ref = (node, fnDepth) => refs.push({ name: node.name, line: node.loc.start.line - 1, now: fnDepth === 0 });
-  // walk with a context: 'ref' (reads and writes) or 'bind' (declares a name)
-  function visit(n, ctx, d) {
-    if (!n || typeof n.type !== 'string') return;
-    switch (n.type) {
-      case 'Identifier': if (ctx === 'bind') bound.add(n.name); else ref(n, d); return;
-      case 'MemberExpression': visit(n.object, 'ref', d); if (n.computed) visit(n.property, 'ref', d); return;
-      case 'Property':
-        if (n.computed) visit(n.key, 'ref', d);
-        visit(n.value, ctx, d); return;
-      case 'MethodDefinition': case 'PropertyDefinition':
-        if (n.computed) visit(n.key, 'ref', d);
-        visit(n.value, 'ref', d + (n.type === 'PropertyDefinition' ? 1 : 0)); return;
-      case 'VariableDeclarator': visit(n.id, 'bind', d); visit(n.init, 'ref', d); return;
-      case 'FunctionDeclaration': case 'FunctionExpression': case 'ArrowFunctionExpression':
-        if (n.id) visit(n.id, 'bind', d);
-        for (const p of n.params) visit(p, 'bind', d + 1);
-        visit(n.body, 'ref', d + 1); return;
-      case 'ClassDeclaration': case 'ClassExpression':
-        if (n.id) visit(n.id, 'bind', d);
-        visit(n.superClass, 'ref', d); visit(n.body, 'ref', d); return;
-      case 'CatchClause': visit(n.param, 'bind', d); visit(n.body, 'ref', d); return;
-      case 'AssignmentPattern': visit(n.left, ctx, d); visit(n.right, 'ref', d); return;
-      case 'ObjectPattern': for (const q of n.properties) visit(q, ctx, d); return;
-      case 'ArrayPattern': for (const q of n.elements) visit(q, ctx, d); return;
-      case 'RestElement': visit(n.argument, ctx, d); return;
-      case 'LabeledStatement': visit(n.body, 'ref', d); return;
-      case 'BreakStatement': case 'ContinueStatement': return;
-      default:
-        for (const k of Object.keys(n)) {
-          if (k === 'loc' || k === 'start' || k === 'end' || k === 'type') continue;
-          const v = n[k];
-          if (Array.isArray(v)) for (const c of v) visit(c, 'ref', d);
-          else if (v && typeof v.type === 'string') visit(v, 'ref', d);
-        }
-    }
-  }
-  for (const st of body) visit(st, 'ref', 0);
-  return { file, top, bound, refs };
-}
-
-const parts = man.parts.map(analyse);
-const owner = new Map();              // top-level name → index of the part that declares it
-const dupes = [];
-parts.forEach((p, i) => { for (const n of p.top.keys()) { if (owner.has(n)) dupes.push(`${n}: ${parts[owner.get(n)].file} и ${p.file}`); owner.set(n, i); } });
+const { order, mods, cycles, missing } = walkModules(man.entry, readModule);
 const isEngine = (f) => f.startsWith('engine/');
-const isOptional = (f) => f.startsWith('engine/src/props/') || f.startsWith('engine/src/machine/') || f.startsWith('engine/src/people/');
+const isOptional = (f) => /^engine\/src\/(props|machine|people)\//.test(f);
 const isCore = (f) => isEngine(f) && !isOptional(f);
 
-const engineToGame = [], coreToOptional = [], unknown = [], early = [], edges = new Map();
-parts.forEach((p, i) => {
-  for (const r of p.refs) {
-    if (p.top.has(r.name)) continue;                       // its own
-    const j = owner.get(r.name);
-    if (j === undefined) {
-      if (!p.bound.has(r.name) && !GLOBALS.has(r.name)) unknown.push(`${p.file}:${r.line} ${r.name}`);
-      continue;
+// a cycle shows as the import that starts it, with one way round as an example
+const cycleStarts = new Map();
+for (const c of cycles) { const k = `${c[0]} импортирует ${c[1]}`; if (!cycleStarts.has(k)) cycleStarts.set(k, c.join(' → ')); }
+const P = { form: [], cycles: [...cycleStarts].map(([k, ex]) => `${k}, а тот через других — его самого (${ex})`), missing, engineToGame: [], coreToOptional: [], notExported: [], unknown: [], writes: [], unused: [], dupes: [] };
+const owner = new Map();
+for (const f of order) for (const n of mods.get(f).top.keys()) { if (owner.has(n)) P.dupes.push(`${n}: ${owner.get(n)} и ${f}`); else owner.set(n, f); }
+let nImports = 0, nExports = 0;
+const usedExports = new Set();
+for (const f of order) {
+  const m = mods.get(f);
+  for (const s of m.form) P.form.push(`${f}:${s}`);
+  const imported = new Map();          // name → source module
+  for (const im of m.imports) {
+    if (isEngine(f) && !isEngine(im.from)) P.engineToGame.push(`${f}:${im.line} ← ${im.from}`);
+    if (isCore(f) && isOptional(im.from)) P.coreToOptional.push(`${f}:${im.line} ← ${im.from}`);
+    const src = mods.get(im.from);
+    for (const n of im.names) {
+      nImports++;
+      imported.set(n, im.from);
+      if (src && !(src.top.get(n) || {}).exported) P.notExported.push(`${f}:${im.line} ${n} — в ${im.from} нет такого экспорта`);
+      else usedExports.add(im.from + '|' + n);
     }
-    if (p.bound.has(r.name)) continue;                     // shadowed by a local of the same name somewhere in the part (rare)
-    const q = parts[j];
-    const k = p.file + ' → ' + q.file;
-    if (!edges.has(k)) edges.set(k, new Map());
-    const m = edges.get(k); m.set(r.name, (m.get(r.name) || 0) + 1);
-    if (isEngine(p.file) && !isEngine(q.file)) engineToGame.push(`${p.file}:${r.line} ${r.name}  (из ${q.file})`);
-    if (isCore(p.file) && isOptional(q.file)) coreToOptional.push(`${p.file}:${r.line} ${r.name}  (из ${q.file})`);
-    // a const/let/class of a later part read while the page loads: it does not exist yet
-    if (r.now && j > i && q.top.get(r.name).kind !== 'function') early.push(`${p.file}:${r.line} ${r.name} — объявлено позже, в ${q.file}`);
   }
-});
-
-const uniq = (a) => [...new Set(a)];
-const out = (title, list) => { console.log(`\n${title}: ${list.length ? '' : 'нет'}`); for (const s of list) console.log('  ' + s); };
-console.log(`${game}: ${parts.length} частей, ${owner.size} имён верхнего уровня`);
-out('Движок берёт у игры', uniq(engineToGame));
-out('Ядро движка берёт у библиотеки, машин или людей', uniq(coreToOptional));
-out('Неизвестные имена (нигде не объявлены)', uniq(unknown));
-out('Используется раньше, чем объявлено', uniq(early));
-out('Одно имя объявлено дважды', dupes);
-if (showAll) {
-  console.log('\nСвязи:');
-  for (const [k, m] of edges) console.log(`  ${k}: ${[...m.keys()].sort().join(', ')}`);
+  const used = new Set();
+  for (const r of m.refs) {
+    used.add(r.name);
+    if (m.top.has(r.name)) continue;
+    if (imported.has(r.name)) { if (r.write) P.writes.push(`${f}:${r.line} ${r.name} (хозяин — ${imported.get(r.name)})`); continue; }
+    if (!GLOBALS.has(r.name)) P.unknown.push(`${f}:${r.line} ${r.name}` + (owner.has(r.name) ? `  (есть в ${owner.get(r.name)} — нужен импорт)` : ''));
+  }
+  for (const [n, from] of imported) if (!used.has(n)) P.unused.push(`${f}: ${n} (из ${from})`);
+  for (const [, t] of m.top) if (t.exported) nExports++;
 }
-const bad = engineToGame.length + coreToOptional.length + unknown.length + early.length + dupes.length;
+const uniq = (a) => [...new Set(a)];
+const out = (title, list) => { list = uniq(list); console.log(`\n${title}: ${list.length ? '' : 'нет'}`); for (const s of list) console.log('  ' + s); return list.length; };
+console.log(`${game}: ${order.length} модулей, ${owner.size} имён верхнего уровня, ${nImports} импортов, ${nExports} экспортов (${nExports - usedExports.size} из них в этой игре никто не берёт)`);
+let bad = 0;
+bad += out('Форма модуля не та', P.form);
+bad += out('Нет файла, который импортируют', P.missing);
+bad += out('Круги импортов', P.cycles);
+bad += out('Движок берёт у игры', P.engineToGame);
+bad += out('Ядро движка берёт у библиотеки, машин или людей', P.coreToOptional);
+bad += out('Берут то, чего модуль не отдаёт', P.notExported);
+bad += out('Неизвестные имена', P.unknown);
+bad += out('Пишут в чужое имя', P.writes);
+bad += out('Импорт без нужды', P.unused);
+bad += out('Одно имя объявлено дважды', P.dupes);
+if (showAll) {
+  console.log('\nСвязи (в порядке запуска):');
+  for (const f of order) {
+    const m = mods.get(f);
+    if (!m.imports.length) { console.log(`  ${f}: —`); continue; }
+    console.log(`  ${f}:`);
+    for (const im of m.imports) console.log(`    ← ${im.from}${im.names.length ? ': ' + im.names.join(', ') : ''}`);
+  }
+}
 process.exitCode = bad ? 1 : 0;

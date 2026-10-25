@@ -6,6 +6,12 @@
   // Grey hammered steel, rust in the chips. It parks low on both feet, knees forward, leaning back, so the pod faces up.
   // Sizes in metres; +x is the suit's left, +z its front.
   // ---------- the suit «32»: a big worn number on the shoulder plate, a red-and-white tag on a canister ----------
+  import { M, add, alongPlusY, clamp, cross, curve1, dot, frameY, lerp, nrm, rng, rx, ry, rz, sc3, scl, sub, tr } from '../core/math.js';
+  import { flat, mat } from '../render/materials.js';
+  import { box, cyl, ellipsoid, facets, hullPoint, lineMesh, polyMesh, smoothPath, splitHull, tubeAlong } from '../render/meshes.js';
+  import { DECALS, SANS, addDecal, decal, outlinedText } from '../render/decals.js';
+  import { CATALOG } from '../world/instances.js';
+  import { MACHINE_KINDS } from './machine.js';
   addDecal('s32', 0.4, 0.33, (g, w, h) => {
     outlinedText(g, '32', 0, -1, 'bold 25px ' + SANS, '#e9e6dc', null, 0);
     g.fillStyle = '#000'; g.globalCompositeOperation = 'destination-out';

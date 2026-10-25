@@ -6,9 +6,26 @@
   //   parked → the hero opens the hatch and climbs in → waking → ready (walks where the player taps) → parking → the hero climbs out → parked
   // Every machine of the game is in MACHINES. The one in the current location also has an INST entry, so it can be picked,
   // blocks the way and is drawn every frame from its bones (dynItems → machineItemsAll).
-  const MACHINE_KINDS = {};
+  import { FPS, TOCAM } from '../core/camera.js';
+  import { ID4, M, add, alongPlusY, basis, clamp, cross, dot, groundAt, hash2, lerp, lerpV, nrm, rng, rx, ry, rz, scl, smooth, sub, tr, wpx, wrapA, xf, xfDir } from '../core/math.js';
+  import { GAME, hook } from '../core/game.js';
+  import { toast } from '../core/toast.js';
+  import { cyl } from '../render/meshes.js';
+  import { getMesh, groundPatch, rawMesh, upload } from '../render/webgl.js';
+  import { mergeRaw, screenRect, shadowRect } from '../render/kit.js';
+  import { LOCATIONS, LOC_HOOKS, MAP, groundType } from '../world/map.js';
+  import { CATALOG, INST, instById, newId, pathDist } from '../world/instances.js';
+  import { G, GH, GW, ground } from '../world/ground.js';
+  import { NAV, blockedAt, buildNav } from '../world/nav.js';
+  import { DAYP } from '../world/daytime.js';
+  import { HERO, armored } from '../hero/model.js';
+  import { ik } from '../hero/skeleton.js';
+  import { ACT, driving, hero, standHips } from '../hero/hero.js';
+  import { plan, startAct } from '../hero/state.js';
+  import { fx, puff, px, shake } from '../fx/fx2d.js';
+  export const MACHINE_KINDS = {};
   const MACHINES = [];
-  const MACHINE_HOOKS = { stomp: [] };      // f(world point, machine): something nearby reacts to a footfall
+  export const MACHINE_HOOKS = { stomp: [] };      // f(world point, machine): something nearby reacts to a footfall
   let machinesMade = false;
   const machineHere = (m) => !!m.inst && m.loc === MAP.id;      // drawn, updated and pickable only in its own location
 
@@ -755,8 +772,8 @@
     return m.mode === 'waking' ? 'в костюме · заводит' : m.mode === 'parking' ? 'в костюме · глушит' : m.walking ? 'в костюме · шагает' : 'в костюме';
   }
   // what survives a page update: where each machine stands (the hero is put back outside)
-  function machinesHot() { return MACHINES.map((m) => ({ kind: m.kind, n: m.n, loc: m.loc || MAP.id, x: m.x, z: m.z, yaw: m.yaw })); }
-  function machinesFromHot(list) {
+  export function machinesHot() { return MACHINES.map((m) => ({ kind: m.kind, n: m.n, loc: m.loc || MAP.id, x: m.x, z: m.z, yaw: m.yaw })); }
+  export function machinesFromHot(list) {
     makeMachines();
     if (!Array.isArray(list)) return;
     for (const d of list) {

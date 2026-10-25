@@ -3,17 +3,20 @@
   // so iso walls show the pictures one texel per pixel.
   // Any module adds its pictures while the page loads: addDecal(name, width m, height m, draw(ctx, w px, h px));
   // buildDecals() lays them out in that order when the game starts. A thing then wears one with decal(name) or decalOn().
-  const DECALS = {};
+  import { rng, ry } from '../core/math.js';
+  import { mat } from './materials.js';
+  import { uploadDecals } from './webgl.js';
+  export const DECALS = {};
   const DECAL_LIST = [];
   const DX = 54, DY = 66;
-  const SANS = 'Arial, "Helvetica Neue", "DejaVu Sans", sans-serif';
-  function addDecal(name, wm, hm, draw) { DECAL_LIST.push({ name, wm, hm, draw }); }
+  export const SANS = 'Arial, "Helvetica Neue", "DejaVu Sans", sans-serif';
+  export function addDecal(name, wm, hm, draw) { DECAL_LIST.push({ name, wm, hm, draw }); }
   function binarize(c) {
     const g = c.getContext('2d', { willReadFrequently: true }), im = g.getImageData(0, 0, c.width, c.height), d = im.data;
     for (let i = 3; i < d.length; i += 4) d[i] = d[i] > 110 ? 255 : 0;
     g.putImageData(im, 0, 0);
   }
-  function outlinedText(g, txt, x, y, font, fill, outline, ow) {
+  export function outlinedText(g, txt, x, y, font, fill, outline, ow) {
     g.font = font; g.textBaseline = 'top';
     if (outline) {
       g.fillStyle = outline;
@@ -21,7 +24,7 @@
     }
     g.fillStyle = fill; g.fillText(txt, x, y);
   }
-  function scribble(g, x, y, w, h, color, seed, lw) {
+  export function scribble(g, x, y, w, h, color, seed, lw) {
     const R = rng(seed);
     g.strokeStyle = color; g.lineWidth = lw || 2; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath();
@@ -36,18 +39,18 @@
     g.moveTo(x - 2, y + h * 1.05); g.quadraticCurveTo(x + w * 0.5, y + h * 1.35, x + w + 3, y + h * 0.9);
     g.stroke();
   }
-  function drips(g, x0, x1, y, color, seed) {
+  export function drips(g, x0, x1, y, color, seed) {
     const R = rng(seed); g.fillStyle = color;
     for (let x = x0; x < x1; x += 3 + Math.floor(R() * 7)) g.fillRect(x, y, 1, 2 + Math.floor(R() * 7));
   }
-  function heart(g, cx, cy, r, color) {
+  export function heart(g, cx, cy, r, color) {
     g.fillStyle = color; g.beginPath();
     g.moveTo(cx, cy + r * 0.9);
     g.bezierCurveTo(cx - r * 1.6, cy - r * 0.2, cx - r * 0.7, cy - r * 1.3, cx, cy - r * 0.45);
     g.bezierCurveTo(cx + r * 0.7, cy - r * 1.3, cx + r * 1.6, cy - r * 0.2, cx, cy + r * 0.9);
     g.fill();
   }
-  function buildDecals() {
+  export function buildDecals() {
     const AW = 512, AH = 512;
     const atlas = document.createElement('canvas'); atlas.width = AW; atlas.height = AH;
     const actx = atlas.getContext('2d', { willReadFrequently: true });
@@ -69,9 +72,9 @@
   // a thin plate carrying a decal: centre c, facing local +z of the rotation rot
   function decalMat(name) { const d = DECALS[name]; return mat('#ffffff', { pat: 40, p: [d.w / 2, d.h / 2, 0, 0], r: d.uv, noise: 0 }); }
   const decalCache = new Map();
-  const decal = (name) => { let m = decalCache.get(name); if (!m) { m = Object.assign(decalMat(name), { noShadow: true }); decalCache.set(name, m); } return m; };
+  export const decal = (name) => { let m = decalCache.get(name); if (!m) { m = Object.assign(decalMat(name), { noShadow: true }); decalCache.set(name, m); } return m; };
   // put a decal plate centred at c (local), facing direction f: 'z' (+z), 'x' (+x), '-x'
-  function decalOn(k, name, c, f) {
+  export function decalOn(k, name, c, f) {
     const d = DECALS[name], h = [d.w / 2, d.h / 2, 0.003];
     const rot = f === 'x' ? ry(Math.PI / 2) : f === '-x' ? ry(-Math.PI / 2) : f === '-z' ? ry(Math.PI) : null;
     k.box(decal(name), c, h, rot, 0);

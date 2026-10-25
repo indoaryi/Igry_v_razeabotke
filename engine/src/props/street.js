@@ -1,5 +1,12 @@
   // ================= library: street things — a lamp post, power lines, a bench, a bin, curbs, tyre flower beds =================
   // notices stuck to the lamp post: one with tear-off phone strips, one printed, one faded
+  import { M, rx, rz, sc3, tr } from '../core/math.js';
+  import { flat, mat, paint } from '../render/materials.js';
+  import { catenary, cyl, ellipsoid, loft, polyMesh, torus } from '../render/meshes.js';
+  import { Kit } from '../render/kit.js';
+  import { SANS, addDecal, decalOn, outlinedText } from '../render/decals.js';
+  import { CATALOG } from '../world/instances.js';
+  import { leafMat, lumpMesh } from './nature.js';
   addDecal('ads1', 0.22, 0.3, (g, w, h) => {
     g.fillStyle = '#f2f0e8'; g.fillRect(0, 0, w, h - 5);
     outlinedText(g, 'ПРОДАМ', 1, 1, 'bold 5px ' + SANS, '#1d1d1f', null, 0);

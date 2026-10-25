@@ -1,10 +1,16 @@
   // ================= ground: the cell strings painted pixel by pixel into one big canvas =================
   // the map size, the ground canvas and its geometry belong to the current location (locations.js switches them)
-  let GW = 30, GH = 30;
-  let G = { x0: -HW * 30, y0: 0, w: HW * 60, h: HH * 60 + 14 };
-  let ground = null;         // the painted ground of the current location (a canvas; footprints are drawn into it)
-  function setGround(cv) { ground = cv; }
-  function setGeometry(size) {
+  import { HH, HW } from '../core/camera.js';
+  import { clamp, fbm, groundAt, rng, vnoise, wpx } from '../core/math.js';
+  import { hexRGB } from '../render/materials.js';
+  import { GROUND_BOUNDS } from '../render/webgl.js';
+  import { MAP, groundType } from './map.js';
+  import { CATALOG, INST } from './instances.js';
+  export let GW = 30, GH = 30;
+  export let G = { x0: -HW * 30, y0: 0, w: HW * 60, h: HH * 60 + 14 };
+  export let ground = null;         // the painted ground of the current location (a canvas; footprints are drawn into it)
+  export function setGround(cv) { ground = cv; }
+  export function setGeometry(size) {
     GW = size[0]; GH = size[1];
     G = { x0: -HW * GH, y0: 0, w: HW * (GW + GH), h: HH * (GW + GH) + 14 };
     GROUND_BOUNDS.set([0, 0, GW, GH]);
@@ -24,7 +30,7 @@
   //   leaves(x, z) → 0…1 how thickly fallen leaves lie there, leafMax: share of pixels covered where it is 1
   //   litter: object types people hang around (butts and husks on the ground near them); by default every type whose
   //   catalog entry has `litter` (that many bits round it)
-  function buildGround() {
+  export function buildGround() {
     const st = MAP.style || {};
     const pal = Object.assign({}, PAL, st.palette || {}), PALRGB = {};
     for (const k in pal) PALRGB[k] = pal[k].map(hexRGB);

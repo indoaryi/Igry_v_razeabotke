@@ -1,5 +1,7 @@
   // ================= skeleton & poses =================
-  function ik(S0, Tg, a, b, pole) {
+  import { M, add, basis, clamp, cross, dot, eul, len, lerpV, nrm, rotXv, ry, scl, smooth, sub, tr, track, xf } from '../core/math.js';
+  import { mouthC } from './model.js';
+  export function ik(S0, Tg, a, b, pole) {
     const d = sub(Tg, S0); let dist = len(d);
     const dn = dist > 1e-6 ? scl(d, 1 / dist) : [0, -1, 0];
     dist = clamp(dist, Math.abs(a - b) + 1e-3, a + b - 1e-3);
@@ -12,7 +14,7 @@
     const X = nrm(cross(dn, pp)), Y1 = nrm(sub(S0, E)), Y2 = nrm(sub(E, Tc));
     return { E, H: Tc, R1: basis(X, Y1, cross(X, Y1)), R2: basis(X, Y2, cross(X, Y2)) };
   }
-  function plantY(p, D) {
+  export function plantY(p, D) {
     const Hm = eul(p.hips);
     const sole = [[0, D.sole, -0.07], [0, D.sole, 0.19], [0.05, D.sole, 0.06], [-0.05, D.sole, 0.06]];
     let mn = Infinity;
@@ -25,7 +27,7 @@
     return -mn;
   }
   // root: [x, y, z] of the feet; base: optional full matrix for the hips (swings, bars, slides)
-  function evalBones(p, root, yaw, D, base) {
+  export function evalBones(p, root, yaw, D, base) {
     const B = {};
     if (base) B.hips = M(base, tr(0, p.lift, 0), eul(p.hips));
     else {
@@ -49,7 +51,7 @@
     return B;
   }
   const handHang = (D, sg, a = 0, up = 0) => add([sg * D.sx, D.shY, 0], rotXv([sg * (D.armor ? 0.08 : 0.05), -(D.upper + D.fore) * 0.91 + up, 0.035], -a));
-  function poseIdle(t, D) {
+  export function poseIdle(t, D) {
     const breath = Math.sin(t * Math.PI * 2 / 2.8) > 0.45 ? 1 : 0;
     const w = D.armor ? 0.06 : 0.035;
     return {
@@ -108,7 +110,7 @@
     };
   }
   // hanging from a bar; pull = 0 (arms straight) … 1 (chin over the bar). Hands are given in chest space.
-  const hangHandY = (D, pull) => D.shY + 0.52 - pull * 0.38;
+  export const hangHandY = (D, pull) => D.shY + 0.52 - pull * 0.38;
   function poseHang(t, pull, D) {
     const sw = Math.sin(t * 2.4) * 0.03, up = hangHandY(D, pull);
     return {
@@ -194,8 +196,8 @@
   // rifle holds in chest space
   const rifleLow = (D) => ({ g: [-0.1 - (D.sx - 0.212) * 0.6, 0.02, 0.24 + (D.armor ? 0.08 : 0)], d: nrm([0.45, -0.3, 0.84]), u: [0, 1, 0] });
   const rifleAim = (D) => ({ g: [-0.1 - (D.sx - 0.212) * 0.5, 0.29 + (D.armor ? 0.02 : 0), 0.2 + (D.armor ? 0.09 : 0)], d: nrm([0.04, 0, 1]), u: [0, 1, 0] });
-  const SHOTS = [0.45, 0.57, 0.69, 1.12, 1.24, 1.36];
-  const SHOOT_LEN = 2.05;
+  export const SHOTS = [0.45, 0.57, 0.69, 1.12, 1.24, 1.36];
+  export const SHOOT_LEN = 2.05;
   function shootState(t) {
     const r = (a, b, x) => clamp((x - a) / (b - a), 0, 1);
     const aim = smooth(r(0, 0.3, t)) * (1 - smooth(r(1.7, 2.0, t)));
@@ -203,8 +205,8 @@
     for (const s of SHOTS) { const dt = t - s; if (dt >= 0 && dt < 0.16) kick = Math.max(kick, dt < 0.04 ? dt / 0.04 : 1 - (dt - 0.04) / 0.12); }
     return { aim, kick };
   }
-  const SMOKE_INTRO = 1.7, SMOKE_PERIOD = 5.2, SMOKE_PUFFS = 3;
-  function smokeLoop(u) {
+  export const SMOKE_INTRO = 1.7, SMOKE_PERIOD = 5.2, SMOKE_PUFFS = 3;
+  export function smokeLoop(u) {
     u = ((u % SMOKE_PERIOD) + SMOKE_PERIOD) % SMOKE_PERIOD;
     const b = u < 0.5 ? smooth(u / 0.5) : u < 1.3 ? 1 : u < 1.8 ? 1 - smooth((u - 1.3) / 0.5) : 0;
     return { b, inhale: u > 0.5 && u < 1.3, exhale: u > 1.8 && u < 2.7 };
@@ -228,7 +230,7 @@
     }
     return st;
   }
-  const DRINK_INTRO = 0.9, DRINK_PERIOD = 3.4, DRINK_SIPS = 3;
+  export const DRINK_INTRO = 0.9, DRINK_PERIOD = 3.4, DRINK_SIPS = 3;
   function drinkLoop(u) {
     u = ((u % DRINK_PERIOD) + DRINK_PERIOD) % DRINK_PERIOD;
     const b = u < 0.5 ? smooth(u / 0.5) : u < 1.4 ? 1 : u < 1.9 ? 1 - smooth((u - 1.4) / 0.5) : 0;
@@ -268,7 +270,7 @@
     return st;
   }
   // basketball shot: gather at the chest, dip, push up and release at THROW_REL
-  const THROW_LEN = 1.35, THROW_REL = 0.7;
+  export const THROW_LEN = 1.35, THROW_REL = 0.7;
   function applyThrow(p, t, w, D) {
     const a = D.armor ? 0.05 : 0;
     const chest = [0, 0.1, 0.3 + a], over = [0, 0.47, 0.2 + a], rel = [0, 0.7, 0.36 + a];
@@ -300,7 +302,7 @@
     p.head[0] -= 0.18 * k * w * clamp(target[1] * 2, 0, 1);
   }
   // full pose from a context; used by the stage, the portrait, the catalog and tests
-  function buildPose(c, D, hasRifle) {
+  export function buildPose(c, D, hasRifle) {
     const tq = c.t;
     let p = poseIdle(tq, D);
     if (c.walkW > 0) {

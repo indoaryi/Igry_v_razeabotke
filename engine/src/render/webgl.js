@@ -1,4 +1,7 @@
   // ================= WebGL =================
+  import { $ } from '../core/prelude.js';
+  import { DZ, FV, RV, S, SQ2, SQ3, TOCAM, UV } from '../core/camera.js';
+  import { add, cross, dot, hash2, nrm, scl, sub } from '../core/math.js';
   const glc = document.createElement('canvas');
   glc.width = 64; glc.height = 64;
   const gl = glc.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, depth: false, stencil: false });
@@ -641,13 +644,13 @@ void main(){
   const LIGHT_LEFT = nrm(add(add(scl(RV, -0.9), [0, 0.9, 0]), scl(FV, -0.25)));
   const LIGHT_RIGHT = nrm(add(add(scl(RV, 0.9), [0, 0.9, 0]), scl(FV, -0.25)));
   let LIGHT = LIGHT_LEFT, LEAF_PU = RV;
-  let SUN = nrm([-0.15, 1, 0.72]);             // the sun stands over the front of the yard, shadows fall up and to the right; each location may move it
+  export let SUN = nrm([-0.15, 1, 0.72]);             // the sun stands over the front of the yard, shadows fall up and to the right; each location may move it
   const LINE = [22 / 255, 16 / 255, 14 / 255];
   const GROUND_SHADE = [0.6, 0.66, 0.8];        // ground colour multiplier in the shade: darker and cooler
   const SIL = [0.89, 0.6, 0.27];
   gl.vertexAttrib1f(3, 0.0);
 
-  function upload(m) {
+  export function upload(m) {
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     const buf = (data, loc, size) => {
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
@@ -665,13 +668,13 @@ void main(){
     return { vao, n: m.idx.length, type: big ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, mode: m.lines ? gl.LINES : gl.TRIANGLES };
   }
   const meshCache = new Map();
-  const getMesh = (key, fn) => { let m = meshCache.get(key); if (!m) { m = upload(fn()); meshCache.set(key, m); } return m; };
+  export const getMesh = (key, fn) => { let m = meshCache.get(key); if (!m) { m = upload(fn()); meshCache.set(key, m); } return m; };
   const rawCache = new Map();
-  const rawMesh = (key, fn) => { let m = rawCache.get(key); if (!m) { m = fn(); rawCache.set(key, m); } return m; };
+  export const rawMesh = (key, fn) => { let m = rawCache.get(key); if (!m) { m = fn(); rawCache.set(key, m); } return m; };
 
   // ---- decal atlas (filled by the decal module before the first render) ----
   const decalTex = gl.createTexture();
-  function uploadDecals(cv) {
+  export function uploadDecals(cv) {
     gl.bindTexture(gl.TEXTURE_2D, decalTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -701,7 +704,7 @@ void main(){
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
-  const TGT_STAGE = makeTarget(), TGT_SMALL = makeTarget();
+  export const TGT_STAGE = makeTarget(), TGT_SMALL = makeTarget();
   function viewProj(v) {
     const s = v.s, A = v.A || [0, 0, 0], m = new Float32Array(16);
     const kx = 2 * s / v.w, ky = 2 * s / v.h;
@@ -712,10 +715,10 @@ void main(){
     return m;
   }
   // depth of a world point in the window depth range, as gl_FragCoord.z sees it
-  const depthOf = (v, P) => (dot(FV, sub(P, v.A || [0, 0, 0])) / DZ) * 0.5 + 0.5;
-  const GROUND_BOUNDS = new Float32Array([0, 0, 30, 30]);     // the current map: [0, 0, width, depth] in metres (ground.js sets it)
-  let drawCalls = 0;
-  const resetDrawCalls = () => { drawCalls = 0; };
+  export const depthOf = (v, P) => (dot(FV, sub(P, v.A || [0, 0, 0])) / DZ) * 0.5 + 0.5;
+  export const GROUND_BOUNDS = new Float32Array([0, 0, 30, 30]);     // the current map: [0, 0, width, depth] in metres (ground.js sets it)
+  export let drawCalls = 0;
+  export const resetDrawCalls = () => { drawCalls = 0; };
   function drawList(list) {
     const u = P3.u;
     let lastMat = null, lastModel = null, lastId = -1, lastFade = -1;
@@ -741,7 +744,7 @@ void main(){
 
   // ---- the sun: a depth map seen from the sun, fitted to what the camera sees ----
   let LZ = scl(SUN, -1), LX = nrm(cross([0, 1, 0], LZ)), LY = cross(LZ, LX);
-  function setSun(dir, light) {
+  export function setSun(dir, light) {
     SUN = nrm(dir); LZ = scl(SUN, -1); LX = nrm(cross([0, 1, 0], LZ)); LY = cross(LZ, LX);
     LIGHT = light === 'right' ? LIGHT_RIGHT : Array.isArray(light) ? nrm(light) : LIGHT_LEFT;
     const side = dot(LIGHT, RV);
@@ -823,7 +826,7 @@ void main(){
   }
   // ---- the painted ground as a texture, so the scene can shade it ----
   const groundTex = gl.createTexture();
-  function uploadGround(cv) {
+  export function uploadGround(cv) {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, groundTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, cv);
@@ -835,7 +838,7 @@ void main(){
 
   // a few pixels of the ground changed (a footprint): send just them; the overview's mipmaps are redone lazily
   let groundMipsStale = false;
-  function groundPatch(img, x, y) {
+  export function groundPatch(img, x, y) {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, groundTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, img.width, img.height, gl.RGBA, gl.UNSIGNED_BYTE, img.data);
@@ -850,7 +853,7 @@ void main(){
   // L = { shadow: [...], main: [...], hero: [...] }
   // o = { xray, hover, fade: [x, y, r2, depth], time, sun: { rect, hmax } (real shadows from L.shadow),
   //       ground: { x0, y0, w, h, mode } (draw the ground under the scene), target: [x, z], grid }
-  function render3D(T, v, L, raw, ctx, dx, dy, o = {}) {
+  export function render3D(T, v, L, raw, ctx, dx, dy, o = {}) {
     const sunOn = !!o.sun;
     if (sunOn) { fitShadow(o.sun.rect, o.sun.hmax || 18); renderShadowMap(L.shadow || [], o.time || 0); }
     ensureTarget(T, v.w, v.h);
@@ -937,7 +940,7 @@ void main(){
   }
   // object id under a pixel of the last render into a target (x, y from the top-left)
   const pickBuf = new Uint8Array(4);
-  function pickAt(T, v, x, y) {
+  export function pickAt(T, v, x, y) {
     if (!T.fbo) return { id: 0, flags: 0 };
     x = Math.floor(x); y = Math.floor(y);
     if (x < 0 || y < 0 || x >= v.w || y >= v.h) return { id: 0, flags: 0 };

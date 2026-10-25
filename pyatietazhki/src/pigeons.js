@@ -1,5 +1,14 @@
   // ================= pigeons: they peck where the location says (MAP.pigeons) and fly off when the hero comes close =================
-  let PIG_HOME = { x0: 0, x1: 0, z0: 0, z1: 0 }, PERCHES = [], PIGEONS = [];
+  import { M, clamp, lerp, lerpV, rng, rx, ry, rz, sc3, smooth, tr } from '../../engine/src/core/math.js';
+  import { GAME, hook } from '../../engine/src/core/game.js';
+  import { flat, mat } from '../../engine/src/render/materials.js';
+  import { box, ellipsoid } from '../../engine/src/render/meshes.js';
+  import { getMesh } from '../../engine/src/render/webgl.js';
+  import { LOC_HOOKS, MAP } from '../../engine/src/world/map.js';
+  import { DAYP } from '../../engine/src/world/daytime.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { UNIT_LINE } from './catalog.js';
+  export let PIG_HOME = { x0: 0, x1: 0, z0: 0, z1: 0 }, PERCHES = [], PIGEONS = [];
   const pigR = rng(4242);
   function pigTarget() { return [lerp(PIG_HOME.x0, PIG_HOME.x1, pigR()), lerp(PIG_HOME.z0, PIG_HOME.z1, pigR())]; }
   function initPigeons() {
@@ -64,7 +73,7 @@
   const PIG_TAIL = mat('#4f555c', { noise: 0.04 });
   const PIG_BEAK = mat('#d8c4a6', { noise: 0 });
   const PIG_LEG = Object.assign(flat('#c25f5f', 2), { fl: 1 });
-  function pigeonItems() {
+  export function pigeonItems() {
     const out = [];
     const body = getMesh('pigBody', () => ellipsoid(0.065, 0.06, 0.12, { seg: 10, rings: 6 }));
     const head = getMesh('pigHead', () => ellipsoid(0.034, 0.036, 0.038, { seg: 8, rings: 5 }));

@@ -1,7 +1,10 @@
   // ================= static scenery: kits of parts baked into a few merged meshes =================
   // A kit collects parts in object space; bake() moves them to the world and merges them by material,
   // so a whole building costs only a handful of draw calls.
-  class Kit {
+  import { ID4, M, alongPlusY, len, mul, nrm, rng, sub, tr, wpx } from '../core/math.js';
+  import { box, cyl, lineMesh, loft } from './meshes.js';
+  import { SUN, rawMesh, upload } from './webgl.js';
+  export class Kit {
     constructor(seed) { this.parts = []; this.R = rng(seed || 1); }
     put(raw, model, m, seed) { this.parts.push({ raw, model: model || ID4, mat: m, seed: seed ?? this.R() }); return this; }
     box(m, c, h, rot, seed) {
@@ -23,7 +26,7 @@
     mesh(key, fn, m, model, seed) { return this.put(rawMesh(key, fn), model, m, seed); }
     lines(m, segs) { return this.put(lineMesh(segs), ID4, m, 0); }
   }
-  function bake(kit, M0) {
+  export function bake(kit, M0) {
     const groups = new Map();
     for (const p of kit.parts) {
       const key = p.mat.key * 2 + (p.raw.lines ? 1 : 0);
@@ -60,7 +63,7 @@
   }
   // like bake(), but into one bone's space (walking machines, people): parts = [{ mesh: raw, off: matrix }];
   // every part keeps its own coordinates for the shader patterns and gets its own seed
-  function mergeRaw(parts, R) {
+  export function mergeRaw(parts, R) {
     let nv = 0, ni = 0;
     for (const p of parts) { nv += p.mesh.pos.length / 3; ni += p.mesh.idx.length; }
     const pos = new Float32Array(nv * 3), nr = new Float32Array(nv * 3), loc = new Float32Array(nv * 3), seed = new Float32Array(nv), idx = new Uint32Array(ni);
@@ -82,7 +85,7 @@
     return { pos, nrm: nr, loc, seed, idx, lines: !!parts[0].mesh.lines };
   }
   // screen rectangle (world art px) of an axis-aligned world box, and of its shadow on the ground
-  function screenRect(bb) {
+  export function screenRect(bb) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const X of [bb[0], bb[3]]) for (const Y of [bb[1], bb[4]]) for (const Z of [bb[2], bb[5]]) {
       const [sx, sy] = wpx([X, Y, Z]);
@@ -90,7 +93,7 @@
     }
     return [x0 - 2, y0 - 2, x1 + 2, y1 + 2];
   }
-  function shadowRect(bb) {
+  export function shadowRect(bb) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const X of [bb[0], bb[3]]) for (const Y of [bb[1], bb[4]]) for (const Z of [bb[2], bb[5]]) {
       const P = [X - SUN[0] * Y / SUN[1], 0, Z - SUN[2] * Y / SUN[1]];
@@ -99,4 +102,4 @@
     }
     return [x0 - 2, y0 - 2, x1 + 2, y1 + 2];
   }
-  const rectsHit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+  export const rectsHit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];

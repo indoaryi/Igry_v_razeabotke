@@ -1,4 +1,17 @@
   // ================= the breakdown: photo with numbers, scheme, catalog, data =================
+  import { $ } from '../../engine/src/core/prelude.js';
+  import { S, SQ2, reduceMotion } from '../../engine/src/core/camera.js';
+  import { clamp } from '../../engine/src/core/math.js';
+  import { toast } from '../../engine/src/core/toast.js';
+  import { TGT_SMALL, render3D } from '../../engine/src/render/webgl.js';
+  import { LOC_HOOKS, MAP } from '../../engine/src/world/map.js';
+  import { CATALOG, INST, toWorld2 } from '../../engine/src/world/instances.js';
+  import { GH, GW } from '../../engine/src/world/ground.js';
+  import { nearestFree } from '../../engine/src/world/nav.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { doDefault, walkTo } from '../../engine/src/hero/state.js';
+  import { dynItems, itemsFor } from '../../engine/src/render/stage.js';
+  import { refreshContext } from '../../engine/src/ui/hud.js';
   const infoOf = (n) => MAP.legend.find((l) => l.n === n);
   function goToNumber(n) {
     const list = INST.filter((i) => i.n === n);
@@ -56,7 +69,7 @@
   }
 
   // ---------- scheme: the same map seen from straight above, north up; doubles as a minimap ----------
-  const planEl = $('plan');
+  export const planEl = $('plan');
   const PLAN = { cs: 12.6, m: 26 };
   let planBase = null, planTimer = 0, planKey = '';
   const GCOL = { '.': '#9cc160', ',': '#7c9a44', ':': '#c6a878', '#': '#8f9295', '_': '#c4c1b9' };
@@ -148,7 +161,7 @@
     planEl.width = c.width; planEl.height = c.height;
     planEl.style.aspectRatio = PLAN.w + ' / ' + PLAN.h;
   }
-  function drawPlan(dt) {
+  export function drawPlan(dt) {
     planTimer -= dt;
     if (planTimer > 0 || !planBase) return;
     planTimer = 0.25;
@@ -172,7 +185,7 @@
     walkTo(x, z);
   });
   planEl.style.cursor = 'pointer';
-  function buildLegend() {
+  export function buildLegend() {
     const ul = $('legend');
     const items = [['.', 'газон'], [',', 'бурьян, некошеная трава'], [':', 'вытоптанная земля'], ['#', 'асфальт'], ['_', 'бетонная отмостка']];
     for (const [ch, name] of items) {
@@ -192,7 +205,7 @@
   }
 
   // ---------- catalog cards: each object rendered by the engine on its own ----------
-  let CARDS = [];
+  export let CARDS = [];
   function renderGroups(cv, groups, focus, pad) {
     groups = groups.map((g) => g.filter(Boolean)).filter((g) => g.length);
     if (!groups.length) return;
@@ -236,7 +249,7 @@
       c.cv = cv;
     }
   }
-  function renderCards() { for (const c of CARDS) renderGroups(c.cv, c.multi ? c.multi() : [c.pick()], c.focus ? c.focus() : null, c.pad); }
+  export function renderCards() { for (const c of CARDS) renderGroups(c.cv, c.multi ? c.multi() : [c.pick()], c.focus ? c.focus() : null, c.pad); }
 
   // everything below the stage follows the hero into each location
   LOC_HOOKS.enter.push((def) => {

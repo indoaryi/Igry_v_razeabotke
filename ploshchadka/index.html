@@ -157,8 +157,8 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
 <script>
 (() => {
   'use strict';
+  // ================= the first module: a page element by its id (missing elements come back as null) =================
   const $ = (id) => document.getElementById(id);
-
   // ================= world & camera =================
   // One map cell is one metre. The camera looks along FV: world +x runs down-right on screen, +z runs down-left,
   // so the map's north corner (0,0) is at the top and the south corner at the bottom.
@@ -297,6 +297,13 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
     searched: 'Здесь уже всё перерыто.',
     nothingNear: 'Подойди к чему-нибудь или нажми на предмет. Нажатие на землю — просто идти.'
   };
+  // ================= a line for the player: one message under the stage that fades after a few seconds =================
+  // Any module may say something to the player (the world when the hero arrives, the hero when his hands are busy, the game).
+  // The page's element with id «toast» shows it; a page without one simply stays silent.
+  const toastEl = $('toast');
+  let toastT = 0;
+  function toast(msg) { if (!toastEl) return; toastEl.textContent = msg; toastEl.hidden = false; toastT = 3.2; }
+  function updateToast(dt) { if (toastT > 0) { toastT -= dt; if (toastT <= 0 && toastEl) toastEl.hidden = true; } }
   // ================= colours =================
   function hex2rgb(h) { return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255]; }
   function rgb2hsl([r, g, b]) {
@@ -638,7 +645,7 @@ h2 { font: 500 20px/1.2 var(--display); text-wrap: balance; }
   const glc = document.createElement('canvas');
   glc.width = 64; glc.height = 64;
   const gl = glc.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, depth: false, stencil: false });
-  if (!gl) { $('glNote').hidden = false; $('loading').hidden = true; return; }
+  if (!gl) { $('glNote').hidden = false; $('loading').hidden = true; throw new Error('WebGL2 is not available'); }
 
   const VS = `#version 300 es
 layout(location=0) in vec3 aPos;
@@ -1349,8 +1356,9 @@ void main(){
   }
   // depth of a world point in the window depth range, as gl_FragCoord.z sees it
   const depthOf = (v, P) => (dot(FV, sub(P, v.A || [0, 0, 0])) / DZ) * 0.5 + 0.5;
-  const GROUND_BOUNDS = new Float32Array([0, 0, 30, 30]);
+  const GROUND_BOUNDS = new Float32Array([0, 0, 30, 30]);     // the current map: [0, 0, width, depth] in metres (ground.js sets it)
   let drawCalls = 0;
+  const resetDrawCalls = () => { drawCalls = 0; };
   function drawList(list) {
     const u = P3.u;
     let lastMat = null, lastModel = null, lastId = -1, lastFade = -1;
@@ -1560,7 +1568,7 @@ void main(){
     const tg = o.target;
     gl.uniform4f(PP.u.uTarget, tg ? tg[0] : 0, tg ? tg[1] : 0, 0.32, tg ? 1 : 0);
     gl.uniform1i(PP.u.uGrid, o.grid ? 1 : 0);
-    gl.uniform2f(PP.u.uMapWH, GW, GH);
+    gl.uniform2f(PP.u.uMapWH, GROUND_BOUNDS[2], GROUND_BOUNDS[3]);
     setTod(PP.u, tod);
     gl.uniform4f(PP.u.uMist, tod.mist, tod.time, 1 / v.s, tod.mist > 0.01 && !(o.ground && o.ground.mode === 2) ? 1 : 0); gl.uniform3fv(PP.u.uMistCol, tod.mistCol);
     gl.uniform3fv(PP.u.uRV3, RV); gl.uniform3fv(PP.u.uUV3, UV); gl.uniform3fv(PP.u.uFV3, FV); gl.uniform1f(PP.u.uDZ, DZ);
@@ -1763,6 +1771,23 @@ void main(){
     const rot = f === 'x' ? ry(Math.PI / 2) : f === '-x' ? ry(-Math.PI / 2) : f === '-z' ? ry(Math.PI) : null;
     k.box(decal(name), c, h, rot, 0);
   }
+  // ================= the maps of the game and the one being played =================
+  // A location is a plain definition (see pyatietazhki/src/map.js or poligon/src/map.js):
+  //   id, name, short, size: [w, h] in metres, ground: rows of characters, one per 1 m cell (or makeGround(def) → rows),
+  //   paths: polylines of trodden earth, objects: [{ type, at: [x, z], rot, … }], spawns: { start: { at, yaw, walk } … },
+  //   exits: [{ to, rect: [x0, z0, x1, z1], go: [x, z], arrive }], machines, sun / sunAt / light, style, meadow, leafRate, butterflies, afterBuild…
+  // Ground characters: .  lawn   ,  rough grass and weeds   :  trodden earth   #  asphalt   _  concrete (see ground.js for the colours).
+  // The game puts its locations into LOCATIONS; locations.js builds them and switches between them.
+  const LOCATIONS = {};
+  let MAP = null;            // the location being played
+  function setMap(def) { MAP = def; }
+  const groundType = (x, z) => { const r = MAP.ground[Math.floor(z)]; return r ? (r[Math.floor(x)] || '.') : '.'; };
+  // the game and the engine's modules hook in here:
+  //   objects(def): after the location's own objects are built — add more (machines, the meadow); a list kept in order with hook()
+  //   build(def): the runtime is made for the first time — the game sets up its own (moving parts, birds)
+  //   save(rt) / restore(rt): the hero leaves / comes back — keep the game's own runtime in rt and take it back
+  //   leave(def) before switching away, enter(def, spawnName) after arriving (the hero is put at his spawn first: hero/state.js)
+  const LOC_HOOKS = { objects: [], build: [], save: [], restore: [], leave: [], enter: [] };
   // ================= the things in a location: each map entry built from the catalog, baked into world space, given an id =================
   // CATALOG says what can stand on a map: CATALOG[type] = { build(def) → { kit, blocks, spots, seats, heights, lamp, … }, name, size, note,
   //   and flags the engine reads: xray (big enough to hide the hero: he shows through it as a silhouette), hug (weeds grow thick along it),
@@ -1777,6 +1802,10 @@ void main(){
   let INST = [];
   let HEIGHTS = [];      // walkable raised areas (porches, steps)
   let nextId = 2;        // object ids are written into an 8-bit picking buffer, so each location numbers its own from 2
+  // an id for something that joins the current location later (a person walking in, a machine)
+  const newId = () => nextId++;
+  // the current location's things come back from its kept runtime (locations.js)
+  function restoreThings(rt) { ({ INST, HEIGHTS, instById, PATH_SEGS, nextId } = rt); }
   function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
   function instantiate(def, parentM) {
     const T = CATALOG[def.type];
@@ -1845,9 +1874,16 @@ void main(){
   function chipOf(inst) { const U = useOf(inst); return U && U.short ? (typeof U.short === 'function' ? U.short(inst) : U.short) : nameOf(inst).toLowerCase(); }
   function actionsOf(inst) { const U = useOf(inst); return U && U.acts ? U.acts(inst) : []; }
   // ================= ground: the cell strings painted pixel by pixel into one big canvas =================
-  // the map size and the ground canvas geometry belong to the current location (see setGeometry in locations.js)
+  // the map size, the ground canvas and its geometry belong to the current location (locations.js switches them)
   let GW = 30, GH = 30;
   let G = { x0: -HW * 30, y0: 0, w: HW * 60, h: HH * 60 + 14 };
+  let ground = null;         // the painted ground of the current location (a canvas; footprints are drawn into it)
+  function setGround(cv) { ground = cv; }
+  function setGeometry(size) {
+    GW = size[0]; GH = size[1];
+    G = { x0: -HW * GH, y0: 0, w: HW * (GW + GH), h: HH * (GW + GH) + 14 };
+    GROUND_BOUNDS.set([0, 0, GW, GH]);
+  }
   const PAL = {
     '.': ['#3d5c23', '#476a28', '#52762e', '#5e8234', '#6c8e3b'],
     ',': ['#3c5525', '#465f29', '#516a2e', '#5f7535', '#72803f'],
@@ -2018,6 +2054,11 @@ void main(){
     for (const g of Object.values(NAV)) g.b = new Uint8Array(NWX * NWZ);
     navB = NAV.hero.b;
   }
+  // the current location's walk grids come back from its kept runtime (locations.js)
+  function navRestore(rt) {
+    NWX = GW * NR; NWZ = GH * NR;
+    NAV.hero.b = rt.navHero; NAV.big.b = rt.navBig; navB = NAV.hero.b;
+  }
   function pointInPoly(x, z, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -2124,31 +2165,12 @@ void main(){
     return out;
   }
 
-  // ================= locations: several maps in one game; walking into an exit zone leads to the next one =================
-  // A location is a plain definition (see pyatietazhki/src/map.js or poligon/src/map.js):
-  //   id, name, short, size: [w, h] in metres, ground: rows of characters, one per 1 m cell (or makeGround(def) → rows),
-  //   paths: polylines of trodden earth, objects: [{ type, at: [x, z], rot, … }], spawns: { start: { at, yaw, walk } … },
-  //   exits: [{ to, rect: [x0, z0, x1, z1], go: [x, z], arrive }], machines, sun / sunAt / light, style, meadow, leafRate, butterflies, afterBuild…
-  // Ground characters: .  lawn   ,  rough grass and weeds   :  trodden earth   #  asphalt   _  concrete (see ground.js for the colours).
-  // Its runtime — built objects, the ground picture, walk grids, whatever the game keeps — is made the first time the hero comes
-  // and kept, so going back is instant and things stay where they were left (a parked machine, cans on the ground, footprints).
-  const LOCATIONS = {};
+  // ================= locations: several maps in one game, each built the first time the hero comes and kept =================
+  // The maps themselves and the hooks are in map.js. A location's runtime — built objects, the ground picture, walk grids,
+  // whatever the game keeps — is made the first time the hero comes and kept, so going back is instant and things stay
+  // where they were left (a parked machine, cans on the ground, footprints).
+  // Walking into an exit is the hero's business (hero/travel.js): this module only switches.
   const LOC_RT = {};
-  let MAP = null;            // the location being played
-  const groundType = (x, z) => { const r = MAP.ground[Math.floor(z)]; return r ? (r[Math.floor(x)] || '.') : '.'; };
-  // the game and the engine's modules hook in here:
-  //   objects(def): after the location's own objects are built — add more (machines, the meadow); a list kept in order with hook()
-  //   build(def): the runtime is made for the first time — the game sets up its own (moving parts, birds)
-  //   save(rt) / restore(rt): the hero leaves / comes back — keep the game's own runtime in rt and take it back
-  //   leave(def) before switching away, enter(def, spawnName) after arriving
-  const LOC_HOOKS = { objects: [], build: [], save: [], restore: [], leave: [], enter: [] };
-  let travelState = null;     // { exit, t, phase: 'out' | 'in' } while the screen fades
-  let stageFade = 0;          // 0…1 darkness drawn over the stage
-  function setGeometry(size) {
-    GW = size[0]; GH = size[1];
-    G = { x0: -HW * GH, y0: 0, w: HW * (GW + GH), h: HH * (GW + GH) + 14 };
-    GROUND_BOUNDS.set([0, 0, GW, GH]);
-  }
   function saveRuntime() {
     const rt = MAP && LOC_RT[MAP.id];
     if (!rt) return;
@@ -2156,9 +2178,9 @@ void main(){
     for (const f of LOC_HOOKS.save) f(rt);
   }
   function restoreRuntime(rt) {
-    ({ INST, HEIGHTS, instById, PATH_SEGS, nextId, ground } = rt);
-    NWX = GW * NR; NWZ = GH * NR;
-    NAV.hero.b = rt.navHero; NAV.big.b = rt.navBig; navB = NAV.hero.b;
+    restoreThings(rt);
+    setGround(rt.ground);
+    navRestore(rt);
     for (const f of LOC_HOOKS.restore) f(rt);
   }
   function buildRuntime(def) {
@@ -2166,62 +2188,25 @@ void main(){
     buildWorld();
     for (const f of LOC_HOOKS.build) f(def);
     navAlloc(); buildNav(NAV.hero);
-    ground = buildGround();
+    setGround(buildGround());
     LOC_RT[def.id] = {};
     saveRuntime();
     if (def.afterRuntime) def.afterRuntime();
   }
-  // switch to a location and put the hero (or the machine he drives) at one of its spawns
+  // switch to a location; LOC_HOOKS.enter puts the hero (or the machine he drives) at one of its spawns and lets everyone settle in
   function enterLocation(id, spawnName) {
     const from = MAP && LOC_RT[MAP.id] ? MAP : null;
     if (from) { for (const f of LOC_HOOKS.leave) f(from); saveRuntime(); }
     const def = LOCATIONS[id];
-    MAP = def;
+    setMap(def);
     setGeometry(def.size);
     setSun(def.sun || [-0.15, 1, 0.72], def.light);
     if (LOC_RT[id]) restoreRuntime(LOC_RT[id]); else buildRuntime(def);
     uploadGround(ground);
-    fitWorldBounds();
-    smokeP.length = 0; fx.length = 0; hits.length = 0; leavesP.length = 0;
-    const sp = def.spawns[spawnName] || def.spawns.start;
-    hero.x = sp.at[0]; hero.z = sp.at[1]; hero.y = groundY(hero.x, hero.z); hero.yaw = hero.tyaw = sp.yaw;
-    hero.path.length = 0; hero.queue.length = 0; hero.target = null; hero.focus = null; hero.aimAt = null;
-    if (!hero.vehicle) { hero.act = null; hero.sit = hero.sitTarget = 0; hero.seat = null; }
-    hero.arrived = true;
-    camX = null; lastKey = '';
     for (const f of LOC_HOOKS.enter) f(def, spawnName);
     saveRuntime();
-    if (sp.walk) hero.queue.push({ type: 'path', to: sp.walk, run: false });
   }
   const exitAt = (x, z) => (MAP.exits || []).find((e) => x >= e.rect[0] && x <= e.rect[2] && z >= e.rect[1] && z <= e.rect[3]);
-  // walk to the exit that leads to another location (the location buttons under the stage use this)
-  function goToLocation(id) {
-    if (id === MAP.id || travelState) return;
-    const e = (MAP.exits || []).find((x) => x.to === id);
-    if (!e) return;
-    walkTo(e.go[0], e.go[1]);
-  }
-  function updateTravel(dt) {
-    const T = travelState;
-    if (T) {
-      T.t += dt;
-      if (T.phase === 'out') {
-        stageFade = Math.min(1, T.t / 0.35);
-        if (T.t >= 0.4) { enterLocation(T.exit.to, T.exit.arrive); T.phase = 'in'; T.t = 0; stageFade = 1; }
-      } else {
-        stageFade = Math.max(0, 1 - T.t / 0.55);
-        if (T.t >= 0.55) { travelState = null; stageFade = 0; toast(MAP.name + (MAP.arrival ? '. ' + MAP.arrival : '')); }
-      }
-      return;
-    }
-    const e = exitAt(hero.x, hero.z);
-    if (!e) { hero.arrived = false; return; }
-    if (hero.arrived) return;
-    if (hero.act && !hero.vehicle) return;
-    if (hero.vehicle && hero.vehicle.ride && !hero.vehicle.ride.canTravel()) return;
-    travelState = { exit: e, t: 0, phase: 'out' };
-    hero.path.length = 0; hero.queue.length = 0; hero.target = null;
-  }
   // ================= time of day: one clock, the sun's path, the colour of the light, lamps, lit windows, mist =================
   // The clock runs in hours (0…24) and is the same in every location. A location says where its sun stands at one hour
   // (def.sun at def.sunAt, 14:00 if not given); from there the sun walks the sky — low in the east in the morning, high at noon,
@@ -2576,10 +2561,13 @@ void main(){
   const TIP_HOT = mat('#e8742c', { pat: 10, p: [4, 0, 0, 0] });
 
   // what the hero wears and holds: body 'tank' (default) | 'jacket' | 'armor', head null | 'helmet', hands null | 'rifle'.
-  // The game sets it and rebuilds HERO = buildHero(equip) when it changes (gearVer++ makes the stage redraw).
+  // The game sets it and calls rebuildHero() when it changes (gearVer++ makes the stage redraw); setHero(model) puts a model in place
+  // as it is (at boot, or for a moment to draw the portrait in other gear).
   const equip = { body: null, head: null, hands: null };
   let HERO = null, gearVer = 0;
   const armored = () => equip.body === 'armor';
+  function setHero(model) { HERO = model; }
+  function rebuildHero() { HERO = buildHero(equip); gearVer++; }
   // ================= skeleton & poses =================
   function ik(S0, Tg, a, b, pole) {
     const d = sub(Tg, S0); let dist = len(d);
@@ -2938,6 +2926,60 @@ void main(){
     return { p, rifle, st };
   }
 
+  // ================= the hero: who he is — where he stands, what his hands are doing, the activities he can be busy with =================
+  // His orders and his step are in state.js, how he is drawn in rig.js; this record is what both read.
+  const DIR8 = [
+    { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
+    { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
+  ];
+  const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
+  // overlays (smoke, drink, punch, shoot, thr, reach) are things he does with his hands while standing, walking or sitting:
+  // on — wanted, w — how far the pose has blended in, t — time since it began
+  const hero = {
+    x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
+    sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
+    smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
+    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
+    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
+    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
+  };
+  const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
+  const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
+  const standHips = (D) => plantY(poseIdle(0, D), D);
+  const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
+  const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
+  // the thing he sits in or drives: an instance with .ride = { hides(), focus() → world point, canTravel(), state() → text }
+  const driving = () => !!(hero.inside && hero.vehicle);
+  const heroHidden = () => !!(hero.inside && hero.vehicle && hero.vehicle.ride && hero.vehicle.ride.hides());
+
+  // ---------- activities: each owns the hero for a while and says where his hips are ----------
+  // ACT[kind] = { update(a, dt), ctx(a) → pose context or null, base(a, D) → hips matrix or null, state(a) → text,
+  //   first: the stage it starts in, leave(a) → label of the button that ends it (or null), quiet: true — it does not take
+  //   over the context panel, handsFree(a): his hands are free meanwhile (he may shoot or smoke), hands(a): where his hands hold on }
+  // The engine has the plain ones; a game adds its own (swings, ladders…), the walking machines add 'board'.
+  const ACT = {
+    // kneel down, do something with his hands (a.cb at the bottom), get up
+    kneel: {
+      update(a, dt) {
+        a.st += dt;
+        const T = 1.9;
+        if (a.leave && !a.fired && a.st < T + 0.35) { a.fired = true; a.st = T + 0.35 + Math.max(0, 0.35 - a.st); }     // called away: gets up at once, finds nothing
+
+        a.w = Math.min(smooth(a.st / 0.35), 1 - smooth((a.st - (T + 0.35)) / 0.35));
+        if (!a.fired && a.st > T) { a.fired = true; if (a.cb) a.cb(); }
+        if (a.st >= T + 0.7) a.done = true;
+      },
+      ctx: (a) => ({ kind: 'kneel', w: a.w }),
+      base: () => null,
+      state: (a) => a.text || 'ищет в траве',
+      quiet: true
+    },
+    // stand and look at something for a while (a.dur), a.cb a little before the end
+    look: {
+      update(a, dt) { a.st += dt; if (a.leave) { a.done = true; return; } if (!a.fired && a.st > (a.dur || 1.5) * 0.6) { a.fired = true; if (a.cb) a.cb(); } if (a.st >= (a.dur || 1.5)) a.done = true; },
+      ctx: () => null, base: () => null, state: (a) => a.text || 'смотрит', quiet: true
+    }
+  };
   // ================= hero rig: pose context → bones → draw list =================
   const q = (t) => Math.floor(t * FPS) / FPS;
   const wq = (w) => Math.round(w * 8) / 8;
@@ -3021,59 +3063,10 @@ void main(){
     return out;
   }
 
-  // ================= the hero: where he is, what he is doing, the orders he follows, the world's step =================
-  const DIR8 = [
-    { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
-    { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
-  ];
-  const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
-  // overlays (smoke, drink, punch, shoot, thr, reach) are things he does with his hands while standing, walking or sitting:
-  // on — wanted, w — how far the pose has blended in, t — time since it began
-  const hero = {
-    x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
-    sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
-    smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
-    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
-    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
-    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
-  };
-  const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
-  const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
-  const standHips = (D) => plantY(poseIdle(0, D), D);
-  const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
-  const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
-  // the thing he sits in or drives: an instance with .ride = { hides(), focus() → world point, canTravel(), state() → text }
-  const driving = () => !!(hero.inside && hero.vehicle);
-  const heroHidden = () => !!(hero.inside && hero.vehicle && hero.vehicle.ride && hero.vehicle.ride.hides());
-
-  // ---------- activities: each owns the hero for a while and says where his hips are ----------
-  // ACT[kind] = { update(a, dt), ctx(a) → pose context or null, base(a, D) → hips matrix or null, state(a) → text,
-  //   first: the stage it starts in, leave(a) → label of the button that ends it (or null), quiet: true — it does not take
-  //   over the context panel, handsFree(a): his hands are free meanwhile (he may shoot or smoke), hands(a): where his hands hold on }
-  // The engine has the plain ones; a game adds its own (swings, ladders…), the walking machines add 'board'.
-  const ACT = {
-    // kneel down, do something with his hands (a.cb at the bottom), get up
-    kneel: {
-      update(a, dt) {
-        a.st += dt;
-        const T = 1.9;
-        if (a.leave && !a.fired && a.st < T + 0.35) { a.fired = true; a.st = T + 0.35 + Math.max(0, 0.35 - a.st); }     // called away: gets up at once, finds nothing
-
-        a.w = Math.min(smooth(a.st / 0.35), 1 - smooth((a.st - (T + 0.35)) / 0.35));
-        if (!a.fired && a.st > T) { a.fired = true; if (a.cb) a.cb(); }
-        if (a.st >= T + 0.7) a.done = true;
-      },
-      ctx: (a) => ({ kind: 'kneel', w: a.w }),
-      base: () => null,
-      state: (a) => a.text || 'ищет в траве',
-      quiet: true
-    },
-    // stand and look at something for a while (a.dur), a.cb a little before the end
-    look: {
-      update(a, dt) { a.st += dt; if (a.leave) { a.done = true; return; } if (!a.fired && a.st > (a.dur || 1.5) * 0.6) { a.fired = true; if (a.cb) a.cb(); } if (a.st >= (a.dur || 1.5)) a.done = true; },
-      ctx: () => null, base: () => null, state: (a) => a.text || 'смотрит', quiet: true
-    }
-  };
+  // ================= the hero's orders and his step: walking, the queue of orders, the overlays of his hands =================
+  // Who he is (the record, the activities) is in hero.js; the world's step that calls heroStep is in core/run.js.
+  // events of the hero other modules listen to: shot() — a round leaves the muzzle (fx2d.js draws it and lands the hit)
+  const HERO_EVENTS = { shot: [] };
   function startAct(kind, inst, opts = {}) {
     hero.act = Object.assign({ kind, inst, st: 0, w: 0, stage: opts.stage || ACT[kind].first || 'go', leave: false, done: false }, opts);
     hero.path.length = 0;
@@ -3199,8 +3192,8 @@ void main(){
     hero.tyaw = wrapA(hero.tyaw + d * Math.PI / 4);
   }
 
-  // ================= the world's step =================
-  function update(dt, view) {
+  // ================= the hero's step (core/run.js calls it first in the world's step) =================
+  function heroStep(dt) {
     hero.t += dt;
     if (!hero.path.length && !hero.act) runQueue();     // a fresh order starts this very frame
     if (hero.act) {
@@ -3231,7 +3224,7 @@ void main(){
       if (a.on || a.w > 0) a.t += dt; else a.t = 0;
     }
     if (hero.talk.on && (hero.talk.t > hero.talk.dur || hero.path.length || busyAct())) hero.talk.on = false;
-    if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) fireShot();
+    if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) for (const f of HERO_EVENTS.shot) f();
     if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; hero.aimYaw = null; }
     if (hero.punch.on && hero.punch.t > 1.25) hero.punch.on = false;
     if (hero.smoke.on && hero.smoke.t > SMOKE_INTRO + SMOKE_PERIOD * SMOKE_PUFFS + 0.4) hero.smoke.on = false;
@@ -3242,11 +3235,48 @@ void main(){
     const re = hero.reach;
     if (re.on && !re.fired && re.t > 0.7) { re.fired = true; if (re.cb) re.cb(); }
     if (re.on && re.t > 1.7) re.on = false;
-    dayUpdate(dt);
-    for (const f of GAME.update) f(dt, view);
-    updateFx(dt, view);
-    updateTravel(dt);
-    updateToast(dt);
+  }
+
+  // ================= arriving in a location: the hero takes his place at the spawn (before anyone else settles in) =================
+  // or, driving a machine, the machine module moves it there after him (see machine.js); a spawn with `walk` sends him a few steps in
+  hook(LOC_HOOKS.enter, (def, spawnName) => {
+    const sp = def.spawns[spawnName] || def.spawns.start;
+    hero.x = sp.at[0]; hero.z = sp.at[1]; hero.y = groundY(hero.x, hero.z); hero.yaw = hero.tyaw = sp.yaw;
+    hero.path.length = 0; hero.queue.length = 0; hero.target = null; hero.focus = null; hero.aimAt = null;
+    if (!hero.vehicle) { hero.act = null; hero.sit = hero.sitTarget = 0; hero.seat = null; }
+    hero.arrived = true;
+    if (sp.walk) hero.queue.push({ type: 'path', to: sp.walk, run: false });
+  }, 0);
+  // ================= travel: the hero walks into an exit zone, the screen fades, the next location comes =================
+  let travelState = null;     // { exit, t, phase: 'out' | 'in' } while the screen fades
+  let stageFade = 0;          // 0…1 darkness drawn over the stage
+  // walk to the exit that leads to another location (the location buttons under the stage use this)
+  function goToLocation(id) {
+    if (id === MAP.id || travelState) return;
+    const e = (MAP.exits || []).find((x) => x.to === id);
+    if (!e) return;
+    walkTo(e.go[0], e.go[1]);
+  }
+  function updateTravel(dt) {
+    const T = travelState;
+    if (T) {
+      T.t += dt;
+      if (T.phase === 'out') {
+        stageFade = Math.min(1, T.t / 0.35);
+        if (T.t >= 0.4) { enterLocation(T.exit.to, T.exit.arrive); T.phase = 'in'; T.t = 0; stageFade = 1; }
+      } else {
+        stageFade = Math.max(0, 1 - T.t / 0.55);
+        if (T.t >= 0.55) { travelState = null; stageFade = 0; toast(MAP.name + (MAP.arrival ? '. ' + MAP.arrival : '')); }
+      }
+      return;
+    }
+    const e = exitAt(hero.x, hero.z);
+    if (!e) { hero.arrived = false; return; }
+    if (hero.arrived) return;
+    if (hero.act && !hero.vehicle) return;
+    if (hero.vehicle && hero.vehicle.ride && !hero.vehicle.ride.canTravel()) return;
+    travelState = { exit: e, t: 0, phase: 'out' };
+    hero.path.length = 0; hero.queue.length = 0; hero.target = null;
   }
   // ================= 2D effects (in world art pixels) =================
   const smokeP = [], fx = [], hits = [], leavesP = [];
@@ -3306,6 +3336,9 @@ void main(){
       if (c.onHit) c.onHit(away, hx, hy);
     } else if (c) { hits.push([hx, hy]); if (hits.length > 24) hits.shift(); }
   }
+  HERO_EVENTS.shot.push(fireShot);
+  // a new location starts with clean air: no smoke, sparks, bullet marks or falling leaves from the last one
+  hook(LOC_HOOKS.enter, () => { smokeP.length = 0; fx.length = 0; hits.length = 0; leavesP.length = 0; }, 0);
   function sparkleAround() {
     if (!last.chest) return;
     for (let i = 0; i < 14; i++) fx.push({ k: 'spark', x: last.chest[0] + (Math.random() - 0.5) * 40, y: last.chest[1] + (Math.random() - 0.5) * 60, vx: 0, vy: -10 - Math.random() * 20, g: 0, life: 0.35 + Math.random() * 0.3, white: true });
@@ -3518,9 +3551,16 @@ void main(){
   const scx = scene.getContext('2d');
   const layer = document.createElement('canvas');
   const lcx = layer.getContext('2d');
-  let ground = null;
   let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
   let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
+  // how other modules steer the stage: a fresh picture on the next frame, the camera back on the hero at once,
+  // the zoom ('near' | 'far' | 'all'), 3D without pixels, the cell grid, the thing under the mouse
+  const redraw = () => { lastKey = ''; };
+  const recenter = () => { camX = null; };
+  function setViewMode(m) { viewMode = m; }
+  function setRaw(on) { raw = !!on; }
+  function setGrid(on) { showGrid = !!on; }
+  function setHover(id) { hoverId = id; }
   // how far the camera may go and what the overview shows; both depend on the location (see fitWorldBounds)
   let CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
   let WORLD_B = { x0: -2130, x1: 2130, y0: -1140, y1: HH * (GW + GH) + 20 };
@@ -3530,6 +3570,8 @@ void main(){
     CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: Math.max(y0 - 20, -420), y1: HH * (GW + GH) + 30 };
     WORLD_B = { x0: Math.min(x0 - 30, -HW * GH - 30), x1: Math.max(x1 + 30, HW * GW + 30), y0: y0 - 30, y1: HH * (GW + GH) + 20 };
   }
+  // a new location: its own camera limits, the camera jumps to the hero, the picture is drawn afresh
+  hook(LOC_HOOKS.enter, () => { fitWorldBounds(); camX = null; lastKey = ''; }, 0);
   function fitStage() {
     const cssW = stageEl.clientWidth || 600, dpr = window.devicePixelRatio || 1;
     const desk = cssW >= 700;
@@ -3614,7 +3656,7 @@ void main(){
       const cs = [hs[0] * v.s / S + v.ax, hs[1] * v.s / S + v.ay];
       const r = (veh ? 112 : 64) * v.s / S;
       const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
-      drawCalls = 0;
+      resetDrawCalls();
       render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
         xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 }, tod,
         ground: { x0: G.x0, y0: G.y0, w: G.w, h: G.h, mode: over ? 2 : 1 }, target: hero.target, grid: showGrid
@@ -3700,11 +3742,7 @@ void main(){
   // Every element is looked up by id and may be missing — a game's page takes what it needs:
   //   toast · hudState, hudNear, hudClock (chips over the stage) · tip (hover tooltip) · ctxK, ctxName, ctxNote, ctxActs (what is near and what to do)
   //   vNear, vFar, vAll (zoom) · gridChk, rawChk · locSeg (one button per location) · todSeg, clockChk (time of day)
-  const toastEl = $('toast');
-  let toastT = 0;
-  function toast(msg) { if (!toastEl) return; toastEl.textContent = msg; toastEl.hidden = false; toastT = 3.2; }
-  function updateToast(dt) { if (toastT > 0) { toastT -= dt; if (toastT <= 0 && toastEl) toastEl.hidden = true; } }
-
+  // (the line for the player, «toast», is in core/toast.js: lower modules speak through it too)
   const hudState = $('hudState'), hudNear = $('hudNear'), tipEl = $('tip');
   const ctxK = $('ctxK'), ctxName = $('ctxName'), ctxNote = $('ctxNote'), ctxActs = $('ctxActs');
   function stateText() {
@@ -3743,6 +3781,8 @@ void main(){
     return null;
   }
   let ctxKey = '', hudKey = '', ctxTimer = 0;
+  // the context panel is rebuilt on its next check (after something the player did may have changed what it shows)
+  const refreshContext = () => { ctxKey = ''; };
   function button(label, fn, cls, off) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : ''); b.textContent = label;
@@ -3790,12 +3830,12 @@ void main(){
   // zoom: close, the usual distance, the whole location
   const vBtns = { near: $('vNear'), far: $('vFar'), all: $('vAll') };
   function setView(m) {
-    viewMode = m; for (const [m2, b2] of Object.entries(vBtns)) if (b2) b2.setAttribute('aria-pressed', String(m2 === m));
-    camX = null; fitStage(); lastKey = '';
+    setViewMode(m); for (const [m2, b2] of Object.entries(vBtns)) if (b2) b2.setAttribute('aria-pressed', String(m2 === m));
+    recenter(); fitStage(); redraw();
   }
   for (const [m, b] of Object.entries(vBtns)) if (b) b.addEventListener('click', () => setView(m));
-  if ($('gridChk')) $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; });
-  if ($('rawChk')) $('rawChk').addEventListener('change', (e) => { raw = e.target.checked; lastKey = ''; });
+  if ($('gridChk')) $('gridChk').addEventListener('change', (e) => { setGrid(e.target.checked); });
+  if ($('rawChk')) $('rawChk').addEventListener('change', (e) => { setRaw(e.target.checked); redraw(); });
   // which location: the current one is pressed, another walks the hero to the exit that leads there
   const locSeg = $('locSeg');
   function buildLocSeg() {
@@ -3847,14 +3887,14 @@ void main(){
     const r = stageEl.getBoundingClientRect();
     hoverPt = { fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height, x: e.clientX - r.left, y: e.clientY - r.top };
   });
-  stageEl.addEventListener('pointerleave', () => { hoverPt = null; hoverId = 0; if (tipEl) tipEl.hidden = true; stageEl.classList.remove('over'); });
+  stageEl.addEventListener('pointerleave', () => { hoverPt = null; setHover(0); if (tipEl) tipEl.hidden = true; stageEl.classList.remove('over'); });
   function updateHover(dt) {
     hoverT -= dt;
     if (!hoverPt || hoverT > 0) return;
     hoverT = 0.08;
     const inst = pickFrac(hoverPt.fx, hoverPt.fy);
     const id = inst && inst.active ? inst.id : 0;
-    hoverId = id;
+    setHover(id);
     stageEl.classList.toggle('over', !!id);
     if (!tipEl) return;
     if (!id) { tipEl.hidden = true; return; }
@@ -3867,7 +3907,7 @@ void main(){
   }
   // ================= running a game: the stage gets ready, the frame loop, a handle for tests =================
   // A game's boot builds its first location and the hero, then calls prepareStage() and runFrames():
-  //   buildDecals(); enterLocation('start-id', 'start'); HERO = buildHero(equip); prepareStage(); runFrames();
+  //   buildDecals(); enterLocation('start-id', 'start'); setHero(buildHero(equip)); prepareStage(); runFrames();
   // window.__game is the handle tests and tools use (tools/shoot.mjs, tools/probe.mjs); a game may add its own names to it.
   let stageVisible = true;
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { for (const e of es) stageVisible = e.isIntersecting; }).observe(stageEl);
@@ -3882,15 +3922,24 @@ void main(){
     if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', dayReadStage); }
     if ('ResizeObserver' in window) new ResizeObserver(() => fitStage()).observe(stageEl); else window.addEventListener('resize', fitStage);
   }
+  // ================= the world's step: the hero, the clock, the game's and the modules' own steps, effects, travel =================
+  function update(dt, view) {
+    heroStep(dt);
+    dayUpdate(dt);
+    for (const f of GAME.update) f(dt, view);
+    updateFx(dt, view);
+    updateTravel(dt);
+    updateToast(dt);
+  }
   const GAME_API = window.__game = {
     hero, equip, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
     travel: () => travelState, walkTo, doDefault, goSit, standUp, turn, ACT, viewToWorld, pickFrac, findPath, stage: stageEl, scene, layer,
     setView: (m) => setView(m),
     dbg: () => ({ drawCalls, VW, VH, kDev, view: lastView && { ox: lastView.ox, oy: lastView.oy, sc: lastView.sc } }),
     // step the world by hand (tests stop the clock with paused = true)
-    step: (sec) => { for (let t = 0; t < sec; t += 1 / 30) update(1 / 30, viewRect()); lastKey = ''; camX = null; },
+    step: (sec) => { for (let t = 0; t < sec; t += 1 / 30) update(1 / 30, viewRect()); redraw(); recenter(); },
     act: () => hero.act && { kind: hero.act.kind, stage: hero.act.stage, w: hero.act.w },
-    setHour: (h) => { daySet(h); lastKey = ''; }, day: () => ({ t: DAY.t, run: DAY.run, goal: DAY.goal, look: Object.assign({}, DAYP) }),
+    setHour: (h) => { daySet(h); redraw(); }, day: () => ({ t: DAY.t, run: DAY.run, goal: DAY.goal, look: Object.assign({}, DAYP) }),
     ev: (src) => eval(src),     // debugging: run code inside the game's scope
     ground: () => ground, paused: false, noIntro: false
   };
@@ -3945,13 +3994,15 @@ void main(){
     const t0 = performance.now();
     buildDecals();
     enterLocation('lot', 'start');
-    HERO = buildHero(equip);
+    setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
     GAME_API.bootMs = Math.round(performance.now() - t0);
     runFrames();
   }
   setTimeout(() => { try { boot(); } catch (e) { console.error(e); $('loading').textContent = 'Не получилось собрать площадку: ' + e.message; } }, 30);
+  // ================= the empty lot: the modules it is made of, in the order they run =================
+  // Only the engine's core and one module of the game — if this builds and the hero walks, the engine stands on its own.
 })();
 </script>
 

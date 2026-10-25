@@ -2,6 +2,14 @@
   // No catalog things at all — only the ground, the light of the hour and the hero. If this builds and the hero walks,
   // the engine stands on its own (tools/deps.mjs ploshchadka checks the code, tools/shoot.mjs the picture).
   // Ground, one character per 1 m cell: .  lawn   ,  weeds   :  trodden earth   #  asphalt   _  concrete
+  import { $ } from '../../engine/src/core/prelude.js';
+  import { buildDecals } from '../../engine/src/render/decals.js';
+  import { LOCATIONS } from '../../engine/src/world/map.js';
+  import { enterLocation } from '../../engine/src/world/locations.js';
+  import { buildHero, equip, setHero } from '../../engine/src/hero/model.js';
+  import { hero } from '../../engine/src/hero/hero.js';
+  import { beginDrink, beginSmoke, busyAct, doPunch } from '../../engine/src/hero/state.js';
+  import { GAME_API, prepareStage, runFrames } from '../../engine/src/core/run.js';
   LOCATIONS.lot = {
     id: 'lot', name: 'Пустая площадка', short: 'Площадка',
     size: [16, 16],

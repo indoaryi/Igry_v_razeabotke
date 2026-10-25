@@ -1,13 +1,23 @@
   // ================= the hero's orders and his step: walking, the queue of orders, the overlays of his hands =================
   // Who he is (the record, the activities) is in hero.js; the world's step that calls heroStep is in core/run.js.
   // events of the hero other modules listen to: shot() — a round leaves the muzzle (fx2d.js draws it and lands the hit)
-  const HERO_EVENTS = { shot: [] };
-  function startAct(kind, inst, opts = {}) {
+  import { M, approach, approachAngle, frameY, tr, wrapA } from '../core/math.js';
+  import { TEXTS, hook } from '../core/game.js';
+  import { toast } from '../core/toast.js';
+  import { LOC_HOOKS } from '../world/map.js';
+  import { actionsOf, groundY, toWorld2 } from '../world/instances.js';
+  import { NAV, findPath } from '../world/nav.js';
+  import { armored } from './model.js';
+  import { DRINK_INTRO, DRINK_PERIOD, DRINK_SIPS, SHOOT_LEN, SHOTS, SMOKE_INTRO, SMOKE_PERIOD, SMOKE_PUFFS, THROW_LEN, THROW_REL } from './skeleton.js';
+  import { ACT, cycleLen, driving, hero, speed, yawTo } from './hero.js';
+  import { heroRig } from './rig.js';
+  export const HERO_EVENTS = { shot: [] };
+  export function startAct(kind, inst, opts = {}) {
     hero.act = Object.assign({ kind, inst, st: 0, w: 0, stage: opts.stage || ACT[kind].first || 'go', leave: false, done: false }, opts);
     hero.path.length = 0;
   }
   const handsFree = () => !!(hero.act && ACT[hero.act.kind].handsFree && ACT[hero.act.kind].handsFree(hero.act));
-  const busyAct = () => hero.act && !handsFree();
+  export const busyAct = () => hero.act && !handsFree();
 
   // ---------- commands ----------
   // a new order replaces the old one at once: the hero drops the rest of his way, even mid-step, and heads off from where he stands
@@ -22,7 +32,7 @@
     if (hero.sitTarget === 1 || hero.sit > 0) out.push({ type: 'stand' }, { type: 'goto', x: hero.seat ? hero.seat.front[0] : hero.x, z: hero.seat ? hero.seat.front[1] : hero.z });
     return out;
   }
-  function plan(...cmds) {
+  export function plan(...cmds) {
     hero.punch.on = false; hero.thr.on = false; hero.reach.on = false;
     if (!handsFree()) hero.shoot.on = false;
     const lv = leaveCmds(); clearPlans();
@@ -66,7 +76,7 @@
 
   // ---------- overlays: the engine starts them; the game decides when they are allowed (items, gear) ----------
   // shooting aims at hero.aimAt: a target { pos: world point, state: 'up' while it can be hit, onHit(away, hx, hy) } (see fireShot)
-  function startShoot() {
+  export function startShoot() {
     const t = hero.aimAt;
     if (!t) return;
     hero.aimYaw = yawTo(t.pos[0], t.pos[2]);
@@ -75,12 +85,12 @@
     hero.shoot.on = true; hero.shoot.t = 0;
   }
   // in a machine (or climbing into one) his hands are on the levers
-  const inMachine = () => { if (!hero.inside && !(hero.act && ACT[hero.act.kind].vehicle)) return false; toast(TEXTS.inVehicle); return true; };
-  function beginSmoke() {
+  export const inMachine = () => { if (!hero.inside && !(hero.act && ACT[hero.act.kind].vehicle)) return false; toast(TEXTS.inVehicle); return true; };
+  export function beginSmoke() {
     hero.drink.on = false; hero.punch.on = false; hero.shoot.on = false;
     hero.smoke.on = true; hero.smoke.t = 0; hero.smoke.w = 0;
   }
-  function beginDrink() {
+  export function beginDrink() {
     hero.smoke.on = false; hero.punch.on = false; hero.shoot.on = false;
     hero.drink.on = true; hero.drink.t = 0; hero.drink.w = 0;
   }
@@ -92,43 +102,43 @@
   }
 
   // ---------- walking up to things ----------
-  const spotOf = (inst, kind) => inst.spots.find((s) => !kind || s.kind === kind) || inst.spots[0];
-  const goSpot = (sp, run) => [{ type: 'path', to: sp.w, run }, { type: 'goto', x: sp.w[0], z: sp.w[1] }, { type: 'face', yaw: sp.wyaw }, { type: 'turned' }];
-  function noArmor(msg) { if (!armored()) return false; toast(msg + ' Сними броню в снаряжении.'); return true; }
+  export const spotOf = (inst, kind) => inst.spots.find((s) => !kind || s.kind === kind) || inst.spots[0];
+  export const goSpot = (sp, run) => [{ type: 'path', to: sp.w, run }, { type: 'goto', x: sp.w[0], z: sp.w[1] }, { type: 'face', yaw: sp.wyaw }, { type: 'turned' }];
+  export function noArmor(msg) { if (!armored()) return false; toast(msg + ' Сними броню в снаряжении.'); return true; }
   // the seats of a thing (built.seats: { x, z, yaw, rifle }) in the world: where he sits, where he stands to sit down
-  function seatsOf(inst) {
+  export function seatsOf(inst) {
     return (inst.built.seats || []).map((s) => {
       const w = toWorld2(inst.M0, [s.x, s.z]), f = toWorld2(inst.M0, [s.x, s.z + 0.58]);
       return { inst, s, at: w, front: f, yaw: wrapA(inst.yaw0 + s.yaw), rifleM: M(inst.M0, tr(...s.rifle), frameY([0, 0, 1], [Math.sign(s.rifle[0] - s.x) || 1, 0, 0]), tr(0, 0, -0.16)) };
     });
   }
-  function goSit(inst) {
+  export function goSit(inst) {
     const seats = seatsOf(inst).filter((s) => !(hero.seat && hero.seat.s === s.s));
     seats.sort((a, b) => Math.hypot(a.at[0] - hero.x, a.at[1] - hero.z) - Math.hypot(b.at[0] - hero.x, b.at[1] - hero.z));
     const st = seats[0];
     plan({ type: 'path', to: st.front }, { type: 'goto', x: st.front[0], z: st.front[1] }, { type: 'face', yaw: st.yaw }, { type: 'turned' },
       { type: 'goto', x: st.at[0], z: st.at[1], back: true }, { type: 'sit', seat: st });
   }
-  function doDefault(inst) {
+  export function doDefault(inst) {
     // from inside a machine, tapping a thing walks the machine up to it
     if (driving()) { if (inst !== hero.vehicle) { const c = inst.center || inst.def.at; walkTo(c[0], c[1]); } return; }
     const a = actionsOf(inst)[0]; if (a && !a.off) a.run(); else if (a && a.off) toast(TEXTS.searched);
   }
-  function walkTo(x, z) {
+  export function walkTo(x, z) {
     hero.thr.on = false;
     plan({ type: 'path', to: [x, z] });
     hero.target = [x, z];
   }
-  function standUp() { plan(); }
-  function doPunch() { if (inMachine()) return; plan({ type: 'punch' }); }
-  function turn(d) {
+  export function standUp() { plan(); }
+  export function doPunch() { if (inMachine()) return; plan({ type: 'punch' }); }
+  export function turn(d) {
     if (driving()) return;
     if (hero.path.length || hero.sit > 0 || hero.sitTarget || hero.shoot.on || busyAct()) return;
     hero.tyaw = wrapA(hero.tyaw + d * Math.PI / 4);
   }
 
   // ================= the hero's step (core/run.js calls it first in the world's step) =================
-  function heroStep(dt) {
+  export function heroStep(dt) {
     hero.t += dt;
     if (!hero.path.length && !hero.act) runQueue();     // a fresh order starts this very frame
     if (hero.act) {
