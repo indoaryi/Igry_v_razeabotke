@@ -6,7 +6,7 @@
     list.sort((a, b) => Math.hypot(a.center[0] - hero.x, a.center[1] - hero.z) - Math.hypot(b.center[0] - hero.x, b.center[1] - hero.z));
     const inst = list.find((i) => i.active) || list[0];
     $('stageBox').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-    if (inst.active) { hero.focus = inst; doDefault(inst); ctxKey = ''; return; }
+    if (inst.active) { hero.focus = inst; doDefault(inst); refreshContext(); return; }
     // decor: walk up to it
     const dx = hero.x - inst.center[0], dz = hero.z - inst.center[1], dl = Math.hypot(dx, dz) || 1;
     let p = [inst.center[0] + dx / dl * 2, inst.center[1] + dz / dl * 2];

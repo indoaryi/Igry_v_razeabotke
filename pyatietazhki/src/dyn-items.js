@@ -2,7 +2,6 @@
   const SEAT_MAT = mat('#8b5c38', { pat: 37, b: '#6f4a2e', p: [0.1, 0, 0, 0], noise: 0.08, grain: 50 });
   const CHAIN_MAT = Object.assign(flat('#45474b', 1), { fl: 1 });
   const CAN_MATS = ['#c8352c', '#2f7d3c', '#d1b04a', '#8a96a2'].map((h) => mat(h, { pat: 47, b: '#e7e4dc', p: [0.02, 0.035, 0.085, 0.1], noise: 0.03, spec: 0.8, gloss: 10 }));
-  const UNIT_LINE = () => getMesh('unitLine', () => lineMesh([[[0, 0, 0], [0, -1, 0]]]));
   // the yard's moving parts in the frame: swing seats, cans, the ball, pigeons, blinking indicators (GAME.items);
   // the walking machines add themselves after these (see machine.js)
   hook(GAME.items, (items) => {

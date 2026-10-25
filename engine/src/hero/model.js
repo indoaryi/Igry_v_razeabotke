@@ -219,7 +219,10 @@
   const TIP_HOT = mat('#e8742c', { pat: 10, p: [4, 0, 0, 0] });
 
   // what the hero wears and holds: body 'tank' (default) | 'jacket' | 'armor', head null | 'helmet', hands null | 'rifle'.
-  // The game sets it and rebuilds HERO = buildHero(equip) when it changes (gearVer++ makes the stage redraw).
+  // The game sets it and calls rebuildHero() when it changes (gearVer++ makes the stage redraw); setHero(model) puts a model in place
+  // as it is (at boot, or for a moment to draw the portrait in other gear).
   const equip = { body: null, head: null, hands: null };
   let HERO = null, gearVer = 0;
   const armored = () => equip.body === 'armor';
+  function setHero(model) { HERO = model; }
+  function rebuildHero() { HERO = buildHero(equip); gearVer++; }

@@ -29,7 +29,7 @@
     enterLocation(startLoc, 'start'); mark('world');
     const resumed = applyHot(hot);
     if (resumed) window.__yard.noIntro = true;
-    HERO = buildHero(equip);
+    setHero(buildHero(equip));
     for (const it of ITEMS) icons[it.id] = iconCanvas(it.id);
     renderItems(); mark('ui');
     prepareStage();

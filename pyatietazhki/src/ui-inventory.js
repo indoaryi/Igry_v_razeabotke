@@ -39,8 +39,10 @@
     const b = $('item-' + id); if (!b) return;
     b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 1600);
   }
+  ITEM_HOOKS.changed.push(renderItems);
+  ITEM_HOOKS.found.push(flashItem);
   function setGear() {
-    HERO = buildHero(equip); gearVer++; lastKey = ''; portraitKey = '';
+    rebuildHero(); redraw(); portraitStale();
     renderItems(); sparkleAround();
   }
   function onItem(it) {

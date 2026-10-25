@@ -2,11 +2,7 @@
   // Every element is looked up by id and may be missing — a game's page takes what it needs:
   //   toast · hudState, hudNear, hudClock (chips over the stage) · tip (hover tooltip) · ctxK, ctxName, ctxNote, ctxActs (what is near and what to do)
   //   vNear, vFar, vAll (zoom) · gridChk, rawChk · locSeg (one button per location) · todSeg, clockChk (time of day)
-  const toastEl = $('toast');
-  let toastT = 0;
-  function toast(msg) { if (!toastEl) return; toastEl.textContent = msg; toastEl.hidden = false; toastT = 3.2; }
-  function updateToast(dt) { if (toastT > 0) { toastT -= dt; if (toastT <= 0 && toastEl) toastEl.hidden = true; } }
-
+  // (the line for the player, «toast», is in core/toast.js: lower modules speak through it too)
   const hudState = $('hudState'), hudNear = $('hudNear'), tipEl = $('tip');
   const ctxK = $('ctxK'), ctxName = $('ctxName'), ctxNote = $('ctxNote'), ctxActs = $('ctxActs');
   function stateText() {
@@ -45,6 +41,8 @@
     return null;
   }
   let ctxKey = '', hudKey = '', ctxTimer = 0;
+  // the context panel is rebuilt on its next check (after something the player did may have changed what it shows)
+  const refreshContext = () => { ctxKey = ''; };
   function button(label, fn, cls, off) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : ''); b.textContent = label;
@@ -92,12 +90,12 @@
   // zoom: close, the usual distance, the whole location
   const vBtns = { near: $('vNear'), far: $('vFar'), all: $('vAll') };
   function setView(m) {
-    viewMode = m; for (const [m2, b2] of Object.entries(vBtns)) if (b2) b2.setAttribute('aria-pressed', String(m2 === m));
-    camX = null; fitStage(); lastKey = '';
+    setViewMode(m); for (const [m2, b2] of Object.entries(vBtns)) if (b2) b2.setAttribute('aria-pressed', String(m2 === m));
+    recenter(); fitStage(); redraw();
   }
   for (const [m, b] of Object.entries(vBtns)) if (b) b.addEventListener('click', () => setView(m));
-  if ($('gridChk')) $('gridChk').addEventListener('change', (e) => { showGrid = e.target.checked; });
-  if ($('rawChk')) $('rawChk').addEventListener('change', (e) => { raw = e.target.checked; lastKey = ''; });
+  if ($('gridChk')) $('gridChk').addEventListener('change', (e) => { setGrid(e.target.checked); });
+  if ($('rawChk')) $('rawChk').addEventListener('change', (e) => { setRaw(e.target.checked); redraw(); });
   // which location: the current one is pressed, another walks the hero to the exit that leads there
   const locSeg = $('locSeg');
   function buildLocSeg() {
@@ -149,14 +147,14 @@
     const r = stageEl.getBoundingClientRect();
     hoverPt = { fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height, x: e.clientX - r.left, y: e.clientY - r.top };
   });
-  stageEl.addEventListener('pointerleave', () => { hoverPt = null; hoverId = 0; if (tipEl) tipEl.hidden = true; stageEl.classList.remove('over'); });
+  stageEl.addEventListener('pointerleave', () => { hoverPt = null; setHover(0); if (tipEl) tipEl.hidden = true; stageEl.classList.remove('over'); });
   function updateHover(dt) {
     hoverT -= dt;
     if (!hoverPt || hoverT > 0) return;
     hoverT = 0.08;
     const inst = pickFrac(hoverPt.fx, hoverPt.fy);
     const id = inst && inst.active ? inst.id : 0;
-    hoverId = id;
+    setHover(id);
     stageEl.classList.toggle('over', !!id);
     if (!tipEl) return;
     if (!id) { tipEl.hidden = true; return; }

@@ -12,6 +12,10 @@
   let INST = [];
   let HEIGHTS = [];      // walkable raised areas (porches, steps)
   let nextId = 2;        // object ids are written into an 8-bit picking buffer, so each location numbers its own from 2
+  // an id for something that joins the current location later (a person walking in, a machine)
+  const newId = () => nextId++;
+  // the current location's things come back from its kept runtime (locations.js)
+  function restoreThings(rt) { ({ INST, HEIGHTS, instById, PATH_SEGS, nextId } = rt); }
   function toWorld2(M0, p) { const w = xf(M0, [p[0], 0, p[1]]); return [w[0], w[2]]; }
   function instantiate(def, parentM) {
     const T = CATALOG[def.type];

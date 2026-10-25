@@ -1,56 +1,7 @@
-  // ================= the hero: where he is, what he is doing, the orders he follows, the world's step =================
-  const DIR8 = [
-    { arrow: '↙', name: 'вниз-влево' }, { arrow: '↓', name: 'вниз' }, { arrow: '↘', name: 'вниз-вправо' }, { arrow: '→', name: 'вправо' },
-    { arrow: '↗', name: 'вверх-вправо' }, { arrow: '↑', name: 'вверх' }, { arrow: '↖', name: 'вверх-влево' }, { arrow: '←', name: 'влево' }
-  ];
-  const dirOf = (yaw) => DIR8[((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8];
-  // overlays (smoke, drink, punch, shoot, thr, reach) are things he does with his hands while standing, walking or sitting:
-  // on — wanted, w — how far the pose has blended in, t — time since it began
-  const hero = {
-    x: 14.2, z: 20.4, y: 0, yaw: -1.9, tyaw: -1.9, path: [], queue: [], phase: 0, walkW: 0, runW: 0, run: false,
-    sit: 0, sitTarget: 0, seat: null, t: 0, target: null, act: null, aimYaw: null, aimAt: null, focus: null,
-    smoke: { on: false, w: 0, t: 0 }, drink: { on: false, w: 0, t: 0 }, punch: { on: false, w: 0, t: 0 }, shoot: { on: false, w: 0, t: 0 },
-    thr: { on: false, w: 0, t: 0, inst: null }, reach: { on: false, w: 0, t: 0, to: null, cb: null, fired: false },
-    talk: { on: false, w: 0, t: 0, dur: 0 },          // speaking a line: the head nods, a hand explains (see applyTalk)
-    vehicle: null, inside: false, arrived: false     // the machine he is in (or climbing into), whether it hides him, and "just came in through an exit"
-  };
-  const speed = () => hero.run ? (armored() ? 2.7 : 3.4) : (armored() ? 1.15 : 1.38);
-  const cycleLen = () => hero.run ? 2.3 : (armored() ? 1.45 : 1.38);
-  const standHips = (D) => plantY(poseIdle(0, D), D);
-  const lerpM = (a, b, t) => { const o = new Float32Array(16); for (let i = 0; i < 16; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; };
-  const yawTo = (x, z) => Math.atan2(x - hero.x, z - hero.z);
-  // the thing he sits in or drives: an instance with .ride = { hides(), focus() → world point, canTravel(), state() → text }
-  const driving = () => !!(hero.inside && hero.vehicle);
-  const heroHidden = () => !!(hero.inside && hero.vehicle && hero.vehicle.ride && hero.vehicle.ride.hides());
-
-  // ---------- activities: each owns the hero for a while and says where his hips are ----------
-  // ACT[kind] = { update(a, dt), ctx(a) → pose context or null, base(a, D) → hips matrix or null, state(a) → text,
-  //   first: the stage it starts in, leave(a) → label of the button that ends it (or null), quiet: true — it does not take
-  //   over the context panel, handsFree(a): his hands are free meanwhile (he may shoot or smoke), hands(a): where his hands hold on }
-  // The engine has the plain ones; a game adds its own (swings, ladders…), the walking machines add 'board'.
-  const ACT = {
-    // kneel down, do something with his hands (a.cb at the bottom), get up
-    kneel: {
-      update(a, dt) {
-        a.st += dt;
-        const T = 1.9;
-        if (a.leave && !a.fired && a.st < T + 0.35) { a.fired = true; a.st = T + 0.35 + Math.max(0, 0.35 - a.st); }     // called away: gets up at once, finds nothing
-
-        a.w = Math.min(smooth(a.st / 0.35), 1 - smooth((a.st - (T + 0.35)) / 0.35));
-        if (!a.fired && a.st > T) { a.fired = true; if (a.cb) a.cb(); }
-        if (a.st >= T + 0.7) a.done = true;
-      },
-      ctx: (a) => ({ kind: 'kneel', w: a.w }),
-      base: () => null,
-      state: (a) => a.text || 'ищет в траве',
-      quiet: true
-    },
-    // stand and look at something for a while (a.dur), a.cb a little before the end
-    look: {
-      update(a, dt) { a.st += dt; if (a.leave) { a.done = true; return; } if (!a.fired && a.st > (a.dur || 1.5) * 0.6) { a.fired = true; if (a.cb) a.cb(); } if (a.st >= (a.dur || 1.5)) a.done = true; },
-      ctx: () => null, base: () => null, state: (a) => a.text || 'смотрит', quiet: true
-    }
-  };
+  // ================= the hero's orders and his step: walking, the queue of orders, the overlays of his hands =================
+  // Who he is (the record, the activities) is in hero.js; the world's step that calls heroStep is in core/run.js.
+  // events of the hero other modules listen to: shot() — a round leaves the muzzle (fx2d.js draws it and lands the hit)
+  const HERO_EVENTS = { shot: [] };
   function startAct(kind, inst, opts = {}) {
     hero.act = Object.assign({ kind, inst, st: 0, w: 0, stage: opts.stage || ACT[kind].first || 'go', leave: false, done: false }, opts);
     hero.path.length = 0;
@@ -176,8 +127,8 @@
     hero.tyaw = wrapA(hero.tyaw + d * Math.PI / 4);
   }
 
-  // ================= the world's step =================
-  function update(dt, view) {
+  // ================= the hero's step (core/run.js calls it first in the world's step) =================
+  function heroStep(dt) {
     hero.t += dt;
     if (!hero.path.length && !hero.act) runQueue();     // a fresh order starts this very frame
     if (hero.act) {
@@ -208,7 +159,7 @@
       if (a.on || a.w > 0) a.t += dt; else a.t = 0;
     }
     if (hero.talk.on && (hero.talk.t > hero.talk.dur || hero.path.length || busyAct())) hero.talk.on = false;
-    if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) fireShot();
+    if (sh.on) for (const s of SHOTS) if (prevT < s && sh.t >= s) for (const f of HERO_EVENTS.shot) f();
     if (sh.on && sh.t > SHOOT_LEN) { sh.on = false; hero.aimYaw = null; }
     if (hero.punch.on && hero.punch.t > 1.25) hero.punch.on = false;
     if (hero.smoke.on && hero.smoke.t > SMOKE_INTRO + SMOKE_PERIOD * SMOKE_PUFFS + 0.4) hero.smoke.on = false;
@@ -219,9 +170,15 @@
     const re = hero.reach;
     if (re.on && !re.fired && re.t > 0.7) { re.fired = true; if (re.cb) re.cb(); }
     if (re.on && re.t > 1.7) re.on = false;
-    dayUpdate(dt);
-    for (const f of GAME.update) f(dt, view);
-    updateFx(dt, view);
-    updateTravel(dt);
-    updateToast(dt);
   }
+
+  // ================= arriving in a location: the hero takes his place at the spawn (before anyone else settles in) =================
+  // or, driving a machine, the machine module moves it there after him (see machine.js); a spawn with `walk` sends him a few steps in
+  hook(LOC_HOOKS.enter, (def, spawnName) => {
+    const sp = def.spawns[spawnName] || def.spawns.start;
+    hero.x = sp.at[0]; hero.z = sp.at[1]; hero.y = groundY(hero.x, hero.z); hero.yaw = hero.tyaw = sp.yaw;
+    hero.path.length = 0; hero.queue.length = 0; hero.target = null; hero.focus = null; hero.aimAt = null;
+    if (!hero.vehicle) { hero.act = null; hero.sit = hero.sitTarget = 0; hero.seat = null; }
+    hero.arrived = true;
+    if (sp.walk) hero.queue.push({ type: 'path', to: sp.walk, run: false });
+  }, 0);

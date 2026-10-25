@@ -5,7 +5,6 @@
   const leaveBtn = (label) => (a) => a.stage === 'dismount' || a.stage === 'drop' || a.stage === 'down' ? null : label;
 
   // ---------- activities ----------
-  const SWING_W = Math.sqrt(9.8 / SW.CH);
   const seatFrame = (inst) => M(inst.M0, tr(0, SW.BAR, 0), rx(inst.dyn.theta || 0), tr(0, -SW.CH, 0));
   Object.assign(ACT, {
     swing: {
@@ -123,7 +122,7 @@
     if (busyAct()) { toast(TEXTS.handsBusy); return false; }
     if (it.count <= 0) { toast('Сигареты кончились. Поищи в бурьяне.'); return false; }
     if (hero.smoke.on) return false;
-    it.count--; renderItems();
+    it.count--; itemsChanged();
     beginSmoke();
     return true;
   }
@@ -134,7 +133,7 @@
     if (busyAct()) { toast(TEXTS.handsBusy); return false; }
     if (it.count <= 0) { toast('Энергетик кончился. Поищи в бурьяне.'); return false; }
     if (hero.drink.on) return false;
-    it.count--; renderItems();
+    it.count--; itemsChanged();
     beginDrink();
     return true;
   }
@@ -184,7 +183,7 @@
         inst.dyn.searched = true;
         let r = findRng(), f = FINDS[FINDS.length - 1];
         for (const x of FINDS) { if (r < x.p) { f = x; break; } r -= x.p; }
-        if (f.item) { const it = itemById(f.item); it.count += f.n; renderItems(); flashItem(f.item); }
+        if (f.item) { const it = itemById(f.item); it.count += f.n; itemsChanged(); itemFound(f.item); }
         toast(f.msg);
       } } });
   }

@@ -35,7 +35,7 @@
   function personInst(p) {
     // ids are per location and only 8 bits: a person keeps the one he got the first time he came to a location
     const ids = p.ids || (p.ids = {});
-    if (!ids[MAP.id]) ids[MAP.id] = nextId++;
+    if (!ids[MAP.id]) ids[MAP.id] = newId();
     const inst = {
       id: ids[MAP.id], def: { type: 'person', at: [p.x, p.z] }, type: 'person', person: p, use: PERSON_USE,
       T: { near: (i, x, z) => Math.max(0, Math.hypot(x - p.x, z - p.z) - 0.35) },

@@ -20,7 +20,7 @@
     equip[g.slot] = equip[g.slot] === g.id ? null : g.id;
     if (g.slot === 'hands' && !equip.hands) hero.shoot.on = false;
     if (equip.head === 'helmet' && (hero.smoke.on || hero.drink.on)) { hero.smoke.on = false; hero.drink.on = false; toast('Шлем надет, сигарета и вода убраны.'); }
-    HERO = buildHero(equip); gearVer++; lastKey = '';
+    rebuildHero(); redraw();
     sparkleAround();
   }
   function startSmoke() {

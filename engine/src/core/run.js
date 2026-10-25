@@ -1,6 +1,6 @@
   // ================= running a game: the stage gets ready, the frame loop, a handle for tests =================
   // A game's boot builds its first location and the hero, then calls prepareStage() and runFrames():
-  //   buildDecals(); enterLocation('start-id', 'start'); HERO = buildHero(equip); prepareStage(); runFrames();
+  //   buildDecals(); enterLocation('start-id', 'start'); setHero(buildHero(equip)); prepareStage(); runFrames();
   // window.__game is the handle tests and tools use (tools/shoot.mjs, tools/probe.mjs); a game may add its own names to it.
   let stageVisible = true;
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { for (const e of es) stageVisible = e.isIntersecting; }).observe(stageEl);
@@ -15,15 +15,24 @@
     if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', dayReadStage); }
     if ('ResizeObserver' in window) new ResizeObserver(() => fitStage()).observe(stageEl); else window.addEventListener('resize', fitStage);
   }
+  // ================= the world's step: the hero, the clock, the game's and the modules' own steps, effects, travel =================
+  function update(dt, view) {
+    heroStep(dt);
+    dayUpdate(dt);
+    for (const f of GAME.update) f(dt, view);
+    updateFx(dt, view);
+    updateTravel(dt);
+    updateToast(dt);
+  }
   const GAME_API = window.__game = {
     hero, equip, get INST() { return INST; }, get MAP() { return MAP; }, get LOCATIONS() { return LOCATIONS; }, byType, enterLocation, goToLocation,
     travel: () => travelState, walkTo, doDefault, goSit, standUp, turn, ACT, viewToWorld, pickFrac, findPath, stage: stageEl, scene, layer,
     setView: (m) => setView(m),
     dbg: () => ({ drawCalls, VW, VH, kDev, view: lastView && { ox: lastView.ox, oy: lastView.oy, sc: lastView.sc } }),
     // step the world by hand (tests stop the clock with paused = true)
-    step: (sec) => { for (let t = 0; t < sec; t += 1 / 30) update(1 / 30, viewRect()); lastKey = ''; camX = null; },
+    step: (sec) => { for (let t = 0; t < sec; t += 1 / 30) update(1 / 30, viewRect()); redraw(); recenter(); },
     act: () => hero.act && { kind: hero.act.kind, stage: hero.act.stage, w: hero.act.w },
-    setHour: (h) => { daySet(h); lastKey = ''; }, day: () => ({ t: DAY.t, run: DAY.run, goal: DAY.goal, look: Object.assign({}, DAYP) }),
+    setHour: (h) => { daySet(h); redraw(); }, day: () => ({ t: DAY.t, run: DAY.run, goal: DAY.goal, look: Object.assign({}, DAYP) }),
     ev: (src) => eval(src),     // debugging: run code inside the game's scope
     ground: () => ground, paused: false, noIntro: false
   };

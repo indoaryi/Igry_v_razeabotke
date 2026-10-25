@@ -147,7 +147,7 @@
 
   // ---------- the machine in the current location ----------
   function machineInst(m) {
-    const inst = { id: nextId++, def: { n: m.n, type: m.kind, kind: m.kind, at: [m.x, m.z] }, type: m.kind, T: null, M0: ID4, yaw0: m.yaw, built: {}, chunks: [], items: [],
+    const inst = { id: newId(), def: { n: m.n, type: m.kind, kind: m.kind, at: [m.x, m.z] }, type: m.kind, T: null, M0: ID4, yaw0: m.yaw, built: {}, chunks: [], items: [],
       bb: null, active: true, sr: null, shr: null, n: m.n, dyn: {}, center: [m.x, m.z], machine: m, blocks: [{ c: [m.x, m.z], r: m.K.D.blockR }], spots: [],
       use: MACHINE_USE };
     inst.ride = { hides: () => m.door < 0.03, focus: () => machineFocus(inst), canTravel: () => m.mode === 'ready', state: () => machineState(inst) };

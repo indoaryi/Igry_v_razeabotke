@@ -10,6 +10,11 @@
     for (const g of Object.values(NAV)) g.b = new Uint8Array(NWX * NWZ);
     navB = NAV.hero.b;
   }
+  // the current location's walk grids come back from its kept runtime (locations.js)
+  function navRestore(rt) {
+    NWX = GW * NR; NWZ = GH * NR;
+    NAV.hero.b = rt.navHero; NAV.big.b = rt.navBig; navB = NAV.hero.b;
+  }
   function pointInPoly(x, z, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {

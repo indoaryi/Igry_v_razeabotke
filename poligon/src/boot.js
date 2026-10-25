@@ -72,7 +72,7 @@
     { t: 'Обмен и торговля', d: 'Свои вещи на его, разница — рублями. Сигареты, банки и гранаты тратятся, находки из бурьяна можно продать.', go: () => somovGo(() => goTrade(SOMOV)) },
     { t: 'Снаряжение', d: 'Куртка, броня, шлем, винтовка — модель героя собирается заново. В броне медленнее. Проданное снимается.', go: () => toggleGear(GEAR[1]) },
     { t: 'Вся локация сверху', d: 'Обзор целиком: видно, как собраны земля, дома и деревья.', go: () => setView('all') },
-    { t: '3D без пикселей', d: 'Та же сцена до перевода в пиксель-арт: плавный свет и настоящая геометрия.', go: () => { const c = $('rawChk'); c.checked = !c.checked; raw = c.checked; lastKey = ''; } }
+    { t: '3D без пикселей', d: 'Та же сцена до перевода в пиксель-арт: плавный свет и настоящая геометрия.', go: () => { const c = $('rawChk'); c.checked = !c.checked; setRaw(c.checked); redraw(); } }
   ];
   const featEl = $('features');
   for (const f of FEATURES) {
@@ -113,7 +113,7 @@
     applyHotBefore(hot);
     enterLocation(hot && LOCATIONS[hot.loc] ? hot.loc : 'range', 'start');
     const resumed = applyHot(hot);
-    HERO = buildHero(equip);
+    setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
     Object.assign(GAME_API, { doShoot, doThrow, startSmoke, startDrink, toggleGear, raiseTargets, SOMOV, PEOPLE, INV, talkTo, openTrade, personFollow, talk: () => TALK && { node: TALK.id, line: TALK.line, opts: TALK.opts.map((o) => typeof o.say === 'function' ? o.say(TALK.p) : o.say) } });

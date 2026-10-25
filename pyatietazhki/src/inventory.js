@@ -10,4 +10,8 @@
   Object.assign(equip, { body: 'jacket', head: null, hands: 'rifle' });     // what he starts in (equip, HERO, armored() are the engine's)
   const itemById = (id) => ITEMS.find((i) => i.id === id);
   const isOn = (id) => equip.body === id || equip.head === id || equip.hands === id;
+  // the inventory panel listens: counts changed (a cigarette smoked, a find picked up) → redraw; a find → make it flash
+  const ITEM_HOOKS = { changed: [], found: [] };
+  function itemsChanged() { for (const f of ITEM_HOOKS.changed) f(); }
+  function itemFound(id) { for (const f of ITEM_HOOKS.found) f(id); }
 

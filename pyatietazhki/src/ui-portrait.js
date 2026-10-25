@@ -1,6 +1,7 @@
   // ================= portrait and icons =================
   const portraitCtx = $('portrait').getContext('2d');
   let portraitKey = '', portraitVisible = true;
+  const portraitStale = () => { portraitKey = ''; };     // gear changed: draw the portrait afresh
   if ('IntersectionObserver' in window) new IntersectionObserver((es) => { for (const e of es) portraitVisible = e.isIntersecting; }).observe($('portrait'));
   hook(GAME.frame, (dt, now) => { if (portraitVisible) drawPortrait(now / 1000); }, 10);
   function drawPortrait(time) {
@@ -19,7 +20,7 @@
     const ctx = cv.getContext('2d');
     const saveHero = HERO;
     const one = (eq, groups, yaw, zoom, anchorFn) => {
-      HERO = buildHero(eq);
+      setHero(buildHero(eq));
       const c = { t: 0, phase: 0, walkW: 0, sitW: 0, smokeW: 0, drinkW: 0, punchW: 0, shootW: 0 };
       const pose = buildPose(c, HERO.D, false);
       const D = HERO.D;
@@ -34,7 +35,7 @@
     else if (id === 'rifle') { const R = frameY([0, 1, 0], RV); single(RIFLE.map((r) => ({ mesh: r.mesh, model: mul(R, r.off), mat: r.mat })), 0.437, xf(R, [0, 0.05, 0.17])); }
     else if (id === 'cigs') single([{ mesh: PROPS.pack.mesh, model: frameY([0, 1, 0], nrm([TOCAM[0], 0, TOCAM[2]])), mat: PROPS.pack.mat }], 3.46, [0, 0, 0]);
     else if (id === 'atom') single([{ mesh: PROPS.can.mesh, model: ry(0.3), mat: PROPS.can.mat }], 2.0, [0, 0.083, 0]);
-    HERO = saveHero;
+    setHero(saveHero);
     return cv;
   }
 

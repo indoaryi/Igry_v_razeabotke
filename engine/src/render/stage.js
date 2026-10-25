@@ -5,9 +5,16 @@
   const scx = scene.getContext('2d');
   const layer = document.createElement('canvas');
   const lcx = layer.getContext('2d');
-  let ground = null;
   let VW = 400, VH = 240, kDev = 1, viewMode = 'far', raw = false, showGrid = false;
   let camX = null, camY = null, lastKey = '', lastView = null, hoverId = 0;
+  // how other modules steer the stage: a fresh picture on the next frame, the camera back on the hero at once,
+  // the zoom ('near' | 'far' | 'all'), 3D without pixels, the cell grid, the thing under the mouse
+  const redraw = () => { lastKey = ''; };
+  const recenter = () => { camX = null; };
+  function setViewMode(m) { viewMode = m; }
+  function setRaw(on) { raw = !!on; }
+  function setGrid(on) { showGrid = !!on; }
+  function setHover(id) { hoverId = id; }
   // how far the camera may go and what the overview shows; both depend on the location (see fitWorldBounds)
   let CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: -380, y1: HH * (GW + GH) + 30 };
   let WORLD_B = { x0: -2130, x1: 2130, y0: -1140, y1: HH * (GW + GH) + 20 };
@@ -17,6 +24,8 @@
     CAM_B = { x0: -HW * GH - 40, x1: HW * GW + 40, y0: Math.max(y0 - 20, -420), y1: HH * (GW + GH) + 30 };
     WORLD_B = { x0: Math.min(x0 - 30, -HW * GH - 30), x1: Math.max(x1 + 30, HW * GW + 30), y0: y0 - 30, y1: HH * (GW + GH) + 20 };
   }
+  // a new location: its own camera limits, the camera jumps to the hero, the picture is drawn afresh
+  hook(LOC_HOOKS.enter, () => { fitWorldBounds(); camX = null; lastKey = ''; }, 0);
   function fitStage() {
     const cssW = stageEl.clientWidth || 600, dpr = window.devicePixelRatio || 1;
     const desk = cssW >= 700;
@@ -101,7 +110,7 @@
       const cs = [hs[0] * v.s / S + v.ax, hs[1] * v.s / S + v.ay];
       const r = (veh ? 112 : 64) * v.s / S;
       const fade = [cs[0], v.h - cs[1], r * r, depthOf(v, chest)];
-      drawCalls = 0;
+      resetDrawCalls();
       render3D(TGT_STAGE, v, L, raw, lcx, 0, 0, {
         xray: true, hover: hoverId, fade, time: tickNow / FPS, sun: { rect, hmax: 18 }, tod,
         ground: { x0: G.x0, y0: G.y0, w: G.w, h: G.h, mode: over ? 2 : 1 }, target: hero.target, grid: showGrid

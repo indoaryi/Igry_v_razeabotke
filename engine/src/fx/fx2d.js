@@ -56,6 +56,9 @@
       if (c.onHit) c.onHit(away, hx, hy);
     } else if (c) { hits.push([hx, hy]); if (hits.length > 24) hits.shift(); }
   }
+  HERO_EVENTS.shot.push(fireShot);
+  // a new location starts with clean air: no smoke, sparks, bullet marks or falling leaves from the last one
+  hook(LOC_HOOKS.enter, () => { smokeP.length = 0; fx.length = 0; hits.length = 0; leavesP.length = 0; }, 0);
   function sparkleAround() {
     if (!last.chest) return;
     for (let i = 0; i < 14; i++) fx.push({ k: 'spark', x: last.chest[0] + (Math.random() - 0.5) * 40, y: last.chest[1] + (Math.random() - 0.5) * 60, vx: 0, vy: -10 - Math.random() * 20, g: 0, life: 0.35 + Math.random() * 0.3, white: true });

@@ -80,6 +80,9 @@
 
   // ---------- A-frame swing (with a seat) or a bare frame (used as a pull-up bar) ----------
   const SW = { BAR: 2.3, CH: 1.72, HALF: 1.2, SPL: 0.78, PIV: 0.22 };
+  const SWING_W = Math.sqrt(9.8 / SW.CH);      // how fast a swing swings: the pendulum of its chains
+  // a line one metre down from its origin, stretched into the swing chains and the pigeons' legs
+  const UNIT_LINE = () => getMesh('unitLine', () => lineMesh([[[0, 0, 0], [0, -1, 0]]]));
   function buildSwing(o) {
     const k = new Kit(o.seed || 29);
     const pm = paint(o.color || '#4f8a46', { rt: 0.86 });

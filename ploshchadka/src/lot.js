@@ -37,7 +37,7 @@
     const t0 = performance.now();
     buildDecals();
     enterLocation('lot', 'start');
-    HERO = buildHero(equip);
+    setHero(buildHero(equip));
     prepareStage();
     $('loading').hidden = true;
     GAME_API.bootMs = Math.round(performance.now() - t0);

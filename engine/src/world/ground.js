@@ -1,7 +1,14 @@
   // ================= ground: the cell strings painted pixel by pixel into one big canvas =================
-  // the map size and the ground canvas geometry belong to the current location (see setGeometry in locations.js)
+  // the map size, the ground canvas and its geometry belong to the current location (locations.js switches them)
   let GW = 30, GH = 30;
   let G = { x0: -HW * 30, y0: 0, w: HW * 60, h: HH * 60 + 14 };
+  let ground = null;         // the painted ground of the current location (a canvas; footprints are drawn into it)
+  function setGround(cv) { ground = cv; }
+  function setGeometry(size) {
+    GW = size[0]; GH = size[1];
+    G = { x0: -HW * GH, y0: 0, w: HW * (GW + GH), h: HH * (GW + GH) + 14 };
+    GROUND_BOUNDS.set([0, 0, GW, GH]);
+  }
   const PAL = {
     '.': ['#3d5c23', '#476a28', '#52762e', '#5e8234', '#6c8e3b'],
     ',': ['#3c5525', '#465f29', '#516a2e', '#5f7535', '#72803f'],

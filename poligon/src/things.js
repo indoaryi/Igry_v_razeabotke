@@ -67,6 +67,6 @@
     let changed = false;
     for (const slot of ['body', 'head', 'hands']) if (equip[slot] && !hasThing(equip[slot])) { equip[slot] = null; changed = true; }
     if (!equip.hands) hero.shoot.on = false;
-    if (changed) { HERO = buildHero(equip); gearVer++; lastKey = ''; }
+    if (changed) { rebuildHero(); redraw(); }
     return changed;
   }

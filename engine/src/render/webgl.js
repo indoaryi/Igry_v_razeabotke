@@ -2,7 +2,7 @@
   const glc = document.createElement('canvas');
   glc.width = 64; glc.height = 64;
   const gl = glc.getContext('webgl2', { antialias: false, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, depth: false, stencil: false });
-  if (!gl) { $('glNote').hidden = false; $('loading').hidden = true; return; }
+  if (!gl) { $('glNote').hidden = false; $('loading').hidden = true; throw new Error('WebGL2 is not available'); }
 
   const VS = `#version 300 es
 layout(location=0) in vec3 aPos;
@@ -713,8 +713,9 @@ void main(){
   }
   // depth of a world point in the window depth range, as gl_FragCoord.z sees it
   const depthOf = (v, P) => (dot(FV, sub(P, v.A || [0, 0, 0])) / DZ) * 0.5 + 0.5;
-  const GROUND_BOUNDS = new Float32Array([0, 0, 30, 30]);
+  const GROUND_BOUNDS = new Float32Array([0, 0, 30, 30]);     // the current map: [0, 0, width, depth] in metres (ground.js sets it)
   let drawCalls = 0;
+  const resetDrawCalls = () => { drawCalls = 0; };
   function drawList(list) {
     const u = P3.u;
     let lastMat = null, lastModel = null, lastId = -1, lastFade = -1;
@@ -924,7 +925,7 @@ void main(){
     const tg = o.target;
     gl.uniform4f(PP.u.uTarget, tg ? tg[0] : 0, tg ? tg[1] : 0, 0.32, tg ? 1 : 0);
     gl.uniform1i(PP.u.uGrid, o.grid ? 1 : 0);
-    gl.uniform2f(PP.u.uMapWH, GW, GH);
+    gl.uniform2f(PP.u.uMapWH, GROUND_BOUNDS[2], GROUND_BOUNDS[3]);
     setTod(PP.u, tod);
     gl.uniform4f(PP.u.uMist, tod.mist, tod.time, 1 / v.s, tod.mist > 0.01 && !(o.ground && o.ground.mode === 2) ? 1 : 0); gl.uniform3fv(PP.u.uMistCol, tod.mistCol);
     gl.uniform3fv(PP.u.uRV3, RV); gl.uniform3fv(PP.u.uUV3, UV); gl.uniform3fv(PP.u.uFV3, FV); gl.uniform1f(PP.u.uDZ, DZ);
